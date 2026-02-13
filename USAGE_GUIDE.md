@@ -32,11 +32,17 @@ python run_weather_baseline.py
 
 ## Configuration
 
-Edit `config.py` to change:
-- Horizons: `horizons = [6, 24, 48, 168]`
-- Folds: `n_folds = 20` (actual may be less)
-- Training size: `min_train_size = 4096`
+<!-- TODO: Horizons and folds currently hardcoded in run_weather_baseline.py -->
+<!-- Should be moved to config.py for consistency -->
+
+Current settings (in `run_weather_baseline.py`):
+- Horizons: `[6, 24, 48, 168]`
+- Folds: `20`
+
+Edit `config.py` for:
+- Training size: `max_train_samples = 4096`
 - Weather covariates: `weather_covariates = [...]`
+- Weather scenarios: `weather_scenarios = ['clean_only', 'degraded']`
 
 ## Hyperparameter Tuning
 
@@ -71,20 +77,48 @@ python tune_sarimax_auto.py --data ../../../data/SeoulBikeData.csv --folds 5
 - **Q**: Seasonal moving average terms
 - **s**: Seasonal period (24 for daily cycle in hourly data)
 
+
+
+### XGBoost Tuning
+Find optimal n_lags and XGBoost hyperparameters:
+```bash
+cd forecasting/models/tuning
+python tune_xgboost.py --data ../../../data/SeoulBikeData.csv --horizon 24 --trials 600 --folds 10 --tune-folds 5
+```
+
+**Output:** `results/tuning/xgboost_best_params_<timestamp>.json`
+
+**Parameters explained:**
+- **n_lags**: Number of past target values used as features (options: 24, 168)
+- **n_estimators**: Number of boosting trees
+- **learning_rate**: Step size for gradient descent
+- **max_depth**: Maximum tree depth (controls model complexity)
+- Regularization: **gamma**, **reg_lambda**, **reg_alpha**
+
 ### Applying Tuned Parameters
-Update `run_experiments.py` with found parameters:
+
+**ARIMA/SARIMAX:** Update `run_weather_baseline.py` with found parameters:
 ```python
 models = [
-    ARIMAForecaster(order=(2, 1, 2)),  # From tune_arima_auto.py output
+    ARIMAForecaster(order=(2, 1, 2)),  # From tune_arima_auto.py
     SARIMAXForecaster(
         order=(4, 0, 0),
-        seasonal_order=(1, 0, 1, 24)  # From tune_sarimax_auto.py output
+        seasonal_order=(1, 0, 1, 24)  # From tune_sarimax_auto.py
     ),
-    # ... other models
 ]
 ```
 
+**XGBoost:** Update JSON file path in `run_weather_baseline.py`:
+```python
+# Line ~20: Update with your timestamp
+with open("results/tuning/xgboost_best_params_20260110_042536.json") as f:
+    xgb_cfg = json.load(f)
+```
+
 **Note:** Tune once per dataset. Parameters describe data structure, not forecast horizon.
+
+
+
 
 ## TabPFN Models
 
@@ -152,9 +186,9 @@ class MyForecaster(BaseForecaster):
         self.model = None
 ```
 
-2. Add to model list in `run_experiments.py`:
+2. Add to model list in `run_weather_baseline.py`:
 ```python
-models = [
+all_models = [
     SeasonalNaiveForecaster(seasonal_period=24),
     MyForecaster(param1=value1, param2=value2),
     # ... other models

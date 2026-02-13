@@ -68,12 +68,12 @@ class TimeSeriesCV:
         data_start = df[date_col].min()
         data_end = df[date_col].max()
         
-        # First fold starts after min_train_size hours
-        first_fold_date = data_start + pd.Timedelta(hours=self.config.min_train_size)
+        # First fold starts after max_train_samples hours
+        first_fold_date = data_start + pd.Timedelta(hours=self.config.max_train_samples)
         
         # Calculate available testing hours
         total_hours = len(df)
-        available_for_testing = total_hours - self.config.min_train_size
+        available_for_testing = total_hours - self.config.max_train_samples
         
         # Calculate maximum possible folds for this horizon
         longest_horizon = max(self.config.horizons)
@@ -135,7 +135,7 @@ class TimeSeriesCV:
             })
             
             # Verify minimum training size and valid test size
-            if len(train_df) >= self.config.min_train_size and len(test_df) == horizon:
+            if len(train_df) >= self.config.max_train_samples and len(test_df) == horizon:
                 splits.append((train_df, test_df))
         
         # Report imputation summary

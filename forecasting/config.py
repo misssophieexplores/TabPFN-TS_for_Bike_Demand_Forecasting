@@ -20,7 +20,7 @@ class ForecastConfig:
     
     
     # Minimum training size (for TabPFN-TS requirement)
-    min_train_size: int = 4096
+    max_train_samples: int = 4096
     
     # Target column name
     target_col: str = "Rented Bike Count"
