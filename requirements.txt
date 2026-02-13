@@ -1,0 +1,8 @@
+tabpfn-time-series>=1.0.7
+torch
+numpy
+scikit-learn
+datasets
+wandb
+python-dotenv
+tqdm
