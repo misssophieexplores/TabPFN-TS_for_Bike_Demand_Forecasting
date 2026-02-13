@@ -266,15 +266,9 @@ Access at: `https://wandb.ai/{entity}/seoul-bike-forecasting/runs`
 **Fix:** Ensure `detailed_results` attribute exists in experiment runner
 **Check:** Console output for "Results saved" message
 
-### TabPFN requires 4096+ samples
+<!-- ### TabPFN requires 4096+ samples
+<!-- TODO: 4096 is max sample size -->
 **Issue:** "TabPFN requires min 4096 samples, got XXXX"
 **Fix:** Early folds may have <4096 samples - they're automatically skipped
-**Note:** This is expected behavior, not an error
+**Note:** This is expected behaviour, not an error -->
 
-## Tips
-
-1. **Start small**: Test with 1 model, 1 horizon, 3 folds before full runs
-2. **Monitor W&B**: Check logs during runs for errors
-3. **Use checkpoints**: Long runs should use unique experiment names for recovery
-4. **Tune parameters first**: Run tuning scripts before full experiments
-5. **Check imputation**: Review imputed fold counts in results

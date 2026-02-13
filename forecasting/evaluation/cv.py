@@ -6,6 +6,7 @@ import numpy as np
 from typing import List, Tuple
 from config import ForecastConfig
 
+#TODO: fix `max_train_samples`
 
 class TimeSeriesCV:
     """
@@ -134,7 +135,7 @@ class TimeSeriesCV:
                 'test_total': len(test_df)
             })
             
-            # Verify minimum training size and valid test size
+            # Verify training size and valid test size
             if len(train_df) >= self.config.max_train_samples and len(test_df) == horizon:
                 splits.append((train_df, test_df))
         

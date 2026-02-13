@@ -26,7 +26,7 @@ def test_config():
         config = ForecastConfig()
         print(f"Horizons: {config.horizons}")
         print(f"Folds: {config.n_folds}")
-        print(f"Min train size: {config.max_train_samples}")
+        print(f"Train size: {config.max_train_samples}")
         print(f"Target column: {config.target_col}")
         print(f"Weather covariates: {len(config.weather_covariates)} variables")
         print("PASSED")
@@ -116,7 +116,7 @@ def test_cv_splits(df):
             print("FAILED: Train and test sets overlap temporally")
             return False
         
-        # Check minimum train size
+        # Check minimum train size #TODO! FIX!
         if len(train_df) < config.max_train_samples:
             print(f"FAILED: Train size {len(train_df)} < min {config.max_train_samples}")
             return False
