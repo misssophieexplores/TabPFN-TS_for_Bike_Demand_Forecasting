@@ -1,0 +1,20 @@
+\begin{table}[h]
+\centering
+\begin{tabular}{llrrr}
+\toprule
+Model & Scenario & Mean MAE & Std MAE & CV \% \\
+\midrule
+ARIMA & clean\_only & 728.29 & 128.13 & 17.59 \\
+SARIMAX & clean\_only & 304.32 & 52.59 & 17.28 \\
+Seasonal_Naive & clean\_only & 396.97 & 147.96 & 37.27 \\
+TabPFN & clean\_only & 181.43 & 40.32 & 22.22 \\
+TabPFN_NoWeather & clean\_only & 330.99 & 113.72 & 34.36 \\
+XGBoost & clean\_only & 880.20 & 138.06 & 15.69 \\
+SARIMAX & degraded & 307.87 & 51.79 & 16.82 \\
+TabPFN & degraded & 216.00 & 46.01 & 21.30 \\
+XGBoost & degraded & 972.93 & 173.59 & 17.84 \\
+\bottomrule
+\end{tabular}
+\caption{Model stability metrics across cross-validation folds.}
+\label{tab:stability}
+\end{table}

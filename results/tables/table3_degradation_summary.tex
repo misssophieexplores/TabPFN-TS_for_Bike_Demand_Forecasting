@@ -1,0 +1,14 @@
+\begin{table}[h]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Model & Clean MAE & Degraded MAE & Increase & Increase \% \\
+\midrule
+SARIMAX & 304.32 & 307.87 & 3.54 & 1.16 \\
+XGBoost & 880.20 & 972.93 & 92.73 & 10.53 \\
+TabPFN & 181.43 & 216.00 & 34.57 & 19.05 \\
+\bottomrule
+\end{tabular}
+\caption{Performance degradation from clean to degraded weather forecasts (averaged across all horizons).}
+\label{tab:degradation_summary}
+\end{table}
