@@ -1,3 +1,4 @@
 .env
 forecasting/testing/wandb
 forecasting/testing/weather_partial_test
+__pycache__

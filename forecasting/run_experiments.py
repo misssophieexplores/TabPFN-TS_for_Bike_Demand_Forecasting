@@ -79,7 +79,7 @@ class ForecastingExperiment:
     
     def _save_checkpoint(self, model_name: str, horizon: int, scenario: str):
         """Save checkpoint after completing experiment"""
-        self.completed_experiments.add((model_name, horizon, scenario))
+        self.completed_experiments.add((self.config.dataset_name, model_name, horizon, scenario))
         with open(self.checkpoint_file, 'w') as f:
             json.dump({
                 'completed': [list(x) for x in self.completed_experiments],
@@ -124,7 +124,7 @@ class ForecastingExperiment:
             return None
         
         # Skip if already completed
-        if (model.name, horizon, weather_scenario) in self.completed_experiments:
+        if (self.config.dataset_name, model.name, horizon, weather_scenario) in self.completed_experiments:
             if verbose:
                 print(f"[SKIP] {model.name} | h={horizon} | {weather_scenario} (already completed)")
             return None

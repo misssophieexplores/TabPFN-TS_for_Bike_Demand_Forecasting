@@ -1,106 +1,47 @@
 """
-Configuration for forecasting experiments.
+London dataset configuration.
+Only dataset-specific fields are set here.
+All shared settings (wandb_project, results_version, horizons, etc.)
+are inherited from config.py and only need changing there.
 """
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from config import ForecastConfig
 
 
-@dataclass
-class ForecastConfig:
-    """Configuration for time series forecasting experiments"""
+def get_config() -> ForecastConfig:
+    config = ForecastConfig()
 
     # --- Data ---
-    # Path to the data file, relative to the project root's data/ directory
-    data_filename: str = "LondonBikeData.csv"
+    config.data_filename = "LondonBikeData.csv"
+    config.dataset_name = "london"
+    config.date_col = "timestamp"
+    config.target_col = "cnt"
+    config.functioning_day_col = None
+    config.holiday_col = "is_holiday"
+    config.season_col = "season"
+    config.season_mapping = {0: 0, 1: 1, 2: 2, 3: 3}  # already 0-based
 
-    # Name of the datetime column used for sorting and parsing
-    date_col: str = "timestamp"
-
-    # Dataset name for tracking results (defaults to data_filename stem if not specified)
-    dataset_name: Optional[str] = "LodonBikeData"
-
-    # Optional column indicating data quality / imputation (set to None if not present)
-    functioning_day_col: Optional[str] = None
-
-    # Optional holiday column name — appended to weather_covariates at load time.
-    # Set to the exact column name in your dataset, or None if not present.
-    holiday_col: Optional[str] = "is_holiday"
-
-    # Optional season column — normalized to 0–3 int and appended to weather_covariates.
-    # Handles: "Winter/Spring/Summer/Autumn" strings, 0.0–3.0, and 1–4 integers.
-    # Set to None if not present.
-    season_col: Optional[str] = "season"
-
-    # London (already 0-based, passthrough)
-    season_mapping: Dict = field(default_factory=lambda: {0: 0, 1: 1, 2: 2, 3: 3})
-
-    # --- Forecasting ---
-    # Forecasting horizons in hours
-    horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168]) 
-
-    # Maximum number of CV folds (actual may be less based on available data)
-    n_folds: int = 20
-
-    # Training window size (defined by TabPFN-TS capacity)
-    n_train_samples: int = 4096
-
-    # Seasonal period in hours (e.g. 24 for daily seasonality in hourly data)
-    seasonal_period: int = 24
-
-    # --- Columns ---
-    # Target column name
-    target_col: str = "cnt"
-
-    # Weather covariate columns
-    weather_covariates: List[str] = field(default_factory=lambda: [
-        "t1", #"Temperature",
-        "hum", #"Humidity",
-        "wind_speed", #"Wind speed",
-        "dew_point_c", #"Dew point temperature",
-        "solar_radiation_wm2", #"Solar Radiation",
-        "rainfall_mm", #"Rainfall",
-        "snowfall_cm", # "Snowfall"
-    ])
-
-    # Map weather columns to degradation variable types
-    weather_degradation_mapping: Dict[str, str] = field(default_factory=lambda: {
+    # --- Weather ---
+    config.weather_covariates = [
+        "t1",
+        "hum",
+        "wind_speed",
+        "dew_point_c",
+        "solar_radiation_wm2",
+        "rainfall_mm",
+        "snowfall_cm",
+    ]
+    config.weather_degradation_mapping = {
         "t1": "temperature",
         "hum": "humidity",
         "wind_speed": "wind_speed",
         "solar_radiation_wm2": "solar_radiation",
         "rainfall_mm": "precipitation",
         "snowfall_cm": "precipitation",
-    })
-
-    # --- Weather degradation ---
-    degradation_seed: int = 42
-    weather_scenarios: List[str] = field(default_factory=lambda: [
-        "all_weather",
-        "clean_only",
-        "degraded"
-    ])
+    }
 
     # --- Model parameters ---
-    # Path to tuned ARIMA parameters JSON, relative to project root
-    arima_params_file: str = "results/tuning/arima_best_params_20260307_133238.json"
-    # Path to tuned SARIMAX parameters JSON, relative to project root
+    config.arima_params_file = "results/tuning/arima_best_params_20260307_133238.json"
+    config.sarimax_params_file = "results/tuning/sarimax_best_params_20260307_141030.json"
+    config.xgb_params_file = "results/tuning/xgboost_best_params_20260307_082223.json"
 
-    sarimax_params_file: str = "results/tuning/sarimax_best_params_20260307_141030.json"
-
-    # Path to XGBoost tuned parameters JSON, relative to project root
-    xgb_params_file: str = "results/tuning/xgboost_best_params_20260307_082223.json"
-
-    # --- Output ---
-    output_dir: str = "results"
-
-    # Version tag appended to result file names (e.g. "v3" -> results_master_v3.csv)
-    results_version: str = "v4"
-
-    # --- W&B ---
-    wandb_project: str = "bike-forecasting"
-    experiment_name: Optional[str] = None
-
-
-    def __post_init__(self):
-        if self.experiment_name is None:
-            self.experiment_name = f"{self.wandb_project}_{self.results_version}"
+    return config

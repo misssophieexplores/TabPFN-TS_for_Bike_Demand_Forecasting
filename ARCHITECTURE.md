@@ -4,12 +4,17 @@
 ## Project Structure
 ```
 forecasting/
-├── config.py                # Configuration dataclass (includes weather scenarios)
+├── main.py                  # Multi-city orchestrator — runs all datasets sequentially
+├── config.py                # Shared base configuration dataclass (wandb_project, results_version, horizons, etc.)
+├── config_seoul.py          # Seoul-specific overrides (get_config())
+├── config_london.py         # London-specific overrides (get_config())
+├── config_washington.py     # Washington-specific overrides (get_config())
 ├── features.py              # Calendar time feature engineering (used by XGBoost)
 ├── models/
 │   ├── base.py              # BaseForecaster abstract class
 │   ├── statistical.py       # Seasonal Naive, ARIMA, SARIMAX
 │   ├── ml_models.py         # XGBoost with lag features
+│   ├── tabpfn_pipeline_model.py  # TabPFN pipeline models
 │   ├── prophets.py          # TODO: Prophet and Neuralprophet
 │   └── tuning/              # Hyperparameter tuning scripts
 │       ├── tune_arima_auto.py       # Auto-ARIMA tuning
@@ -35,22 +40,22 @@ forecasting/
 │   ├── test_weather_partial_baseline.py
 │   ├── test_weather_single_model.py
 │   └── test_weather_unit.py
-└── run_weather_baseline.py  # Weather degradation baseline runner
+├── run_experiments.py       # ForecastingExperiment class with W&B logging and checkpointing
+└── run_weather_baseline.py  # Weather degradation baseline runner (callable programmatically)
 
 data/
 ├── saving_data.py           # Data pre-processing and saving locally
-└── rSeoulBikeData.csv       # Dataset
+├── SeoulBikeData.csv
+├── LondonBikeData.csv
+└── WashingtonBikeData.csv
 
 results/                                    # Output directory 
 ├── figures/                 
 ├── tables/
-├── tuning/                                 # Results of fine-tuning parameters
-├── results_master.csv                      # Aggregated results
-├── detailed_results_master_v3.csv          # Fold-level results
-├── checkpoint_seoul_bike_baseline_v3.json  # Recovery checkpoints
 ├── tuning/                                 # Tuning results (JSON)
-├── tfigures/
-└── tables/                                 # Results of fine-tuning parameters
+├── results_master_v4.csv                   # Aggregated results (all datasets)
+├── detailed_results_master_v4.csv          # Fold-level results (all datasets)
+└── checkpoint_{experiment_name}.json       # Per-run recovery checkpoints
 ```
 
 ## Data Flow
@@ -72,14 +77,15 @@ results/                                    # Output directory
 
 ## Core Components
 
-### Configuration (`config.py`)
-- `ForecastConfig`: Dataclass with all experiment parameters
+### Configuration (`config.py` + city configs)
+- `config.py`: Shared base dataclass. Contains only fields that are identical across all datasets: `wandb_project`, `results_version`, `horizons`, `n_folds`, `n_train_samples`, `seasonal_period`, `degradation_seed`, `weather_scenarios`, `output_dir`. Dataset-specific fields default to `None`.
+- `config_seoul.py`, `config_london.py`, `config_washington.py`: Each exposes a `get_config()` function that instantiates `ForecastConfig` and overrides all dataset-specific fields. To update `wandb_project` or `results_version`, change `config.py` only — all cities pick it up automatically.
+- Dataset-specific fields (set per city): `data_filename`, `dataset_name`, `date_col`, `target_col`, `functioning_day_col`, `holiday_col`, `season_col`, `season_mapping`, `weather_covariates`, `weather_degradation_mapping`, `arima_params_file`, `sarimax_params_file`, `xgb_params_file`
 - Horizons: [6, 24, 48, 168] hours
-- Training size: 4096 observations 
-- Number of folds: set to 20
+- Training size: 4096 observations
+- Number of folds: 20
 - Weather scenarios: ['all_weather', 'clean_only', 'degraded']
 - Degradation seed: 42 (reproducible error simulation)
-- Weather degradation mapping: Maps dataset columns to degradation variable types
 - `holiday_col`: Optional column name for public holidays (normalized to 0/1, appended to `weather_covariates` at load time)
 - `season_col`: Optional column name for season (normalized to 0–3 int via `season_mapping`, appended to `weather_covariates` at load time)
 - `season_mapping`: Explicit per-dataset dict mapping raw season values to 0–3 integers (handles strings, 0-based, and 1-based encodings)
@@ -228,22 +234,30 @@ results/                                    # Output directory
 - MASE: Mean Absolute Scaled Error (seasonal naive baseline)
 - sMAPE: Symmetric Mean Absolute Percentage Error
 
+### Multi-City Orchestrator (`main.py`)
+Runs all datasets sequentially without manual intervention.
+- Imports each city config via `get_config()` and passes it to `run_weather_baseline.main()`
+- Bypasses the interactive confirmation prompt (`no_confirm=True`)
+- Catches per-city failures and continues to the next city
+- Prints a summary of pass/fail at the end
+- Accepts `--cities` flag to run a subset (e.g. `python main.py --cities seoul london`)
+
 ### Experiment Runner (`run_experiments.py`)
 **ForecastingExperiment**:
 - Manages experiment lifecycle
 - W&B initialization and logging
-- Checkpoint save/load for recovery (now includes scenario)
+- Checkpoint save/load for recovery — checkpoint keys include `dataset_name` so Seoul and Washington runs never conflict
 - Runs all model-horizon-scenario combinations
 - Saves aggregated and detailed results
 - Automatic skip logic: models without covariates skip 'degraded' scenario
-Used as baseline for pilot runs (V1 and V2)
 
-### Experiment Runner
-**run_weather_baseline.py**: Main runner used for paper results
+### Experiment Runner (`run_weather_baseline.py`)
+**`main(config=None, no_confirm=False)`**: Main runner used for paper results
+- Accepts an external config passed in from `main.py`, or creates a default `ForecastConfig()` when run directly — behaviour is unchanged for standalone use
+- `no_confirm=True` skips the interactive prompt for non-interactive/cluster use
 - Runs clean_only and degraded scenarios for all models
 - All horizons: [6, 24, 48, 168] hours, 20 folds
 - Loads tuned hyperparameters from JSON
-- Interactive confirmation before starting
 - Auto-skips degraded scenario for models without covariates
 - Displays degradation impact summary
 - Uses ForecastingExperiment class for W&B logging, checkpointing, and result saving
@@ -290,10 +304,10 @@ Training set grows with each fold, test set is always exactly `horizon` hours.
 Ensures models see increasing historical context.
 
 ### Checkpoint Recovery
-Saves completed (model, horizon, scenario) combinations to JSON after each experiment.
+Saves completed `(dataset_name, model, horizon, scenario)` tuples to JSON after each experiment.
 On restart, skips already-completed experiments.
-Prevents data loss from crashes during long runs.
-File format: `checkpoint_{run_name}.json` in results/ directory.
+Prevents data loss from crashes during long runs — including mid-run failures when iterating over multiple datasets.
+File format: `checkpoint_{experiment_name}.json` in `results/` directory.
 
 ## Data Requirements
 
