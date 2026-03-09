@@ -7,7 +7,6 @@ Orchestrates weather data preparation including:
 - Integration with weather_degradation module
 """
 
-# TODO: ADD HOLIDAY AND SEASON!!!! 
 import pandas as pd
 import numpy as np
 from typing import List, Optional
@@ -80,15 +79,20 @@ class WeatherProcessor:
             # Return only degradable variables (7 vars, exclude Dew point)
             # These are the ones in weather_degradation_mapping
             degradable_vars = list(self.config.weather_degradation_mapping.keys())
-            
+
             # Ensure order matches original weather_covariates
             ordered_vars = [
-                var for var in self.config.weather_covariates 
+                var for var in self.config.weather_covariates
                 if var in degradable_vars
             ]
-            
+
+            # Also include non-degradable covariates (e.g. holiday, season)
+            for col in [self.config.holiday_col, self.config.season_col]:
+                if col and col in self.config.weather_covariates:
+                    ordered_vars.append(col)
+
             return ordered_vars
-        
+
         else:
             raise ValueError(
                 f"Unknown scenario: {scenario}. "

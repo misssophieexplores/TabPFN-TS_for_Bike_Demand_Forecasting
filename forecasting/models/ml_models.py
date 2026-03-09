@@ -26,7 +26,7 @@ class XGBoostForecaster(BaseForecaster):
         **xgb_params : dict
             XGBoost hyperparameters
         """
-        super().__init__("XGBoost", use_covariates=True)
+        super().__init__("XGBoost", use_covariates=True, use_time_features=True)
         self.n_lags = n_lags
         
         # Default XGBoost parameters

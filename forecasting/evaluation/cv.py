@@ -1,19 +1,19 @@
 """
-Time series cross-validation with dynamic fold calculation.
+Time series cross-validation with dynamic fold calculation (rolling window).
 """
 import pandas as pd
 import numpy as np
 from typing import List, Tuple
 from config import ForecastConfig
 
-#TODO: fix `max_train_samples`
 
 class TimeSeriesCV:
     """
-    Time series cross-validation with expanding window.
+    Time series cross-validation with rolling window.
     
     Automatically calculates first fold date and actual number of folds
     based on available data and minimum training requirements.
+    Each fold uses a fixed-size training window that advances with the fold.
     Tracks which folds contain imputed data.
     """
     
@@ -32,10 +32,9 @@ class TimeSeriesCV:
         self._imputed_fold_info = []
         
     def split(
-        self, 
-        df: pd.DataFrame, 
+        self,
+        df: pd.DataFrame,
         horizon: int,
-        date_col: str = 'Date'
     ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
         """
         Generate train/test splits for time series cross-validation.
@@ -49,8 +48,6 @@ class TimeSeriesCV:
             Full dataset with datetime index or column
         horizon : int
             Forecast horizon (number of hours)
-        date_col : str
-            Name of datetime column
             
         Returns:
         --------
@@ -58,23 +55,24 @@ class TimeSeriesCV:
             List of (train_df, test_df) tuples, one per fold
         """
         # Validate input
-        if date_col not in df.columns:
-            raise ValueError(f"Column '{date_col}' not found in dataframe")
+        if self.config.date_col not in df.columns:
+            raise ValueError(f"Column '{self.config.date_col}' not found in dataframe")
         
         df = df.copy()
-        df[date_col] = pd.to_datetime(df[date_col])
-        df = df.sort_values(date_col).reset_index(drop=True)
+        df[self.config.date_col] = pd.to_datetime(df[self.config.date_col])
+        df = df.sort_values(self.config.date_col).reset_index(drop=True)
         
         # Calculate first fold date dynamically
-        data_start = df[date_col].min()
-        data_end = df[date_col].max()
+        data_start = df[self.config.date_col].min()
+        data_end = df[self.config.date_col].max()
         
-        # First fold starts after max_train_samples hours
-        first_fold_date = data_start + pd.Timedelta(hours=self.config.max_train_samples)
+        # First fold cutoff date counted back from end of dataset
+        n_eval_hours = self.config.n_folds * max(self.config.horizons)  # total evaluation window based on folds and longest horizon
+        first_fold_date = data_end - pd.Timedelta(hours=n_eval_hours)  # count back from end for consistent cutoff across datasets
         
         # Calculate available testing hours
         total_hours = len(df)
-        available_for_testing = total_hours - self.config.max_train_samples
+        available_for_testing = total_hours - self.config.n_train_samples
         
         # Calculate maximum possible folds for this horizon
         longest_horizon = max(self.config.horizons)
@@ -91,7 +89,7 @@ class TimeSeriesCV:
         # Print info on first call
         print(f"CV Info for horizon={horizon}h:")
         print(f"  Data: {data_start} to {data_end} ({total_hours} hours)")
-        print(f"  First fold date: {first_fold_date}")
+        print(f"  First fold date: {first_fold_date}")        
         print(f"  Available for testing: {available_for_testing} hours")
         print(f"  Max possible folds: {max_possible_folds}")
         print(f"  Requested folds: {self.config.n_folds}")
@@ -112,9 +110,11 @@ class TimeSeriesCV:
             if test_end > data_end:
                 break
             
-            # Create train/test split
-            train_mask = df[date_col] <= test_start
-            test_mask = (df[date_col] > test_start) & (df[date_col] <= test_end)
+            # Create train/test split (rolling: fixed-size window ending at test_start)
+            train_end = test_start
+            train_start = train_end - pd.Timedelta(hours=self.config.n_train_samples)
+            train_mask = (df[self.config.date_col] > train_start) & (df[self.config.date_col] <= train_end)
+            test_mask = (df[self.config.date_col] > test_start) & (df[self.config.date_col] <= test_end)
             
             train_df = df[train_mask].copy()
             test_df = df[test_mask].copy()
@@ -122,9 +122,10 @@ class TimeSeriesCV:
             # Check for imputed data in this fold
             train_imputed = 0
             test_imputed = 0
-            if 'Functioning Day' in train_df.columns:
-                train_imputed = (train_df['Functioning Day'] == 'No').sum()
-                test_imputed = (test_df['Functioning Day'] == 'No').sum()
+            fday = self.config.functioning_day_col
+            if fday and fday in train_df.columns:
+                train_imputed = (train_df[fday] == 'No').sum()
+                test_imputed = (test_df[fday] == 'No').sum()
             
             # Store imputation info
             self._imputed_fold_info.append({
@@ -136,7 +137,7 @@ class TimeSeriesCV:
             })
             
             # Verify training size and valid test size
-            if len(train_df) >= self.config.max_train_samples and len(test_df) == horizon:
+            if len(train_df) >= self.config.n_train_samples and len(test_df) == horizon:
                 splits.append((train_df, test_df))
         
         # Report imputation summary
@@ -169,10 +170,10 @@ class TimeSeriesCV:
                 'fold': i,
                 'train_size': len(train_df),
                 'test_size': len(test_df),
-                'train_start': train_df['Date'].min(),
-                'train_end': train_df['Date'].max(),
-                'test_start': test_df['Date'].min(),
-                'test_end': test_df['Date'].max()
+                'train_start': train_df[self.config.date_col].min(),
+                'train_end': train_df[self.config.date_col].max(),
+                'test_start': test_df[self.config.date_col].min(),
+                'test_end': test_df[self.config.date_col].max()
             }
             
             # Add imputation info if available

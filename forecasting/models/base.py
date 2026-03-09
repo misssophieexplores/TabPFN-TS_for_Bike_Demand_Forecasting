@@ -13,7 +13,7 @@ class BaseForecaster(ABC):
     Ensures consistent interface across different model types.
     """
     
-    def __init__(self, name: str, use_covariates: bool = False):
+    def __init__(self, name: str, use_covariates: bool = False, use_time_features: bool = False):
         """
         Initialize the forecaster.
         
@@ -23,9 +23,15 @@ class BaseForecaster(ABC):
             Name identifier for the model
         use_covariates : bool
             Whether this model uses exogenous covariates
+        use_time_features : bool
+            Whether calendar time features (hour, dayofweek, etc.) should be
+            appended to X by the pipeline. Only True for XGBoost — TabPFN
+            generates its own internally, SARIMAX handles seasonality via its
+            seasonal order.
         """
         self.name = name
         self.use_covariates = use_covariates
+        self.use_time_features = use_time_features
         self._is_fitted = False
         
     @abstractmethod

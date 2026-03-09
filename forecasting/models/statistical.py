@@ -1,5 +1,5 @@
 """
-Statistical forecasting models
+Statistical forecasting models - FIXED VERSION.
 """
 import numpy as np
 import pandas as pd
@@ -40,10 +40,7 @@ class SeasonalNaiveForecaster(BaseForecaster):
         if not self._is_fitted:
             raise RuntimeError("Model must be fitted before predicting")
             
-        # Get the last seasonal pattern
         seasonal_pattern = self.y_train[-self.seasonal_period:]
-        
-        # Repeat pattern to cover horizon
         n_repeats = int(np.ceil(horizon / self.seasonal_period))
         forecast = np.tile(seasonal_pattern, n_repeats)[:horizon]
         
@@ -56,10 +53,9 @@ class ARIMAForecaster(BaseForecaster):
     
     Autoregressive Integrated Moving Average model for univariate forecasting.
     Does not use covariates.
-
     """
     
-    def __init__(self, order: tuple = (2,1,2), freq: str = 'h'):
+    def __init__(self, order: tuple = (2, 1, 2), freq: str = 'h'):
         """
         Initialize ARIMA forecaster.
         
@@ -108,15 +104,12 @@ class SARIMAXForecaster(BaseForecaster):
     Supports weather covariates.
     
     FIXED: Proper datetime index handling to eliminate statsmodels warnings.
-    Performance optimized by limiting training window to max 2000 observations.
-
     """
     
     def __init__(
         self, 
         order: tuple = (4, 0, 0), 
         seasonal_order: tuple = (1, 0, 1, 24),
-        max_train_size: int = 2000, # maybe set to 2000 or 1500? or full data?
         freq: str = 'h'
     ):
         """
@@ -132,16 +125,12 @@ class SARIMAXForecaster(BaseForecaster):
             - D: seasonal differencing
             - Q: seasonal MA order
             - s: seasonal period (24 for hourly data)
-        max_train_size : int
-            Maximum number of training observations (for performance)
-            Default 2000 to keep training time reasonable
         freq : str
             Pandas frequency string (e.g., 'h' for hourly, 'D' for daily)
         """
         super().__init__("SARIMAX", use_covariates=True)
         self.order = order
         self.seasonal_order = seasonal_order
-        self.max_train_size = max_train_size
         self.freq = freq
         self.model = None
         self.model_fit = None
@@ -152,71 +141,31 @@ class SARIMAXForecaster(BaseForecaster):
         
         This satisfies statsmodels' requirement for datetime-indexed data.
         Uses an arbitrary start date with specified frequency.
-        
-        Parameters:
-        -----------
-        n_obs : int
-            Number of observations
-            
-        Returns:
-        --------
-        pd.DatetimeIndex
-            DatetimeIndex with specified frequency
         """
-        return pd.date_range(
-            start='2020-01-01', 
-            periods=n_obs, 
-            freq=self.freq
-        )
+        return pd.date_range(start='2020-01-01', periods=n_obs, freq=self.freq)
         
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
         """
         Fit SARIMAX model with covariates.
         
-        Limits training data to max_train_size most recent observations for performance.
         Creates proper datetime index to eliminate statsmodels warnings.
-        
-        Parameters:
-        -----------
-        y_train : np.ndarray
-            Target values (bike counts)
-        X_train : pd.DataFrame, optional
-            Weather covariates
         """
-        # Limit training size for performance
-        if len(y_train) > self.max_train_size:
-            y_train = y_train[-self.max_train_size:]
-            if X_train is not None:
-                X_train = X_train.iloc[-self.max_train_size:]
-        
-        # Create proper datetime index for statsmodels
         datetime_index = self._create_datetime_index(len(y_train))
-        
-        # Convert y_train to Series with datetime index
         y_series = pd.Series(y_train, index=datetime_index, name='y')
         
-        # Ensure X_train has matching datetime index
         if X_train is not None:
             X_train = X_train.copy()
             X_train.index = datetime_index
         
-        # Fit SARIMAX model with proper datetime-indexed data
         self.model = SARIMAX(
             y_series,
             exog=X_train,
             order=self.order,
             seasonal_order=self.seasonal_order,
-            enforce_stationarity=False,  # More robust for varied data
+            enforce_stationarity=False,
             enforce_invertibility=False
         )
-        
-        # Fit with limited iterations for performance
-        self.model_fit = self.model.fit(
-            disp=False,
-            maxiter=200,
-            method='lbfgs'  # Fast optimizer
-        )
-        
+        self.model_fit = self.model.fit(disp=False, maxiter=200, method='lbfgs')
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
@@ -229,27 +178,14 @@ class SARIMAXForecaster(BaseForecaster):
             Number of periods to forecast
         X_future : pd.DataFrame, optional
             Future weather covariates (required if use_covariates=True)
-            
-        Returns:
-        --------
-        np.ndarray
-            Forecasted values
         """
         if not self._is_fitted:
             raise RuntimeError("Model must be fitted before predicting")
-            
         if self.use_covariates and X_future is None:
             raise ValueError("X_future required for SARIMAX prediction")
         
-        # If we have future covariates, ensure they have proper datetime index
         if X_future is not None:
-            # Create datetime index for future periods
-            # This continues from the end of the training period
-            future_index = pd.date_range(
-                start='2020-01-01',  # Will be offset by forecast() anyway
-                periods=horizon,
-                freq=self.freq
-            )
+            future_index = pd.date_range(start='2020-01-01', periods=horizon, freq=self.freq)
             X_future = X_future.copy()
             X_future.index = future_index
             

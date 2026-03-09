@@ -1,15 +1,15 @@
 # Seoul Bike Forecasting - Architecture
-<!-- TODO: check if updates are needed! -->
+
 
 ## Project Structure
 ```
 forecasting/
 ├── config.py                # Configuration dataclass (includes weather scenarios)
+├── features.py              # Calendar time feature engineering (used by XGBoost)
 ├── models/
 │   ├── base.py              # BaseForecaster abstract class
 │   ├── statistical.py       # Seasonal Naive, ARIMA, SARIMAX
 │   ├── ml_models.py         # XGBoost with lag features
-│   ├── tabpfn_model.py      # TabPFN-based models
 │   ├── prophets.py          # TODO: Prophet and Neuralprophet
 │   └── tuning/              # Hyperparameter tuning scripts
 │       ├── tune_arima_auto.py       # Auto-ARIMA tuning
@@ -55,7 +55,7 @@ results/                                    # Output directory
 
 ## Data Flow
 
-1. **Load**: `load_and_prepare_data()` reads CSV, parses dates, sorts by time
+1. **Load**: `load_and_prepare_data()` reads CSV, parses dates, sorts by time, normalizes and appends holiday and season columns to `weather_covariates`
 2. **Scenario Setup**: `WeatherProcessor` selects variables based on scenario
 3. **Split**: `TimeSeriesCV.split()` creates expanding window train/test folds
 4. **Weather Preparation**: Per-fold degradation (if scenario = 'degraded')
@@ -66,9 +66,9 @@ results/                                    # Output directory
 9. **Save**: Results appended to master CSVs with scenario tracking
 
 **Weather Data Flow:**
-- **all_weather**: Use all 8 weather columns as-is (not used for V3)
-- **clean_only**: Use 7 degradable columns as-is
-- **degraded**: Use 7 degradable columns + apply degradation with seed(fold_idx, horizon)
+- **all_weather**: Use all weather columns from `config.weather_covariates` as-is (not used for V3)
+- **clean_only**: 6 degradable columns + holiday + season (no degradation)
+- **degraded**: 6 degradable columns + holiday + season + apply degradation to degradable columns only with seed(fold_idx, horizon)
 
 ## Core Components
 
@@ -80,6 +80,9 @@ results/                                    # Output directory
 - Weather scenarios: ['all_weather', 'clean_only', 'degraded']
 - Degradation seed: 42 (reproducible error simulation)
 - Weather degradation mapping: Maps dataset columns to degradation variable types
+- `holiday_col`: Optional column name for public holidays (normalized to 0/1, appended to `weather_covariates` at load time)
+- `season_col`: Optional column name for season (normalized to 0–3 int via `season_mapping`, appended to `weather_covariates` at load time)
+- `season_mapping`: Explicit per-dataset dict mapping raw season values to 0–3 integers (handles strings, 0-based, and 1-based encodings)
 
 ### Weather Degradation (`weather/`)
 **WeatherProcessor**: Orchestrates weather data preparation for scenarios
@@ -88,11 +91,11 @@ results/                                    # Output directory
 - `degrade_dataframe()`: On-the-fly degradation with proper seeding
 
 **Weather Scenarios:**
-1. **all_weather**: All 8 weather variables, no degradation (original baseline)
-2. **clean_only**: 7 degradable variables (excludes Dew point), no degradation
-3. **degraded**: 7 degradable variables with realistic NWP forecast errors
+1. **all_weather**: All weather variables from `config.weather_covariates`, no degradation (original baseline)
+2. **clean_only**: 6 degradable variables + holiday + season (excludes Dew point), no degradation
+3. **degraded**: 6 degradable variables + holiday + season with realistic NWP forecast errors on degradable columns only
 
-**Degradation Variables (7):**
+**Degradation Variables (6):**
 - Temperature → Additive Gaussian error
 - Humidity → Additive Gaussian error
 - Wind speed → Additive Gaussian (reflected at 0)
@@ -101,8 +104,10 @@ results/                                    # Output directory
 - Rainfall → Multiplicative lognormal + event detection
 - Snowfall → Multiplicative lognormal + event detection
 
-**Non-degradable Variable (1):**
-- Dew point temperature (excluded from degradation mapping)
+**Non-degradable Variables (excluded from degradation, always passed through as-is):**
+- Dew point temperature (excluded from `weather_degradation_mapping`, excluded from all scenarios)
+- Holiday (`config.holiday_col`) — passed through in clean_only and degraded
+- Season (`config.season_col`) — passed through in clean_only and degraded
 
 **Error Growth:** Calibrated to verification statistics
 - 6h: Small errors
@@ -120,13 +125,13 @@ results/                                    # Output directory
 - `fit(y, X)`: Train model
 - `predict(horizon, X)`: Generate forecasts
 - `reset()`: Clear state between folds
-- `name`, `use_covariates`: Properties
+- `name`, `use_covariates`, `use_time_features`: Properties
 
 **Implemented models:**
 - SeasonalNaiveForecaster: Repeats last seasonal period
 - ARIMAForecaster: Tuned parameters via auto_arima (e.g., (2,1,2))
 - SARIMAXForecaster: Tuned parameters via auto_arima (e.g., (4,0,0)×(1,0,1,24))
-- XGBoostForecaster: Uses lagged features (n_lags=24)
+- XGBoostForecaster: Uses lagged features (n_lags=24) + weather covariates (including holiday and season via `weather_covariates`) + calendar time features (hour, dayofweek, month, is_weekend). `use_time_features=True` — pipeline appends calendar features automatically at fold time. **Note: XGBoost must be re-tuned whenever `weather_covariates` changes (e.g. after adding holiday/season).**
 - TabPFNForecaster: Uses TabPFNv2 with calendar + auto seasonal features + weather covariates
 - TabPFNForecaster_NoWeather: TabPFNv2 with calendar + auto seasonal features only (univariate)
 
@@ -157,7 +162,7 @@ results/                                    # Output directory
 - Wide random search optimizing MAE
 - Jointly tunes n_lags and XGBoost hyperparameters
 - Uses tune_folds for hyperparameter search, additional folds for validation
-- n_lags options: [24, 168]
+- n_lags options: [12, 24, 48, 168]
 
 **XGBoost Parameters:**
 - **n_lags**: Number of lagged target values as features
@@ -234,7 +239,6 @@ results/                                    # Output directory
 Used as baseline for pilot runs (V1 and V2)
 
 ### Experiment Runner
-<!-- TODO: change from hardcoded horizons/folds to config! -->
 **run_weather_baseline.py**: Main runner used for paper results
 - Runs clean_only and degraded scenarios for all models
 - All horizons: [6, 24, 48, 168] hours, 20 folds
@@ -270,7 +274,7 @@ Rationale:
 - Different errors per fold (realistic variability)
 
 ### Dynamic CV Fold Calculation
-First fold date calculated as: `data_start + max_train_samples`
+First fold date calculated as: `data_start + n_train_samples`
 Actual folds = `min(requested_folds, available_data // longest_horizon)`
 
 Rationale: Different horizons require different amounts of test data. Longer horizons = fewer possible folds.
@@ -341,21 +345,14 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 ## Results Schema
 
 **New columns in results_master.csv:**
-<!-- TODO: update to exclude all_weather -->
 - `weather_scenario`: 'all_weather' (only used in Pilot project), 'clean_only', or 'degraded'
 - `model_uses_covariates`: Boolean (from model.use_covariates property)
 - `degradation_seed`: Random seed used (42 by default)
-- `num_weather_vars`: Count of weather variables (0 or 7; 8 only in Pilot project with 'clean_only' scenario)
+- `num_weather_vars`: Count of weather variables passed to model (0 for models without covariates; for models with covariates: 6 degradable + holiday + season = 8, plus 4 calendar time features for XGBoost = 12 total features; TabPFN creates its own calendar features, which is 17 additional features)
 
 
 ## Known Limitations
 
-1. SARIMAX convergence warnings during training (expected, doesn't affect predictions)
-2. SARIMAX slower than other models (~30-60s per fold vs ~1s)
-3. Hyperparameter tuning required before first run (one-time setup)
-4. TabPFN requires 4096 training samples; runs on CPU in LOCAL mode 
-5. XGBoost lag features may not capture complex seasonal patterns
-6. Weather degradation is applied fixed to all weather data and does not dynamically adapt within horizons.
-7. Weather degradation excludes Dew point temperature (not in degradation mapping)
-8. Degradation assumes independent errors across variables (no cross-correlation)
-9. Error growth calibrated to published statistics (ECMWF, KMA); may differ for specific locations
+1. Weather degradation is applied fixed to all weather data and does not dynamically adapt within horizons.
+2. Degradation assumes independent errors across variables (no cross-correlation)
+3. Error growth calibrated to published statistics (ECMWF, KMA); may differ for specific locations

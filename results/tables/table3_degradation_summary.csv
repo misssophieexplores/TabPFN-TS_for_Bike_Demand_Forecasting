@@ -1,4 +1,0 @@
-Model,Clean_MAE,Degraded_MAE,Increase,Increase_%
-SARIMAX,304.32,307.87,3.54,1.16
-XGBoost,880.2,972.93,92.73,10.53
-TabPFN,181.43,216.0,34.57,19.05
