@@ -320,7 +320,7 @@ def main():
     print(f"  order = {params['order']}")
     print(f"  seasonal_order = {params['seasonal_order']}")
     print(f"\nUpdate in config_{args.city}.py:")
-    print(f"  config.sarimax_params_file = 'results/tuning/sarimax_best_params_<timestamp>.json'")
+
 
 
 if __name__ == '__main__':

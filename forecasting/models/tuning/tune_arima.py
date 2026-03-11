@@ -5,7 +5,9 @@ Uses pmdarima's auto_arima for automatic parameter search.
 Non-seasonal ARIMA only (no covariates).
 
 Usage:
-    python forecasting/models/tuning/tune_arima_auto.py --data data/SeoulBikeData.csv
+    python forecasting/models/tuning/tune_arima.py --city seoul
+    python forecasting/models/tuning/tune_arima.py --city london
+    python forecasting/models/tuning/tune_arima.py --city washington
 """
 
 import sys
