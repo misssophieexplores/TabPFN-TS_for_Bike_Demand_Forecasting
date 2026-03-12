@@ -48,6 +48,6 @@ def get_config() -> ForecastConfig:
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_20260311_185910.json"
     config.sarimax_params_file = "results/tuning/sarimax_best_params_20260311_184609.json"
-    config.xgb_params_file = "" #TODO
+    config.xgb_params_file = "results/tuning/xgboost_best_params_20260312_044035.json"
 
     return config

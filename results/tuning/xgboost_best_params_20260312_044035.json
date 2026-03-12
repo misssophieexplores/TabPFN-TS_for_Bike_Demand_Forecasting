@@ -1,0 +1,55 @@
+{
+  "n_lags": 168,
+  "xgb_params": {
+    "objective": "reg:squarederror",
+    "random_state": 42,
+    "tree_method": "hist",
+    "n_jobs": -1,
+    "n_estimators": 1600,
+    "learning_rate": 0.09496640009272164,
+    "max_depth": 10,
+    "min_child_weight": 2.8280674719737684,
+    "subsample": 0.9916898534829118,
+    "colsample_bytree": 0.7508578721422723,
+    "gamma": 14.386250673816471,
+    "reg_lambda": 0.00294612239049057,
+    "reg_alpha": 1.5375926678948273e-08
+  },
+  "tuning": {
+    "search_type": "wide_random_search_no_early_stopping_joint_n_lags",
+    "scenario": "clean_only",
+    "trials": 600,
+    "tune_folds": 5,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 29.475732115904492,
+    "best_tune_rmse_mean": 43.12440398628088,
+    "n_lags_options": [
+      12,
+      24,
+      48,
+      168
+    ]
+  },
+  "mae_mean": 34.350872898101805,
+  "mae_std": 10.834515007057911,
+  "rmse_mean": 53.36133433524079,
+  "rmse_std": 18.910212994333317,
+  "validation_folds": 10,
+  "max_train_size": 8000,
+  "horizon": 24,
+  "covariates_used": [
+    "temperature_c",
+    "humidity_percent",
+    "wind_speed_ms",
+    "solar_radiation_wm2",
+    "rainfall_mm",
+    "snowfall_cm"
+  ],
+  "time_features_used": [
+    "hour",
+    "dayofweek",
+    "month",
+    "is_weekend"
+  ]
+}
