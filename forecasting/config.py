@@ -23,6 +23,7 @@ class ForecastConfig:
     dataset_name: Optional[str] = None
     functioning_day_col: Optional[str] = None
     holiday_col: Optional[str] = None
+    holiday_mapping: Optional[Dict] = field(default_factory=lambda: {'Yes': 1, 'No': 0})
     season_col: Optional[str] = None
     season_mapping: Optional[Dict] = None
     weather_covariates: Optional[List[str]] = None
@@ -49,8 +50,8 @@ class ForecastConfig:
 
     # --- Output (shared) ---
     output_dir: str = "results"
-    results_version: str = "t4"
-    verbose: bool = True
+    results_version: str = "v5" 
+    verbose: bool = False
 
     # --- W&B (shared) ---
     wandb_project: str = "bike-forecasting"
