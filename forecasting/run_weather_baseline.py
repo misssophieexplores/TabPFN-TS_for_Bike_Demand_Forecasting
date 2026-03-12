@@ -135,7 +135,7 @@ def main(config=None, no_confirm=False):
             models=all_models,
             df=df,
             scenarios=scenarios,
-            verbose=True
+            verbose=config.verbose
         )
         
         # Display summary

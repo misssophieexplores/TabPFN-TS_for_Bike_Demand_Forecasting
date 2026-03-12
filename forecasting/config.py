@@ -49,7 +49,8 @@ class ForecastConfig:
 
     # --- Output (shared) ---
     output_dir: str = "results"
-    results_version: str = "v4"
+    results_version: str = "t4"
+    verbose: bool = True
 
     # --- W&B (shared) ---
     wandb_project: str = "bike-forecasting"

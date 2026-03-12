@@ -2,3 +2,4 @@
 forecasting/testing/wandb
 forecasting/testing/weather_partial_test
 __pycache__
+forecasting/weather/EVIDENCE_MAPPING.md
