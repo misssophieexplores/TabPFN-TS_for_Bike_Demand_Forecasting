@@ -17,6 +17,7 @@ def get_config() -> ForecastConfig:
     config.target_col = "Rented Bike Count"
     config.functioning_day_col = "Functioning Day"
     config.holiday_col = "Holiday"
+    config.holiday_mapping = {'Holiday': 1, 'No Holiday': 0}
     config.season_col = "Seasons"
     config.season_mapping = {"Spring": 0, "Summer": 1, "Autumn": 2, "Winter": 3}
 

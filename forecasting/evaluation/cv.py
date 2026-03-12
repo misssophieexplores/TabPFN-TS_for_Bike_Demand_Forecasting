@@ -86,17 +86,16 @@ class TimeSeriesCV:
         self._actual_n_folds = actual_n_folds
         self._imputed_fold_info = []
         
-        # Print info on first call
-        print(f"CV Info for horizon={horizon}h:")
-        print(f"  Data: {data_start} to {data_end} ({total_hours} hours)")
-        print(f"  First fold date: {first_fold_date}")        
-        print(f"  Available for testing: {available_for_testing} hours")
-        print(f"  Max possible folds: {max_possible_folds}")
-        print(f"  Requested folds: {self.config.n_folds}")
-        print(f"  Actual folds: {actual_n_folds}")
-        
-        if actual_n_folds < self.config.n_folds:
-            print(f"  WARNING: Using {actual_n_folds} folds instead of requested {self.config.n_folds}")
+        if self.config.verbose:
+            print(f"CV Info for horizon={horizon}h:")
+            print(f"  Data: {data_start} to {data_end} ({total_hours} hours)")
+            print(f"  First fold date: {first_fold_date}")
+            print(f"  Available for testing: {available_for_testing} hours")
+            print(f"  Max possible folds: {max_possible_folds}")
+            print(f"  Requested folds: {self.config.n_folds}")
+            print(f"  Actual folds: {actual_n_folds}")
+            if actual_n_folds < self.config.n_folds:
+                print(f"  WARNING: Using {actual_n_folds} folds instead of requested {self.config.n_folds}")
   
         # Generate splits
         splits = []
@@ -142,7 +141,7 @@ class TimeSeriesCV:
         
         # Report imputation summary
         imputed_folds = [info for info in self._imputed_fold_info if info['test_imputed'] > 0]
-        if imputed_folds:
+        if imputed_folds and self.config.verbose:
             print(f"\n  Imputation info:")
             print(f"    Folds with imputed test data: {len(imputed_folds)}/{len(splits)}")
             for info in imputed_folds:

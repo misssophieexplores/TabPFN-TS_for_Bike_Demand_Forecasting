@@ -8,7 +8,6 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from models.base import BaseForecaster
 
-
 class SeasonalNaiveForecaster(BaseForecaster):
     """
     Seasonal naive baseline.

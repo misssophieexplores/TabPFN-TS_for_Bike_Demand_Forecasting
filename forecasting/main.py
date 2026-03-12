@@ -6,16 +6,17 @@ appropriate city config. No manual file swapping needed.
 
 Usage:
     # Run all cities
-    python main.py
+    python forecasting/main.py
 
     # Run a subset
-    python main.py --cities seoul washington
+    python forecasting/main.py --cities seoul washington
 """
 import argparse
 import sys
 import time
 import traceback
 from datetime import datetime
+from pathlib import Path
 
 from run_weather_baseline import main as run_baseline
 
@@ -57,18 +58,18 @@ def main():
     configs = get_configs()
     selected = {city: configs[city] for city in args.cities}
 
-    print("\n" + "=" * 80)
-    print(f"MULTI-CITY FORECASTING  |  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Cities: {', '.join(selected.keys())}")
-    print("=" * 80)
+    # Set up error log file
+    first_config = next(iter(selected.values()))
+    error_log_path = Path(first_config.output_dir) / f"errors_{first_config.results_version}.log"
+    error_log_path.parent.mkdir(exist_ok=True)
+
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] MULTI-CITY FORECASTING | Cities: {', '.join(selected.keys())}")
 
     results = {}
     overall_start = time.time()
 
     for city, config in selected.items():
-        print(f"\n{'=' * 80}")
-        print(f"STARTING: {city.upper()}")
-        print(f"{'=' * 80}")
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] STARTING: {city.upper()}")
 
         start = time.time()
         try:
@@ -79,16 +80,19 @@ def main():
         except Exception:
             elapsed = time.time() - start
             print(f"\n[FAILED] {city} failed after {elapsed / 60:.1f} min")
-            traceback.print_exc()
+            print(f"  See {error_log_path} for details")
+            with open(error_log_path, "a") as f:
+                f.write(f"\n{'='*80}\n")
+                f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] FAILED: {city}\n")
+                f.write(f"{'='*80}\n")
+                traceback.print_exc(file=f)
             results[city] = "FAILED"
 
     # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
     total_elapsed = time.time() - overall_start
-    print("\n" + "=" * 80)
-    print("ALL CITIES COMPLETE")
-    print("=" * 80)
+    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ALL CITIES COMPLETE")
     for city, status in results.items():
         print(f"  [{status:6s}]  {city}")
     print(f"\n  Total wall time: {total_elapsed / 60:.1f} min")

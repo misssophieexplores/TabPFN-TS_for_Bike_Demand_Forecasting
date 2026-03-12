@@ -63,11 +63,12 @@ class ForecastingExperiment:
         )
         
         # Checkpoint file for recovery
-        self.checkpoint_file = self.output_dir / f"checkpoint_{self.run_name}_{config.results_version}.json"
+        self.checkpoint_file = self.output_dir / f"checkpoint_{self.run_name}.json"
         self.completed_experiments = self._load_checkpoint()
         
-        print(f"W&B run: {wandb.run.url}")
-        print(f"Run name: {self.run_name}")
+        if config.verbose:
+            print(f"W&B run: {wandb.run.url}")
+            print(f"Run name: {self.run_name}")
         
     def _load_checkpoint(self) -> set:
         """Load completed experiments from checkpoint"""
@@ -171,7 +172,8 @@ class ForecastingExperiment:
                 # Calculate metrics
                 metrics = self.metrics_calc.calculate_all(y_test, y_pred, y_train)
                 metrics['dataset'] = self.config.dataset_name
-                metrics['run_name'] = f"{self.run_name}_{self.config.results_version}"
+                metrics['run_name'] = self.run_name
+                metrics['version'] = self.config.results_version
                 metrics['timestamp'] = datetime.now().isoformat()
                 metrics['fold'] = fold_idx
                 metrics['model'] = model.name
@@ -208,6 +210,13 @@ class ForecastingExperiment:
             except Exception as e:
                 error_msg = f"Error in {model.name} h={horizon} fold={fold_idx}: {str(e)}"
                 print(f"\n[ERROR] {error_msg}")
+                import traceback
+                error_log_path = Path(self.config.output_dir) / f"errors_{self.config.results_version}.log"
+                with open(error_log_path, "a") as f:
+                    f.write(f"\n{'='*80}\n")
+                    f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR: {error_msg}\n")
+                    f.write(f"{'='*80}\n")
+                    traceback.print_exc(file=f)
                 wandb.log({"error": error_msg})
                 continue
         
@@ -219,7 +228,8 @@ class ForecastingExperiment:
         results_df = pd.DataFrame(fold_results)
         aggregated = {
             'dataset': self.config.dataset_name,
-            'run_name': self.run_name,  
+            'run_name': self.run_name,
+            'version': self.config.results_version,
             'timestamp': datetime.now().isoformat(),
             'model': model.name,
             'horizon': horizon,
@@ -302,21 +312,14 @@ class ForecastingExperiment:
         completed = len(self.completed_experiments)
         
         if verbose:
-            print(f"\n{'='*70}")
             print(f"Experiments: {len(models)} models x {len(self.config.horizons)} horizons x {len(scenarios)} scenarios")
-            print(f"Total experiments: {total} (some skipped for models without covariates)")
+            print(f"Total: {total} (some skipped for models without covariates)")
             if completed > 0:
                 print(f"Resuming from checkpoint: {completed} already completed")
-            print(f"{'='*70}\n")
 
         all_fold_results = []
         
         for scenario in scenarios:
-            if verbose:
-                print(f"\n{'='*70}")
-                print(f"SCENARIO: {scenario}")
-                print(f"{'='*70}\n")
-            
             for model in models:
                 # Skip models without covariates for degraded scenario
                 if not model.use_covariates and scenario == "degraded":
@@ -348,12 +351,8 @@ class ForecastingExperiment:
             })
 
         # Save detailed fold results
-        self.detailed_results = all_fold_results 
-        if verbose:
-            print(f"\n{'='*70}")
-            print("Experiments complete")
-            print(f"{'='*70}\n")
-        
+        self.detailed_results = all_fold_results
+
         return results_df
     def save_results(self, results_df: pd.DataFrame) -> str:
         """Append results to master CSV"""
@@ -374,13 +373,15 @@ class ForecastingExperiment:
                 detailed_df = pd.concat([existing, detailed_df], ignore_index=True)
             detailed_df.to_csv(filename_detailed, index=False)
         
-        print(f"Results appended to: {filename_agg}")
+        if self.config.verbose:
+            print(f"Results appended to: {filename_agg}")
         return str(filename_agg)
 
     def finish(self):
         """Cleanup and finish W&B run"""
         wandb.finish()
-        print("W&B run finished")
+        if self.config.verbose:
+            print("W&B run finished")
 
 
 
@@ -407,14 +408,16 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
     if config.holiday_col and config.holiday_col in df.columns:
         col = df[config.holiday_col]
         if col.dtype == object:
-            df[config.holiday_col] = col.map({'Yes': 1, 'No': 0}).astype(int)
+            df[config.holiday_col] = col.map(config.holiday_mapping).astype(int)
         else:
             df[config.holiday_col] = pd.to_numeric(col, errors='coerce').fillna(0).astype(int)
         if config.holiday_col not in config.weather_covariates:
             config.weather_covariates.append(config.holiday_col)
-            print(f"Holiday column '{config.holiday_col}' added to weather_covariates")
+            if config.verbose:
+                print(f"Holiday column '{config.holiday_col}' added to weather_covariates")
     elif config.holiday_col:
-        print(f"Warning: holiday_col '{config.holiday_col}' not found in dataset — skipping")
+        if config.verbose:
+            print(f"Warning: holiday_col '{config.holiday_col}' not found in dataset — skipping")
 
     # Normalize and append season column (→ 0–3 int) using explicit per-dataset mapping
     if config.season_col and config.season_col in df.columns:
@@ -433,13 +436,16 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
         df[config.season_col] = mapped.astype(int)
         if config.season_col not in config.weather_covariates:
             config.weather_covariates.append(config.season_col)
-            print(f"Season column '{config.season_col}' added to weather_covariates")
+            if config.verbose:
+                print(f"Season column '{config.season_col}' added to weather_covariates")
     elif config.season_col:
-        print(f"Warning: season_col '{config.season_col}' not found in dataset — skipping")
+        if config.verbose:
+            print(f"Warning: season_col '{config.season_col}' not found in dataset — skipping")
 
-    print(f"Loaded data: {len(df)} observations")
-    print(f"Date range: {df[config.date_col].min()} to {df[config.date_col].max()}")
-    print(f"Dataset name: {dataset_name}")
+    if config.verbose:
+        print(f"Loaded data: {len(df)} observations")
+        print(f"Date range: {df[config.date_col].min()} to {df[config.date_col].max()}")
+        print(f"Dataset name: {dataset_name}")
 
     return df, dataset_name
 
@@ -492,7 +498,16 @@ def main():
     except KeyboardInterrupt:
         print("\n\nInterrupted - Progress saved to checkpoint")
     except Exception as e:
-        print(f"\n\nError: {e}")
+        import traceback
+        error_log_path = Path(config.output_dir) / f"errors_{config.results_version}.log"
+        error_log_path.parent.mkdir(exist_ok=True)
+        print(f"\n[FAILED] {config.dataset_name}: {e}")
+        print(f"  See {error_log_path} for details")
+        with open(error_log_path, "a") as f:
+            f.write(f"\n{'='*80}\n")
+            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] FAILED: {config.dataset_name}\n")
+            f.write(f"{'='*80}\n")
+            traceback.print_exc(file=f)
         raise
     finally:
         experiment.finish()

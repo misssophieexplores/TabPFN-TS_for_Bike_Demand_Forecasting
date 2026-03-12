@@ -41,10 +41,6 @@ def main(config=None, no_confirm=False):
         programmatically from main.py so cluster jobs don't hang.
     """
 
-    print("\n" + "="*80)
-    print("WEATHER DEGRADATION BASELINE EXPERIMENTS")
-    print("="*80 + "\n")
-
     if config is None:
         config = ForecastConfig()
 
@@ -53,11 +49,8 @@ def main(config=None, no_confirm=False):
     df, dataset_name = load_and_prepare_data(config)
     if config.dataset_name is None:
         config.dataset_name = dataset_name
-
-    print("weather_covariates:", config.weather_covariates)
-    from weather.weather_processor import WeatherProcessor
-    wp = WeatherProcessor(config)
-    print("clean_only cols:", wp.get_weather_columns("clean_only"))
+    if config.experiment_name is None or config.experiment_name.startswith("None"):
+        config.experiment_name = f"{config.dataset_name}_{config.results_version}"
 
     # Load tuned model parameters
     with open(config.arima_params_file) as f:
@@ -91,33 +84,8 @@ def main(config=None, no_confirm=False):
         # "all_weather" # Optional: can reuse existing baseline results
     ]
     
-    print("Configuration:")
-    print(f"  Dataset: {dataset_name}")
-    print(f"  Models: {len(all_models)}")
-    print(f"  Scenarios: {scenarios}")
-    print(f"  Horizons: {config.horizons}")
-    print(f"  Folds: {config.n_folds}")
-    print(f"  Degradation seed: {config.degradation_seed}")
-    print()
-    
-    # Model summary
-    models_with_cov = [m for m in all_models if m.use_covariates]
-    models_without_cov = [m for m in all_models if not m.use_covariates]
-    
-    print("Model Summary:")
-    print(f"  With weather covariates: {[m.name for m in models_with_cov]}")
-    print(f"  Without weather covariates: {[m.name for m in models_without_cov]}")
-    print()
-    
-    print("Execution Plan:")
-    print(f"  clean_only: ALL {len(all_models)} models")
-    print(f"  degraded: {len(models_with_cov)} models (skip {len(models_without_cov)} without covariates)")
-    print()
-    
     # Confirm before starting (skipped when called programmatically)
-    if no_confirm:
-        print("Confirmation skipped (no_confirm=True).")
-    else:
+    if not no_confirm:
         response = input("Start baseline run? [y/N]: ")
         if response.lower() != 'y':
             print("Aborted.")
@@ -139,11 +107,7 @@ def main(config=None, no_confirm=False):
         )
         
         # Display summary
-        print("\n" + "="*80)
-        print("RESULTS SUMMARY")
-        print("="*80)
-        
-        if len(results_df) > 0:
+        if config.verbose and len(results_df) > 0:
             print("\nBy Model and Scenario:")
             summary = results_df.groupby(['model', 'weather_scenario'])[
                 ['MAE_mean', 'RMSE_mean', 'MASE_mean']
@@ -169,7 +133,6 @@ def main(config=None, no_confirm=False):
                     deg_data = model_data[model_data['weather_scenario'] == 'degraded']
                     
                     if len(clean_data) > 0 and len(deg_data) > 0:
-                        # Average across horizons
                         clean_mae = clean_data['MAE_mean'].mean()
                         deg_mae = deg_data['MAE_mean'].mean()
                         impact = deg_mae - clean_mae
@@ -188,15 +151,19 @@ def main(config=None, no_confirm=False):
         print("\n\nInterrupted - Progress saved to checkpoint")
         print("Restart with same experiment name to resume")
     except Exception as e:
-        print(f"\n\nError: {e}")
         import traceback
-        traceback.print_exc()
+        error_log_path = Path(config.output_dir) / f"errors_{config.results_version}.log"
+        error_log_path.parent.mkdir(exist_ok=True)
+        print(f"\n[FAILED] {config.dataset_name}: {e}")
+        print(f"  See {error_log_path} for details")
+        with open(error_log_path, "a") as f:
+            f.write(f"\n{'='*80}\n")
+            f.write(f"[{__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] FAILED: {config.dataset_name}\n")
+            f.write(f"{'='*80}\n")
+            traceback.print_exc(file=f)
         raise
     finally:
         experiment.finish()
-        print("\n" + "="*80)
-        print("WEATHER BASELINE COMPLETE")
-        print("="*80 + "\n")
 
 
 if __name__ == "__main__":
