@@ -63,7 +63,7 @@ class ForecastingExperiment:
         )
         
         # Checkpoint file for recovery
-        self.checkpoint_file = self.output_dir / f"checkpoint_{self.run_name}.json"
+        self.checkpoint_file = self.output_dir / f"checkpoint_{self.run_name}_{config.results_version}.json"
         self.completed_experiments = self._load_checkpoint()
         
         print(f"W&B run: {wandb.run.url}")
@@ -171,7 +171,7 @@ class ForecastingExperiment:
                 # Calculate metrics
                 metrics = self.metrics_calc.calculate_all(y_test, y_pred, y_train)
                 metrics['dataset'] = self.config.dataset_name
-                metrics['run_name'] = self.run_name
+                metrics['run_name'] = f"{self.run_name}_{self.config.results_version}"
                 metrics['timestamp'] = datetime.now().isoformat()
                 metrics['fold'] = fold_idx
                 metrics['model'] = model.name
@@ -453,6 +453,8 @@ def main():
     df, dataset_name = load_and_prepare_data(config)
     if config.dataset_name is None:
         config.dataset_name = dataset_name
+    if config.experiment_name is None or config.experiment_name.startswith("None"):
+        config.experiment_name = f"{config.dataset_name}_{config.results_version}"
 
     with open(config.xgb_params_file) as f:
         xgb_cfg = json.load(f)
