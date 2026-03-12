@@ -1,5 +1,5 @@
 """
-Main experiment runner with W&B logging and checkpointing.
+Experiment runner with W&B logging and checkpointing.
 """
 import pandas as pd
 import numpy as np

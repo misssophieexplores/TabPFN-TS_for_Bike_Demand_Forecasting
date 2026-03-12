@@ -4,29 +4,19 @@
 
 ### 1. Setup Environment
 ```bash
+# Python 3.11 required
+python3.11 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
 # Install dependencies
 pip install -r requirements.txt
 
-# Set W&B credentials in .env
+# Create .env file with your W&B credentials
 echo "WANDB_API_KEY=your_key_here" > .env
 echo "WANDB_ENTITY=your_entity" >> .env
 ```
 
-### 2. Run Tests
-```bash
-
-
-# Test infrastructure (data loading, CV splits, metrics)
-python python forecasting/test_infrastructure.py
-
-# Test individual models
-python python forecasting/test_single_model.py --model seasonal_naive
-
-# Test full pipeline (minimal, with W&B)
-python python forecasting/test_full_experiment.py
-```
-
-### 3. Run Experiments
+### 2. Run Experiments
 ```bash
 # Run all three datasets sequentially (no manual intervention)
 python forecasting/main.py
@@ -42,7 +32,7 @@ python forecasting/run_weather_baseline.py
 
 Shared settings live in `config.py`. Dataset-specific settings live in `config_<city>.py`, each exposing a `get_config()` function.
 
-**To update a shared setting** (e.g. bump version to `v5`, rename W&B project): edit `config.py` only — all city configs inherit it automatically.
+**To update a shared setting** (e.g. bump version to `v6`, rename W&B project): edit `config.py` only — all city configs inherit it automatically.
 
 **To add a new dataset**: create a new `config_<city>.py` following the existing city configs as a template, then add it to `get_configs()` in `main.py`.
 
@@ -56,8 +46,9 @@ Shared settings live in `config.py`. Dataset-specific settings live in `config_<
 | `seasonal_period` | `24` | Seasonal period in hours |
 | `degradation_seed` | `42` | Reproducibility seed for weather degradation |
 | `output_dir` | `results` | Output directory |
-| `results_version` | `v4` | Suffix for result CSV names |
+| `results_version` | `v5` | Suffix for result CSV names |
 | `wandb_project` | `bike-forecasting` | W&B project name |
+| `verbose` | `True` | Print detailed progress. Set to `False` in city configs for cluster/server runs |
 
 ### Dataset-specific fields (set in each city config)
 
@@ -69,6 +60,7 @@ Shared settings live in `config.py`. Dataset-specific settings live in `config_<
 | `target_col` | Column to forecast |
 | `functioning_day_col` | Imputation tracking column (set to `None` if not present) |
 | `holiday_col` | Holiday column name (normalized to 0/1, appended to covariates). Set to `None` if not present. |
+| `holiday_mapping` | Dict mapping raw holiday values → 0/1. Required if `holiday_col` contains strings (e.g. `{'Holiday': 1, 'No Holiday': 0}`). Washington/London (numeric) need no mapping. |
 | `season_col` | Season column name (normalized to 0–3 via `season_mapping`, appended to covariates). Set to `None` if not present. |
 | `season_mapping` | Explicit dict mapping raw season values → 0–3. Required if `season_col` is set. |
 | `weather_covariates` | List of weather covariate column names |
@@ -90,6 +82,7 @@ def get_config() -> ForecastConfig:
     config.target_col = "cnt"
     config.functioning_day_col = None
     config.holiday_col = "holiday"
+    config.holiday_mapping = None  # already numeric; use e.g. {'Holiday': 1, 'No Holiday': 0} for string values
     config.season_col = "season"
     config.season_mapping = {1: 0, 2: 1, 3: 2, 4: 3}  # 1-based → 0-based
     config.weather_covariates = ["temp", "hum", "windspeed", ...]
@@ -111,9 +104,8 @@ Tune once per dataset. Parameters describe data structure, not forecast horizon.
 
 ### ARIMA
 ```bash
-cd forecasting/models/tuning
 pip install pmdarima  # if needed
-python tune_arima_auto.py  # uses config defaults
+python forecasting/models/tuning/tune_arima_auto.py  # uses config defaults
 # or override data file:
 python tune_arima_auto.py --data data/OtherDataset.csv --folds 5
 ```
@@ -121,24 +113,22 @@ Output: `results/tuning/arima_best_params_<timestamp>.json`
 
 ### SARIMAX
 ```bash
-cd forecasting/models/tuning
-python tune_sarimax.py  # uses config defaults
-python tune_sarimax.py --data data/OtherDataset.csv --folds 5
+python forecasting/models/tuning/tune_sarimax.py  # uses config defaults
+python forecasting/models/tuning/tune_sarimax.py --data data/OtherDataset.csv --folds 5
 ```
 Output: `results/tuning/sarimax_best_params_<timestamp>.json`
 
 ### XGBoost
 ```bash
-cd forecasting/models/tuning
 
 # Default (all weather covariates):
-python tune_xgboost.py
+python forecasting/models/tuning/tune_xgboost.py
 
 # Degradable covariates only (for clean_only / degraded scenarios):
-python tune_xgboost.py --scenario clean_only
+python forecasting/models/tuning/tune_xgboost.py --scenario clean_only
 
 # Override data or other options:
-python tune_xgboost.py --data data/OtherDataset.csv --horizon 24 --trials 600
+python forecasting/models/tuning/tune_xgboost.py --data data/OtherDataset.csv --horizon 24 --trials 600
 ```
 Output: `results/tuning/xgboost_best_params_<timestamp>.json`
 
@@ -189,10 +179,6 @@ cd ../seoul-bike-demand
 
 Requires `n_train_samples` (4096) observations — early folds are automatically skipped.
 
-**Test installation:**
-```bash
-python testing/test_single_model.py --model tabpfn
-```
 
 ## Adding a New Model
 
@@ -241,16 +227,16 @@ python testing/test_single_model.py --model my_model
 
 ## Results Files
 
-**Aggregated results** (`results/results_master_v4.csv`): one row per model-horizon-scenario combination.
-- `dataset`, `run_name`, `timestamp`, `model`, `horizon`, `weather_scenario`
+**Aggregated results** (`results/results_master_{version}.csv`): one row per model-horizon-scenario combination.
+- `dataset`, `run_name`, `version`, `timestamp`, `model`, `horizon`, `weather_scenario`
 - `MAE_mean`, `MAE_std`, `RMSE_mean`, `RMSE_std`, `MASE_mean`, `MASE_std`, `sMAPE_mean`, `sMAPE_std`
 
-**Detailed results** (`results/detailed_results_master_v4.csv`): one row per fold.
+**Detailed results** (`results/detailed_results_master_{version}.csv`): one row per fold.
 - All columns above plus `fold`, `test_imputed`, `train_imputed`
 
 Both files accumulate across runs and datasets (append mode). Get latest results for a specific dataset only:
 ```python
-df = pd.read_csv('results/detailed_results_master_v4.csv')
+df = pd.read_csv('results/detailed_results_master_{version}.csv')
 df['timestamp'] = pd.to_datetime(df['timestamp'])
 latest = (df[df['dataset'] == 'seoul']
           .sort_values('timestamp')
@@ -259,7 +245,7 @@ latest = (df[df['dataset'] == 'seoul']
           .reset_index())
 ```
 
-The version suffix (`v4`) is controlled by `config.results_version` in `config.py`.
+The version suffix is controlled by `config.results_version` in `config.py`.
 
 ## Checkpointing & Recovery
 
@@ -267,10 +253,10 @@ Checkpoints are saved after every completed `(dataset, model, horizon, scenario)
 
 ```bash
 # Resume a multi-city run
-python main.py --cities seoul washington london
+python forecasting/main.py --cities seoul washington london
 
 # Resume a single-city run
-python run_weather_baseline.py  # uses same experiment_name from config
+python forecasting/run_weather_baseline.py  # uses same experiment_name from config
 ```
 
 The experiment name is derived automatically as `{dataset_name}_{results_version}` (e.g. `seoul_v4`). Checkpoint files are at `results/checkpoint_{experiment_name}.json`.
@@ -283,32 +269,3 @@ Access at: `https://wandb.ai/{entity}/bike-forecasting/runs`
 
 All datasets log to the same W&B project (`bike-forecasting`), distinguished by the `dataset` field logged per run. The project name is controlled by `config.wandb_project`. Test scripts can override it: `config.wandb_project = "bike-forecasting-testing"`.
 
-## Common Issues
-
-### SARIMAX convergence warnings
-**Issue:** "Maximum Likelihood optimization failed to converge"
-**Fix:** Increase `maxiter` in `statistical.py` (~line 164): change to `maxiter=200`
-**Note:** Expected during tuning — `auto_arima` handles it automatically
-
-### TabPFN skips early folds
-**Issue:** "TabPFN requires 4096+ samples, got XXXX"
-**Note:** Expected behavior. Early folds with insufficient history are skipped automatically.
-
-### Detailed results CSV not created
-**Fix:** Ensure the run completes at least one fold successfully. Check console for "Results saved" message.
-
-### Interrupted run not resuming
-**Fix:** Ensure `experiment_name` exactly matches the interrupted run. Checkpoint file is at `results/checkpoint_{run_name}.json`.
-
-<!-- ### TabPFN requires 4096+ samples
-**Issue:** "TabPFN requires min 4096 samples, got XXXX"
-**Fix:** Early folds may have <4096 samples - they're automatically skipped
-**Note:** This is expected behavior, not an error
-
-## Tips
-
-1. **Start small**: Test with 1 model, 1 horizon, 3 folds before full runs
-2. **Monitor W&B**: Check logs during runs for errors
-3. **Use checkpoints**: Long runs should use unique experiment names for recovery
-4. **Tune parameters first**: Run tuning scripts before full experiments
-5. **Check imputation**: Review imputed fold counts in results -->
