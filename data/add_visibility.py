@@ -11,10 +11,10 @@ VISUALCROSSING_KEY = os.getenv('VISUALCROSSING_KEY')
 
 # ── Config ────────────────────────────────────────────────────────────────────
 DATASETS = {
-    # "London": {
-    #     "path": "data/LondonBikeData.csv",
-    #     "location": "London,UK",
-    # },
+    "London": {
+        "path": "data/LondonBikeData.csv",
+        "location": "London,UK",
+    },
     "Washington": {
         "path": "data/WashingtonBikeData.csv",
         "location": "Washington,DC",
