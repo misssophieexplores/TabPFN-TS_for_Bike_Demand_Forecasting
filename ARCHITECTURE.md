@@ -27,19 +27,10 @@ forecasting/
 │   ├── cv.py                # TimeSeriesCV with dynamic fold calculation
 │   └── metrics.py           # MAE, RMSE, MASE, sMAPE
 ├── testing/
-│   ├── wandb/                       # W&B artifacts and cache
-│   ├── weather_partial_test/        # Partial weather test data
-│   ├── tabpfn-v2-regressor-2noar4o2.ckpt  # TabPFN checkpoint
-│   ├── test_experiment_runner.py
-│   ├── test_full_experiment.py
-│   ├── test_infrastructure.py
 │   ├── test_max_degradation.py
-│   ├── test_single_model.py
-│   ├── test_tabpfn.py
-│   ├── test_weather_all_scenarios.py
-│   ├── test_weather_partial_baseline.py
 │   ├── test_weather_single_model.py
 │   └── test_weather_unit.py
+├── main.py                  # Running experiments for all cities and scenarios
 ├── run_experiments.py       # ForecastingExperiment class with W&B logging and checkpointing
 └── run_weather_baseline.py  # Weather degradation baseline runner (callable programmatically)
 
@@ -49,13 +40,13 @@ data/
 ├── LondonBikeData.csv
 └── WashingtonBikeData.csv
 
-results/                                    # Output directory 
+results/                                           # Output directory 
 ├── figures/                 
 ├── tables/
-├── tuning/                                 # Tuning results (JSON)
+├── tuning/                                        # Tuning results (JSON)
 ├── results_master_{version}.csv                   # Aggregated results (all datasets)
 ├── detailed_results_master_{version}.csv          # Fold-level results (all datasets)
-└── checkpoint_{experiment_name}.json       # Per-run recovery checkpoints
+└── checkpoint_{experiment_name}_{version}.json    # Per-run recovery checkpoints
 ```
 
 ## Data Flow

@@ -79,7 +79,7 @@ def main(config=None, no_confirm=False):
 
     # Scenarios to run
     scenarios = [
-        "clean_only",   # Baseline (6 vars, no degradation)
+        "clean_only",   # NEW baseline (6 vars, no degradation)
         "degraded"      # Degraded weather (6 vars, with degradation)
         # "all_weather" # Optional: can reuse existing baseline results
     ]
@@ -167,4 +167,26 @@ def main(config=None, no_confirm=False):
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Run weather degradation baseline for a single city."
+    )
+    parser.add_argument(
+        "--city",
+        choices=["seoul", "washington", "london"],
+        required=True,
+        help="City dataset to run (required).",
+    )
+    args = parser.parse_args()
+
+    from config_seoul import get_config as seoul_config
+    from config_washington import get_config as washington_config
+    from config_london import get_config as london_config
+
+    city_configs = {
+        "seoul":      seoul_config,
+        "washington": washington_config,
+        "london":     london_config,
+    }
+
+    main(config=city_configs[args.city]())
