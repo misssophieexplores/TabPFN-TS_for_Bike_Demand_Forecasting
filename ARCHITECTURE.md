@@ -1,4 +1,4 @@
-# Seoul Bike Forecasting - Architecture
+# Shared Bike Demand Forecasting - Architecture
 
 
 ## Project Structure
@@ -53,8 +53,8 @@ results/                                    # Output directory
 ├── figures/                 
 ├── tables/
 ├── tuning/                                 # Tuning results (JSON)
-├── results_master_v4.csv                   # Aggregated results (all datasets)
-├── detailed_results_master_v4.csv          # Fold-level results (all datasets)
+├── results_master_{version}.csv                   # Aggregated results (all datasets)
+├── detailed_results_master_{version}.csv          # Fold-level results (all datasets)
 └── checkpoint_{experiment_name}.json       # Per-run recovery checkpoints
 ```
 
@@ -62,8 +62,8 @@ results/                                    # Output directory
 
 1. **Load**: `load_and_prepare_data()` reads CSV, parses dates, sorts by time, normalizes and appends holiday and season columns to `weather_covariates`
 2. **Scenario Setup**: `WeatherProcessor` selects variables based on scenario
-3. **Split**: `TimeSeriesCV.split()` creates expanding window train/test folds
-4. **Weather Preparation**: Per-fold degradation (if scenario = 'degraded')
+3. **Split**: `TimeSeriesCV.split()` creates rolling window train/test folds
+4. **Weather Preparation**: Per-fold weather preparation via `WeatherProcessor.prepare_weather_data(split=...)`. Training data always uses clean observed weather. For the 'degraded' scenario, test data receives per-row lead-time noise: row *i* is degraded using lead time *(i + 1)* hours, so error grows from near-zero at the first step up to full-horizon noise at the last step.
 5. **Fit**: `model.fit(y_train, X_train)` trains on each fold
 6. **Predict**: `model.predict(horizon, X_test)` generates forecasts
 7. **Evaluate**: `MetricsCalculator.calculate_all()` computes metrics
@@ -73,26 +73,28 @@ results/                                    # Output directory
 **Weather Data Flow:**
 - **all_weather**: Use all weather columns from `config.weather_covariates` as-is (not used for V3)
 - **clean_only**: 6 degradable columns + holiday + season (no degradation)
-- **degraded**: 6 degradable columns + holiday + season + apply degradation to degradable columns only with seed(fold_idx, horizon)
+- **degraded**: 6 degradable columns + holiday + season + apply degradation to degradable columns only with seed(fold_idx, horizon). Degradation applied to **test split only** (training always uses clean observed weather). Each test row receives noise scaled to its own lead time (row *i* → lead time *i + 1* hours).
 
 ## Core Components
 
 ### Configuration (`config.py` + city configs)
-- `config.py`: Shared base dataclass. Contains only fields that are identical across all datasets: `wandb_project`, `results_version`, `horizons`, `n_folds`, `n_train_samples`, `seasonal_period`, `degradation_seed`, `weather_scenarios`, `output_dir`. Dataset-specific fields default to `None`.
+- `config.py`: Shared base dataclass. Contains only fields that are identical across all datasets: `wandb_project`, `results_version`, `horizons`, `n_folds`, `n_train_samples`, `seasonal_period`, `degradation_seed`, `weather_scenarios`, `output_dir`, `verbose`. Dataset-specific fields default to `None`.
 - `config_seoul.py`, `config_london.py`, `config_washington.py`: Each exposes a `get_config()` function that instantiates `ForecastConfig` and overrides all dataset-specific fields. To update `wandb_project` or `results_version`, change `config.py` only — all cities pick it up automatically.
-- Dataset-specific fields (set per city): `data_filename`, `dataset_name`, `date_col`, `target_col`, `functioning_day_col`, `holiday_col`, `season_col`, `season_mapping`, `weather_covariates`, `weather_degradation_mapping`, `arima_params_file`, `sarimax_params_file`, `xgb_params_file`
+- Dataset-specific fields (set per city): `data_filename`, `dataset_name`, `date_col`, `target_col`, `functioning_day_col`, `holiday_col`, `holiday_mapping`, `season_col`, `season_mapping`, `weather_covariates`, `weather_degradation_mapping`, `arima_params_file`, `sarimax_params_file`, `xgb_params_file`
 - Horizons: [6, 24, 48, 168] hours
 - Training size: 4096 observations
 - Number of folds: 20
 - Weather scenarios: ['all_weather', 'clean_only', 'degraded']
 - Degradation seed: 42 (reproducible error simulation)
 - `holiday_col`: Optional column name for public holidays (normalized to 0/1, appended to `weather_covariates` at load time)
+- `holiday_mapping`: Explicit dict mapping raw holiday string values → 0/1 (e.g. `{'Holiday': 1, 'No Holiday': 0}`). Required when `holiday_col` contains strings; set to `None` for numeric columns.
 - `season_col`: Optional column name for season (normalized to 0–3 int via `season_mapping`, appended to `weather_covariates` at load time)
 - `season_mapping`: Explicit per-dataset dict mapping raw season values to 0–3 integers (handles strings, 0-based, and 1-based encodings)
+- `verbose`: If `True`, prints detailed progress (CV info, data loading, W&B URLs). Set to `False` in city configs for cluster/server runs where stdout is captured in SLURM logs.
 
 ### Weather Degradation (`weather/`)
 **WeatherProcessor**: Orchestrates weather data preparation for scenarios
-- `prepare_weather_data()`: Main entry point, applies scenario logic
+- `prepare_weather_data(split='train'|'test')`: Main entry point, applies scenario logic. Training split always returns clean weather; test split applies degradation with per-row lead times for the 'degraded' scenario.
 - `get_weather_columns()`: Returns appropriate columns per scenario
 - `degrade_dataframe()`: On-the-fly degradation with proper seeding
 
@@ -101,17 +103,17 @@ results/                                    # Output directory
 2. **clean_only**: 6 degradable variables + holiday + season (excludes Dew point), no degradation
 3. **degraded**: 6 degradable variables + holiday + season with realistic NWP forecast errors on degradable columns only
 
-**Degradation Variables (6):**
+**Degradation Variables (6, currently — see TODO below):**
 - Temperature → Additive Gaussian error
 - Humidity → Additive Gaussian error
 - Wind speed → Additive Gaussian (reflected at 0)
-- Visibility → Multiplicative lognormal error
 - Solar Radiation → Heteroscedastic Gaussian error
 - Rainfall → Multiplicative lognormal + event detection
 - Snowfall → Multiplicative lognormal + event detection
 
 **Non-degradable Variables (excluded from degradation, always passed through as-is):**
 - Dew point temperature (excluded from `weather_degradation_mapping`, excluded from all scenarios)
+- Visibility — TODO: add degradation function and re-include in `weather_degradation_mapping`
 - Holiday (`config.holiday_col`) — passed through in clean_only and degraded
 - Season (`config.season_col`) — passed through in clean_only and degraded
 
@@ -222,7 +224,7 @@ results/                                    # Output directory
 
 ### Cross-Validation (`evaluation/cv.py`)
 **TimeSeriesCV**:
-- Expanding window split
+- Rolling window split — fixed-size training window advances by `horizon` hours with each fold
 - Dynamically calculates first fold date and actual number of folds
 - Tracks imputed data per fold (train_imputed, test_imputed)
 - Ensures minimum training size and exact horizon test size
@@ -238,8 +240,8 @@ results/                                    # Output directory
 Runs all datasets sequentially without manual intervention.
 - Imports each city config via `get_config()` and passes it to `run_weather_baseline.main()`
 - Bypasses the interactive confirmation prompt (`no_confirm=True`)
-- Catches per-city failures and continues to the next city
-- Prints a summary of pass/fail at the end
+- Catches per-city failures, writes full traceback to `errors_{version}.log`, and continues to the next city
+- Prints timestamped `[STARTING]`, `[OK]`, and `[FAILED]` lines to stdout; prints a pass/fail summary at the end
 - Accepts `--cities` flag to run a subset (e.g. `python main.py --cities seoul london`)
 
 ### Experiment Runner (`run_experiments.py`)
@@ -250,6 +252,7 @@ Runs all datasets sequentially without manual intervention.
 - Runs all model-horizon-scenario combinations
 - Saves aggregated and detailed results
 - Automatic skip logic: models without covariates skip 'degraded' scenario
+- Fold-level errors logged to `errors_{version}.log` with full traceback; `[ERROR]` line always printed to stdout regardless of `verbose`
 
 ### Experiment Runner (`run_weather_baseline.py`)
 **`main(config=None, no_confirm=False)`**: Main runner used for paper results
@@ -259,8 +262,9 @@ Runs all datasets sequentially without manual intervention.
 - All horizons: [6, 24, 48, 168] hours, 20 folds
 - Loads tuned hyperparameters from JSON
 - Auto-skips degraded scenario for models without covariates
-- Displays degradation impact summary
+- Displays degradation impact summary (gated behind `config.verbose`)
 - Uses ForecastingExperiment class for W&B logging, checkpointing, and result saving
+- Errors written to `errors_{version}.log` with full traceback before re-raising
 
 
 ## Key Design Decisions
@@ -288,7 +292,7 @@ Rationale:
 - Different errors per fold (realistic variability)
 
 ### Dynamic CV Fold Calculation
-First fold date calculated as: `data_start + n_train_samples`
+First fold cutoff counted back from end of dataset: `data_end - (n_folds * max_horizon)`
 Actual folds = `min(requested_folds, available_data // longest_horizon)`
 
 Rationale: Different horizons require different amounts of test data. Longer horizons = fewer possible folds.
@@ -298,10 +302,9 @@ Uses existing `Functioning Day` column (No = imputed)
 Tracked per fold: train_imputed, test_imputed
 Logged in detailed results for post-hoc analysis
 
-<!-- TODO: change to rolling windows for consistency with static lookback window implementation for TabPFN -->
-### Expanding Window CV
-Training set grows with each fold, test set is always exactly `horizon` hours.
-Ensures models see increasing historical context.
+### Rolling Window CV
+Training window is fixed-size and advances by `horizon` hours with each fold. Test set is always exactly `horizon` hours.
+Ensures a consistent lookback window across all folds.
 
 ### Checkpoint Recovery
 Saves completed `(dataset_name, model, horizon, scenario)` tuples to JSON after each experiment.
@@ -312,17 +315,19 @@ File format: `checkpoint_{experiment_name}.json` in `results/` directory.
 ## Data Requirements
 
 **Input CSV must have:**
-- `Date`: Datetime column (hourly frequency)
-- `Rented Bike Count`: Target variable
-- Weather covariates: Temperature, Humidity, Wind speed, Visibility, Dew point temperature, Solar Radiation, Rainfall, Snowfall
-- `Functioning Day`: Yes/No (tracks imputed data)
+- A datetime column (hourly frequency) — column name set via `config.date_col`
+- A target variable column — set via `config.target_col`
+- Weather covariates as configured in `config.weather_covariates` and `config.weather_degradation_mapping`
+- Optional: functioning day / imputation tracking column (`config.functioning_day_col`)
+- Optional: holiday column (`config.holiday_col`) — normalized to 0/1 at load time
+- Optional: season column (`config.season_col`) — normalized to 0–3 at load time via `config.season_mapping`
 
 **Weather Column Mapping:**
-Dataset columns mapped to degradation variable types via `config.weather_degradation_mapping`:
+Dataset columns mapped to degradation variable types via `config.weather_degradation_mapping`. Example (Seoul):
 - Temperature → 'temperature'
 - Humidity → 'humidity'
 - Wind speed → 'wind_speed'
-- Visibility → 'visibility'
+- Visibility → (not mapped — TODO: add degradation function)
 - Solar Radiation → 'solar_radiation'
 - Rainfall → 'precipitation'
 - Snowfall → 'precipitation'
@@ -330,8 +335,7 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 
 **Preprocessing:**
 - Sort by date
-- No filtering (includes imputed hours)
-- 8760 total observations (Dec 2017 - Nov 2018)
+- No filtering (includes imputed hours where present)
 
 ## W&B Integration
 
@@ -353,12 +357,13 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 - detailed_results_master.csv (fold-level metrics)
 
 **Projects:**
-- Production: `seoul-bike-forecasting`
-- Testing: `seoul-bike-testing`
+- Production: `bike-forecasting`
+- Testing: `bike-forecasting-testing`
 
 ## Results Schema
 
 **New columns in results_master.csv:**
+- `version`: Results version string (from `config.results_version`), stored as a separate column alongside `run_name`
 - `weather_scenario`: 'all_weather' (only used in Pilot project), 'clean_only', or 'degraded'
 - `model_uses_covariates`: Boolean (from model.use_covariates property)
 - `degradation_seed`: Random seed used (42 by default)
@@ -367,6 +372,6 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 
 ## Known Limitations
 
-1. Weather degradation is applied fixed to all weather data and does not dynamically adapt within horizons.
-2. Degradation assumes independent errors across variables (no cross-correlation)
-3. Error growth calibrated to published statistics (ECMWF, KMA); may differ for specific locations
+
+1. Degradation assumes independent errors across variables (no cross-correlation)
+2. Error growth calibrated to published statistics (ECMWF, KMA); may differ for specific locations
