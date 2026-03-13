@@ -24,7 +24,7 @@ DATASETS = {
 VC_BASE = "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline"
 SLEEP_BETWEEN_CALLS = 0.3
 
-# Set to True to fetch only the first 3 hourly records per dataset for testing.
+# Set to True to fetch only the first 5 hourly records per dataset for testing.
 # A test file (<original_name>_visibility_test.csv) will be written so you can
 # verify the merge looks correct before committing to the full download.
 # Flip to False for the real run.
@@ -63,7 +63,7 @@ def fetch_chunk(location: str, start: date, end: date) -> pd.DataFrame:
                 "timestamp":     pd.to_datetime(f"{day['datetime']} {hour['datetime']}"),
                 "visibility_km": hour.get("visibility"),
             })
-            if TEST_MODE and len(records) >= 3:
+            if TEST_MODE and len(records) >= 5:
                 return pd.DataFrame(records)
     return pd.DataFrame(records)
 
@@ -73,7 +73,7 @@ def add_visibility(name: str, path: str, location: str) -> None:
     print(f"  {name}  ({path})")
     print(f"{'='*60}")
     if TEST_MODE:
-        print(f"  TEST MODE: fetching 3 records only, saving to test file.")
+        print(f"  TEST MODE: fetching 5 records only, saving to test file.")
 
     df = pd.read_csv(path)
     df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -111,14 +111,28 @@ def add_visibility(name: str, path: str, location: str) -> None:
         print(f"  Check that file looks correct, then set TEST_MODE = False and re-run.")
         return
 
-    # Report coverage
-    missing = merged["visibility_km"].isna().sum()
-    total   = len(merged)
-    print(f"\n  Coverage: {total - missing}/{total} rows filled "
-          f"({missing} missing = {missing/total*100:.1f}%)")
-    if missing > 0:
-        print(f"  First 3 missing timestamps:")
-        print(merged[merged["visibility_km"].isna()]["timestamp"].head().to_string(index=False))
+    # Report coverage before imputation
+    missing_before = merged["visibility_km"].isna().sum()
+    total          = len(merged)
+    print(f"\n  Coverage before imputation: {total - missing_before}/{total} rows filled "
+          f"({missing_before} missing = {missing_before/total*100:.1f}%)")
+
+    # Fill gaps with linear interpolation (= average between surrounding values).
+    # limit=5 ensures we never interpolate across a gap larger than 5 consecutive
+    # hours -- anything longer is left as NaN and flagged below.
+    if missing_before > 0:
+        print(f"  Filling gaps with linear interpolation...")
+        merged["visibility_km"] = merged["visibility_km"].interpolate(
+            method="linear", limit=5, limit_direction="both"
+        )
+
+    missing_after = merged["visibility_km"].isna().sum()
+    if missing_after > 0:
+        print(f"  WARNING: {missing_after} values still missing after interpolation "
+              f"(gaps > 5 hours). Timestamps:")
+        print(merged[merged["visibility_km"].isna()]["timestamp"].to_string(index=False))
+    else:
+        print(f"  All gaps filled.")
 
     merged.to_csv(path, index=False)
     print(f"  Saved -> {path}")
