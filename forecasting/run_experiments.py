@@ -148,10 +148,10 @@ class ForecastingExperiment:
             X_test = None
             if model.use_covariates:
                 X_train = weather_proc.prepare_weather_data(
-                    train_df, weather_scenario, horizon, fold_idx
+                    train_df, weather_scenario, horizon, fold_idx, split="train"
                 )
                 X_test = weather_proc.prepare_weather_data(
-                    test_df, weather_scenario, horizon, fold_idx
+                    test_df, weather_scenario, horizon, fold_idx, split="test"
                 )
 
             # Append calendar time features for models that need them (e.g. XGBoost).

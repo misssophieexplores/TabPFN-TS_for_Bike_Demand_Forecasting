@@ -88,12 +88,28 @@ These values are derived from Sukovich et al. (2014) reporting Day 1 POD ≈ 0.6
 
 ## Noise Application
 
+### Train / Test Split
+
+Degradation is applied **only to the test (forecast) window**. Training data always uses clean observed weather.
+
+This reflects the operational reality: a model is fitted on historical observations, then deployed with NWP forecast inputs. Degrading training covariates would conflate fitting-time and inference-time uncertainty, obscuring the robustness signal the experiment is designed to measure.
+
+### Per-Row Lead Times
+
+Within a test window of length *h*, each row receives noise calibrated to its own lead time rather than the maximum horizon. Row *i* (0-indexed) represents the forecast for step *i + 1* hours ahead, so it is degraded using σ(i + 1):
+
+- **Row 0** → σ(1 h): near-zero noise  
+- **Row h/2** → σ(h/2): mid-range noise  
+- **Row h − 1** → σ(h): full-horizon noise
+
+This is physically correct because a horizon-*h* NWP forecast covers *h* consecutive future hours, and error grows continuously with lead time. The previous implementation applied the maximum-horizon noise uniformly to every row, which overestimated degradation for all but the final prediction step.
+
 ### Two-Phase Degradation Process
 
 Weather degradation is applied in two sequential phases to maintain physical consistency:
 
 **Phase 1: Independent Variable Degradation**
-All weather variables are degraded independently according to their respective error models (described below).
+All weather variables are degraded independently according to their respective error models, using per-row lead times as described above.
 
 **Phase 2: Physical Consistency Correction**
 After independent degradation, precipitation types (rain vs. snow) are corrected based on degraded temperature to prevent physically impossible combinations (e.g., snowfall at 15°C or rainfall at -5°C).

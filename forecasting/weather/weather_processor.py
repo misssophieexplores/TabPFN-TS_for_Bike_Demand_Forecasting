@@ -23,8 +23,8 @@ class WeatherProcessor:
     
     Handles three scenarios:
     - all_weather: All 8 variables, no degradation
-    - clean_only: 7 degradable variables (exclude Dew point), no degradation
-    - degraded: 7 degradable variables (exclude Dew point), with degradation
+    - clean_only: 6 degradable variables (exclude Dew point), no degradation
+    - degraded: 6 degradable variables (exclude Dew point), with degradation
     
     Parameters
     ----------
@@ -67,16 +67,16 @@ class WeatherProcessor:
             
         Notes
         -----
-        - all_weather: All 8 variables from config.weather_covariates
-        - clean_only: Only the 7 degradable variables (excludes Dew point)
-        - degraded: Same 7 degradable variables as clean_only
+        - all_weather: All (8) variables from config.weather_covariates
+        - clean_only: Only the 6 degradable variables (excludes Dew point)
+        - degraded: Same 6 degradable variables as clean_only
         """
         if scenario == "all_weather":
             # Return all 8 weather variables
             return self.config.weather_covariates.copy()
         
         elif scenario in ["clean_only", "degraded"]:
-            # Return only degradable variables (7 vars, exclude Dew point)
+            # Return only degradable variables (6 vars, exclude Dew point and visibility)
             # These are the ones in weather_degradation_mapping
             degradable_vars = list(self.config.weather_degradation_mapping.keys())
 
@@ -104,7 +104,8 @@ class WeatherProcessor:
         df: pd.DataFrame,
         scenario: str,
         horizon: int,
-        fold_idx: int
+        fold_idx: int,
+        split: str = "train"
     ) -> Optional[pd.DataFrame]:
         """
         Prepare weather data for a specific scenario and fold.
@@ -119,6 +120,22 @@ class WeatherProcessor:
             Forecast horizon in hours (6, 24, 48, 168)
         fold_idx : int
             CV fold index for seed generation
+        split : str, default='train'
+            'train' or 'test'.  Controls whether and how degradation is applied:
+
+            - 'train': **no degradation even in the 'degraded' scenario**.
+              In an operational setting the model is fitted on historical
+              *observed* weather, not on NWP forecasts.  Degrading training
+              covariates would conflate train/test domain shift with the
+              robustness signal we want to measure.
+
+            - 'test': degradation uses **row-varying lead times** (1 h for
+              the first prediction step, 2 h for the second, …, horizon h
+              for the last step).  This is physically correct because a
+              horizon-h forecast covers h consecutive future hours and the
+              NWP error grows with each additional hour of lead time.
+              The old behaviour (same max-horizon noise on every test row)
+              overestimated degradation for near-term steps.
             
         Returns
         -------
@@ -136,13 +153,13 @@ class WeatherProcessor:
         Examples
         --------
         >>> processor = WeatherProcessor(config)
-        >>> # Get clean weather (no degradation)
-        >>> X_clean = processor.prepare_weather_data(
-        ...     test_df, 'clean_only', horizon=24, fold_idx=5
+        >>> # Training data — always clean (observed weather)
+        >>> X_train = processor.prepare_weather_data(
+        ...     train_df, 'degraded', horizon=24, fold_idx=5, split='train'
         ... )
-        >>> # Get degraded weather
-        >>> X_degraded = processor.prepare_weather_data(
-        ...     test_df, 'degraded', horizon=24, fold_idx=5
+        >>> # Test data — row-varying lead-time noise
+        >>> X_test = processor.prepare_weather_data(
+        ...     test_df, 'degraded', horizon=24, fold_idx=5, split='test'
         ... )
         """
         # Get appropriate columns for this scenario
@@ -151,8 +168,10 @@ class WeatherProcessor:
         # Extract weather data
         weather_df = df[weather_cols].copy()
         
-        # Apply degradation if scenario is 'degraded'
-        if scenario == "degraded":
+        # Apply degradation only to test split in the 'degraded' scenario.
+        # Training data always uses clean (observed) weather so that the
+        # experiment measures degradation at inference time, not during fitting.
+        if scenario == "degraded" and split == "test":
             weather_df = self.degrade_dataframe(
                 weather_df,
                 horizon,
@@ -168,14 +187,15 @@ class WeatherProcessor:
         fold_idx: int
     ) -> pd.DataFrame:
         """
-        Apply degradation to weather dataframe.
+        Apply degradation to weather dataframe with row-varying lead times.
         
         Parameters
         ----------
         df : pd.DataFrame
-            Weather dataframe with degradable columns
+            Weather dataframe with degradable columns (test split only)
         horizon : int
-            Forecast horizon in hours (6, 24, 48, 168)
+            Forecast horizon in hours (6, 24, 48, 168).  Also the number of
+            rows in df for a single test window.
         fold_idx : int
             CV fold index for seed generation
             
@@ -190,16 +210,19 @@ class WeatherProcessor:
         - fold_seed = base_seed + fold_idx
         - horizon_seed = fold_seed + horizon
         - This ensures reproducibility and independence
-        
-        Degradation parameters are computed on-the-fly from the data.
-        This is cheap (just percentile calculations) and avoids caching issues.
+
+        Lead-time assignment:
+        - Row i (0-indexed) represents the forecast for 1 hour ahead at
+          step i, so it receives noise calibrated to lead time (i+1) hours.
+        - This means the first test step gets near-zero noise (1 h lead) and
+          the last step gets full horizon noise — physically correct behaviour.
         """
         # Compute fold-specific seed
         fold_seed = self.config.degradation_seed + fold_idx
         horizon_seed = fold_seed + horizon
         
-        # Create RNG for this fold and horizon
-        rng = np.random.default_rng(seed=horizon_seed)
+        # Per-row lead times: step 0 → 1 h, step 1 → 2 h, …, step h-1 → h
+        lead_times = np.arange(1, len(df) + 1)
         
         # Compute degradation parameters from data
         # (cheap operation, just percentile calculations)
@@ -208,13 +231,14 @@ class WeatherProcessor:
             self.config.weather_degradation_mapping
         )
         
-        # Apply degradation
+        # Apply degradation with per-row lead times
         df_degraded = degrade_weather_dataset(
             df=df,
-            horizon_hours=horizon,
+            horizon_hours=horizon,      # fallback scalar (unused when lead_times given)
             degradation_params=degradation_params,
             column_mapping=self.config.weather_degradation_mapping,
-            seed=horizon_seed
+            seed=horizon_seed,
+            lead_times=lead_times
         )
         
         return df_degraded
@@ -240,7 +264,7 @@ class WeatherProcessor:
         >>> print(summary)
         {
             'scenario': 'degraded',
-            'num_vars': 7,
+            'num_vars': 6,
             'variables': ['Temperature', 'Humidity', ...],
             'degraded': True
         }

@@ -327,7 +327,7 @@ def fix_precipitation_type(df_degraded, temp_col='Temperature',
 
 
 def degrade_weather_dataset(df, horizon_hours, degradation_params, 
-                            column_mapping=None, seed=42):
+                            column_mapping=None, seed=42, lead_times=None):
     """
     Apply forecast degradation to all weather variables in a dataset.
     
@@ -340,7 +340,8 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
     df : pd.DataFrame
         Dataset with weather columns
     horizon_hours : int
-        Forecast lead time (6, 24, 48, or 168)
+        Forecast lead time used when lead_times is None (6, 24, 48, or 168).
+        Ignored when lead_times is provided.
     degradation_params : dict
         Parameters from prepare_degradation_parameters()
     column_mapping : dict, optional
@@ -349,6 +350,12 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
         If None, uses exact lowercase matching.
     seed : int or None, default=42
         Random seed for reproducibility. Use seed=None for truly random results.
+    lead_times : array-like of int, optional
+        Per-row forecast lead times in hours (length must equal len(df)).
+        When provided, each row i is degraded using lead_times[i] instead of
+        the scalar horizon_hours.  Pass np.arange(1, horizon+1) for a test
+        window so that the first predicted hour uses 1-hour noise and the last
+        uses full-horizon noise — which is the physically correct behaviour.
     
     Returns
     -------
@@ -368,8 +375,12 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
     >>> column_mapping = {'Temperature': 'temperature', 'Rainfall': 'precipitation'}
     >>> params = prepare_degradation_parameters(train_df, column_mapping)
     >>> 
-    >>> # Degrade test set for 24-hour forecast
-    >>> test_24h = degrade_weather_dataset(test_df, 24, params, column_mapping, seed=42)
+    >>> # Degrade test set — each row gets its own lead-time-appropriate noise
+    >>> row_lead_times = np.arange(1, len(test_df) + 1)
+    >>> test_degraded = degrade_weather_dataset(
+    ...     test_df, horizon_hours=24, params, column_mapping,
+    ...     seed=42, lead_times=row_lead_times
+    ... )
     """
     
     # Create reproducible seed
@@ -382,7 +393,25 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
         if col not in df.columns:
             continue
         
-        if var_type == 'solar_radiation':
+        if lead_times is not None:
+            # Per-row degradation: each step uses its own lead time
+            degraded_values = []
+            for i, val in enumerate(df[col]):
+                lt = int(lead_times[i])
+                if var_type == 'solar_radiation':
+                    degraded_values.append(
+                        degrade_weather_forecast(
+                            val, var_type, lt,
+                            solar_cap=degradation_params['solar_cap'],
+                            rng=rng
+                        )
+                    )
+                else:
+                    degraded_values.append(
+                        degrade_weather_forecast(val, var_type, lt, rng=rng)
+                    )
+            df_degraded[col] = degraded_values
+        elif var_type == 'solar_radiation':
             df_degraded[col] = df[col].apply(
                 lambda x: degrade_weather_forecast(
                     x, var_type, horizon_hours, 
