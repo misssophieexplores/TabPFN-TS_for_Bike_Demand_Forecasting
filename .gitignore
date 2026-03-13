@@ -4,3 +4,4 @@ forecasting/testing/weather_partial_test
 __pycache__
 forecasting/weather/EVIDENCE_MAPPING.md
 wandb/
+tabpfn-v2-regressor-2noar4o2.ckpt

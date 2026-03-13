@@ -11,9 +11,9 @@ Two variants:
 """
 
 import os
-#TODO: remove before running on GPU, or set dynamically based on environment
-os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
-os.environ['TABPFN_ALLOW_CPU_LARGE_DATASET'] = '1'
+# #TODO: remove before running on GPU, or set dynamically based on environment
+# os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
+# os.environ['TABPFN_ALLOW_CPU_LARGE_DATASET'] = '1'
 
 import torch
 torch.set_num_threads(1)

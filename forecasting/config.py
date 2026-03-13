@@ -34,11 +34,17 @@ class ForecastConfig:
     sarimax_params_file: Optional[str] = None
     xgb_params_file: Optional[str] = None
 
+    # # --- Forecasting (shared) ---
+    # horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168])
+    # n_folds: int = 20
+    # n_train_samples: int = 4096
+    # seasonal_period: int = 24
     # --- Forecasting (shared) ---
-    horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168])
-    n_folds: int = 20
-    n_train_samples: int = 4096
+    horizons: List[int] = field(default_factory=lambda: [6])
+    n_folds: int = 2
+    n_train_samples: int = 500
     seasonal_period: int = 24
+
 
     # --- Weather degradation (shared) ---
     degradation_seed: int = 42
@@ -50,11 +56,15 @@ class ForecastConfig:
 
     # --- Output (shared) ---
     output_dir: str = "results"
-    results_version: str = "v5" 
+    results_version: str = "t5-01" 
     verbose: bool = False
 
+    # # --- W&B (shared) ---
+    # wandb_project: str = "bike-forecasting"
+    # experiment_name: Optional[str] = None
+
     # --- W&B (shared) ---
-    wandb_project: str = "bike-forecasting"
+    wandb_project: str = "bike-forecasting-testing" #TODO
     experiment_name: Optional[str] = None
 
     def __post_init__(self):
