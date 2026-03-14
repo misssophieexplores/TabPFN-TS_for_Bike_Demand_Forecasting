@@ -3,6 +3,7 @@ Statistical forecasting models - FIXED VERSION.
 """
 import numpy as np
 import pandas as pd
+import warnings
 from typing import Optional
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
@@ -165,7 +166,12 @@ class SARIMAXForecaster(BaseForecaster):
             enforce_invertibility=False
         )
         self.model_fit = self.model.fit(disp=False, maxiter=200, method='lbfgs')
+
+        if not self.model_fit.mle_retvals['converged']:
+            warnings.warn(f"SARIMAX did not converge — results may be unreliable")
+
         self._is_fitted = True
+
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
         """
