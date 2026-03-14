@@ -32,6 +32,7 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
         - 'wind_speed' : 10-meter wind speed (m/s)
         - 'solar_radiation' : Solar irradiance (MJ/m² hourly)
         - 'precipitation' : Precipitation amount (mm)
+        - 'visibility' : Visibility (km)
     horizon_hours : int
         Forecast lead time in hours. Typical values: 6, 24, 48, 168
     solar_cap : float, optional

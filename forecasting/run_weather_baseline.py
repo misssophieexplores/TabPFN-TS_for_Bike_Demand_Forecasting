@@ -2,8 +2,8 @@
 Weather Degradation Baseline Experiments
 
 Runs complete baseline with weather scenarios:
-- clean_only: 6 degradable variables, no degradation (NEW baseline)
-- degraded: 6 degradable variables, with forecast errors (robustness test)
+- clean_only: 7 degradable variables, no degradation (NEW baseline)
+- degraded: 7 degradable variables, with forecast errors (robustness test)
 
 Optimizations:
 - Models without covariates automatically skipped in degraded scenario
@@ -79,8 +79,8 @@ def main(config=None, no_confirm=False):
 
     # Scenarios to run
     scenarios = [
-        "clean_only",   # NEW baseline (6 vars, no degradation)
-        "degraded"      # Degraded weather (6 vars, with degradation)
+        "clean_only",   # Baseline (7 vars, no degradation)
+        "degraded"      # Degraded weather (7 vars, with degradation)
         # "all_weather" # Optional: can reuse existing baseline results
     ]
     

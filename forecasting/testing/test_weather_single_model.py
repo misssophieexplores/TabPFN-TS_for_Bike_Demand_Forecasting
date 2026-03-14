@@ -1,217 +1,163 @@
 """
-Unit tests for weather degradation functions.
+Test single model with weather scenarios.
 
-Run with: pytest test_weather_unit.py -v
+Usage:
+  python forecasting/testing/test_weather_single_model.py --city seoul --model tabpfn --scenario degraded
+  python forecasting/testing/test_weather_single_model.py --city seoul --model xgboost --scenario clean_only
+  python forecasting/testing/test_weather_single_model.py --city seoul --model arima --scenario clean_only
+
+Tests with 3 folds (quick validation)
 """
-import sys
+
+import argparse
+import json
+import pandas as pd
 from pathlib import Path
+import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import numpy as np
-import pandas as pd
-import pytest
-
-from config import ForecastConfig
-from weather.weather_degradation import (
-    degrade_weather_forecast,
-    prepare_degradation_parameters,
-    degrade_weather_dataset  
-)
+from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster
+from models.ml_models import XGBoostForecaster
+from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
+from evaluation.cv import TimeSeriesCV
+from evaluation.metrics import MetricsCalculator
 from weather.weather_processor import WeatherProcessor
+from run_experiments import load_and_prepare_data
 
-class TestWeatherDegradation:
-    """Unit tests for individual degradation functions"""
-    
-    def test_temperature_degradation_reasonable(self):
-        """Test temperature degradation produces reasonable values"""
-        rng = np.random.default_rng(seed=42)
-        actual = 15.0
-        degraded = degrade_weather_forecast(actual, 'temperature', 24, rng=rng)
-        
-        # Should be within reasonable range (e.g., ±10°C)
-        assert abs(degraded - actual) < 10.0, f"Degraded temp {degraded} too far from actual {actual}"
-    
-    def test_wind_speed_non_negative(self):
-        """Test wind speed is never negative"""
-        rng = np.random.default_rng(seed=42)
-        
-        # Test multiple values
-        for actual in [0.5, 1.0, 5.0]:
-            degraded = degrade_weather_forecast(actual, 'wind_speed', 168, rng=rng)
-            assert degraded >= 0, f"Wind speed {degraded} is negative!"
-    
-    def test_reproducibility(self):
-        """Test same seed produces identical results"""
-        rng1 = np.random.default_rng(seed=42)
-        rng2 = np.random.default_rng(seed=42)
-        
-        actual = 15.0
-        deg1 = degrade_weather_forecast(actual, 'temperature', 24, rng=rng1)
-        deg2 = degrade_weather_forecast(actual, 'temperature', 24, rng=rng2)
-        
-        assert deg1 == deg2, "Same seed should produce identical results"
-    
-    def test_different_seeds_different_results(self):
-        """Test different seeds produce different results"""
-        rng1 = np.random.default_rng(seed=42)
-        rng2 = np.random.default_rng(seed=99)
-        
-        actual = 15.0
-        deg1 = degrade_weather_forecast(actual, 'temperature', 24, rng=rng1)
-        deg2 = degrade_weather_forecast(actual, 'temperature', 24, rng=rng2)
-        
-        assert deg1 != deg2, "Different seeds should produce different results"
-    
-    def test_precipitation_event_detection(self):
-        """Test precipitation can have false alarms and misses"""
-        rng = np.random.default_rng(seed=42)
-        
-        # Test actual = 0 (potential false alarm)
-        # Run multiple times to see if false alarm occurs
-        false_alarms = []
-        for i in range(100):
-            rng_i = np.random.default_rng(seed=42 + i)
-            degraded = degrade_weather_forecast(0.0, 'precipitation', 24, rng=rng_i)
-            if degraded > 0:
-                false_alarms.append(degraded)
-        
-        # Should have some false alarms (but not all)
-        assert 5 < len(false_alarms) < 95, f"Expected some false alarms, got {len(false_alarms)}/100"
-    
-    def test_prepare_degradation_parameters(self):
-        """Test degradation parameter computation"""
-        column_mapping = {
-            'Temperature': 'temperature',
-            'Solar Radiation': 'solar_radiation',
-        }
 
-        df = pd.DataFrame({
-            'Temperature': np.random.randn(100) * 10 + 15,
-            'Solar Radiation': np.random.rand(100) * 3
-        })
-        
-        params = prepare_degradation_parameters(df, column_mapping)
-        
-        assert 'solar_cap' in params
-        assert params['solar_cap'] > 0
-    
-    def test_degrade_dataframe(self):
-        """Test dataframe degradation"""
-        column_mapping = {
-            'Temperature': 'temperature',
-            'Humidity': 'humidity',
-            'Wind speed': 'wind_speed',
-            'Solar Radiation': 'solar_radiation',
-        }
+def build_model_map(config, arima_cfg, sarimax_cfg, xgb_cfg):
+    return {
+        'seasonal_naive':   SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
+        'arima':            ARIMAForecaster(order=tuple(arima_cfg["order"])),
+        'sarimax':          SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
+        'xgboost':          XGBoostForecaster(n_lags=xgb_cfg["n_lags"], **xgb_cfg["xgb_params"]),
+        'tabpfn':           TabPFNPipelineForecaster(),
+        'tabpfn_noweather': TabPFNPipelineForecaster_NoWeather(),
+    }
 
-        df = pd.DataFrame({
-            'Temperature': [15.0, 16.0, 17.0],
-            'Humidity': [60.0, 65.0, 70.0],
-            'Wind speed': [2.0, 3.0, 4.0],
-            'Solar Radiation': [1.5, 2.0, 2.5]
-        })
-        
-        params = prepare_degradation_parameters(df, column_mapping)
-        
-        df_degraded = degrade_weather_dataset(
-            df, 24, params, column_mapping,
-            seed=42
-        )
-        
-        assert df_degraded.shape == df.shape
-        assert list(df_degraded.columns) == list(df.columns)
-        assert not df_degraded.equals(df)
 
-    def _make_weather_processor(self):
-        """Helper: minimal config + WeatherProcessor that doesn't need real data."""
-        config = ForecastConfig()
-        config.dataset_name = "test"
-        config.degradation_seed = 42
-        config.weather_covariates = [
-            'Temperature', 'Humidity', 'Wind speed', 'Solar Radiation',
-            'Rainfall', 'Snowfall',
-        ]
-        config.weather_degradation_mapping = {
-            'Temperature': 'temperature',
-            'Humidity': 'humidity',
-            'Wind speed': 'wind_speed',
-            'Solar Radiation': 'solar_radiation',
-            'Rainfall': 'precipitation',
-            'Snowfall': 'precipitation',
-        }
-        config.holiday_col = None
-        config.season_col = None
-        return WeatherProcessor(config)
+def test_single_model_scenario(config, model_map, model_name: str, scenario: str, n_folds: int = 3):
+    if model_name not in model_map:
+        print(f"Unknown model: {model_name}")
+        print(f"Available: {list(model_map.keys())}")
+        return
 
-    def _make_test_df(self, n_rows=24):
-        """Helper: synthetic weather DataFrame with n_rows rows."""
-        rng = np.random.default_rng(seed=0)
-        return pd.DataFrame({
-            'Temperature':    rng.normal(15, 5, n_rows),
-            'Humidity':       rng.uniform(40, 90, n_rows),
-            'Wind speed':     rng.uniform(0.5, 8, n_rows),
-            'Solar Radiation': rng.uniform(0, 3, n_rows),
-            'Rainfall':       np.zeros(n_rows),
-            'Snowfall':       np.zeros(n_rows),
-        })
+    df, _ = load_and_prepare_data(config)
 
-    def test_train_data_never_degraded(self):
-        """Training data must be identical for clean_only and degraded scenarios.
+    config.n_folds = n_folds
+    model = model_map[model_name]
+    cv = TimeSeriesCV(config)
+    calc = MetricsCalculator()
+    weather_proc = WeatherProcessor(config)
 
-        In an operational setting the model is trained on observed weather, not
-        NWP forecasts.  Degrading training covariates would conflate fitting-time
-        and inference-time uncertainty, so prepare_weather_data(..., split='train')
-        must always return clean data regardless of scenario.
-        """
-        processor = self._make_weather_processor()
-        df = self._make_test_df()
+    scenario_info = weather_proc.get_scenario_summary(scenario)
 
-        X_train_clean = processor.prepare_weather_data(
-            df, 'clean_only', horizon=24, fold_idx=0, split='train'
-        )
-        X_train_deg = processor.prepare_weather_data(
-            df, 'degraded', horizon=24, fold_idx=0, split='train'
-        )
+    print(f"\n{'='*60}")
+    print(f"Test Configuration")
+    print(f"{'='*60}")
+    print(f"Model: {model.name}")
+    print(f"Uses covariates: {model.use_covariates}")
+    print(f"Scenario: {scenario}")
+    print(f"Variables: {scenario_info['num_vars']} - {scenario_info['variables']}")
+    print(f"Degraded: {scenario_info['degraded']}")
+    print(f"Folds: {n_folds}")
+    print(f"{'='*60}\n")
 
-        pd.testing.assert_frame_equal(
-            X_train_clean.reset_index(drop=True),
-            X_train_deg.reset_index(drop=True),
-            check_like=True,
-            obj="Training data should be identical for clean_only and degraded scenarios"
-        )
+    if not model.use_covariates and scenario == "degraded":
+        print(f"[SKIP] Model doesn't use covariates, skipping degraded scenario")
+        print("This is expected behavior!")
+        return
 
-    def test_noise_grows_with_lead_time(self):
-        """Test error magnitude increases from first to last row of the test window.
+    test_horizon = min(config.horizons)
+    print(f"Testing horizon: {test_horizon}h")
 
-        Row i is degraded with lead time (i+1) hours, so the second half of the
-        test window should have larger absolute errors than the first half on
-        average.  Verified across multiple fold seeds to guard against stochastic
-        failures on any single seed.
-        """
-        processor = self._make_weather_processor()
-        horizon = 48
-        df = self._make_test_df(n_rows=horizon)
+    splits = cv.split(df, test_horizon)
+    fold_results = []
 
-        wins = 0
-        n_trials = 10
-        for fold_idx in range(n_trials):
-            X_clean = processor.prepare_weather_data(
-                df, 'clean_only', horizon=horizon, fold_idx=fold_idx, split='test'
-            )
-            X_deg = processor.prepare_weather_data(
-                df, 'degraded', horizon=horizon, fold_idx=fold_idx, split='test'
-            )
+    for fold_idx in range(min(n_folds, len(splits))):
+        train_df, test_df = splits[fold_idx]
+        y_train = train_df[config.target_col].values
+        y_test = test_df[config.target_col].values
 
-            errors = (X_deg['Temperature'] - X_clean['Temperature']).abs()
-            first_half  = errors.iloc[:horizon // 2].mean()
-            second_half = errors.iloc[horizon // 2:].mean()
-            if second_half > first_half:
-                wins += 1
+        X_train = None
+        X_test = None
+        if model.use_covariates:
+            X_train = weather_proc.prepare_weather_data(train_df, scenario, test_horizon, fold_idx, split='train')
+            X_test = weather_proc.prepare_weather_data(test_df, scenario, test_horizon, fold_idx, split='test')
+            print(f"Fold {fold_idx}: Weather vars = {X_train.columns.tolist()}")
 
-        # Expect the second half to be noisier in the large majority of trials
-        assert wins >= 7, (
-            f"Expected noise to grow with lead time in ≥7/10 trials, got {wins}/10"
-        )
+            print(f"Fold {fold_idx}: ALL columns in X_train: {X_train.columns.tolist()}")
+            print(f"  holiday present: {config.holiday_col in X_train.columns if config.holiday_col else 'N/A (not configured)'}")
+            print(f"  season present:  {config.season_col in X_train.columns if config.season_col else 'N/A (not configured)'}")
+        try:
+            model.reset()
+            model.fit(y_train, X_train)
+            y_pred = model.predict(test_horizon, X_test)
+
+            metrics = calc.calculate_all(y_test, y_pred, y_train)
+            metrics['fold'] = fold_idx
+            metrics['scenario'] = scenario
+            metrics['num_weather_vars'] = len(X_train.columns) if X_train is not None else 0
+
+            fold_results.append(metrics)
+
+            print(f"  Fold {fold_idx:2d}: "
+                  f"MAE={metrics['MAE']:6.1f} | "
+                  f"RMSE={metrics['RMSE']:6.1f} | "
+                  f"MASE={metrics['MASE']:5.2f}")
+
+        except Exception as e:
+            print(f"  Fold {fold_idx:2d}: ERROR - {str(e)[:80]}")
+
+    if fold_results:
+        results_df = pd.DataFrame(fold_results)
+        print(f"\n{'='*60}")
+        print("Summary Statistics")
+        print(f"{'='*60}")
+        print(f"MAE:  {results_df['MAE'].mean():6.1f} ± {results_df['MAE'].std():5.1f}")
+        print(f"RMSE: {results_df['RMSE'].mean():6.1f} ± {results_df['RMSE'].std():5.1f}")
+        print(f"MASE: {results_df['MASE'].mean():5.2f} ± {results_df['MASE'].std():4.2f}")
+        print(f"{'='*60}\n")
+        print("TEST PASSED: Single model + scenario test completed successfully!")
+    else:
+        print("\nWARNING: No successful folds!")
+
+
 if __name__ == "__main__":
-    # Run tests
-    pytest.main([__file__, "-v"])
+    from config_seoul import get_config as seoul_config
+    from config_washington import get_config as washington_config
+    from config_london import get_config as london_config
+
+    city_configs = {
+        "seoul":      seoul_config,
+        "washington": washington_config,
+        "london":     london_config,
+    }
+
+    # Parse --city first to build config and model map before other args
+    parser = argparse.ArgumentParser(description='Test single forecasting model with weather scenario')
+    parser.add_argument('--city', choices=list(city_configs.keys()), required=True,
+                        help="City dataset to use.")
+    parser.add_argument('--model', type=str, required=True)
+    parser.add_argument('--scenario', type=str, required=True,
+                        choices=['all_weather', 'clean_only', 'degraded'])
+    parser.add_argument('--folds', type=int, default=3)
+    args = parser.parse_args()
+
+    config = city_configs[args.city]()
+
+    with open(config.arima_params_file) as f:
+        arima_cfg = json.load(f)
+    with open(config.sarimax_params_file) as f:
+        sarimax_cfg = json.load(f)
+    with open(config.xgb_params_file) as f:
+        xgb_cfg = json.load(f)
+
+    model_map = build_model_map(config, arima_cfg, sarimax_cfg, xgb_cfg)
+
+    if args.model not in model_map:
+        print(f"Unknown model: {args.model}. Available: {list(model_map.keys())}")
+        sys.exit(1)
+
+    test_single_model_scenario(config, model_map, args.model, args.scenario, args.folds)

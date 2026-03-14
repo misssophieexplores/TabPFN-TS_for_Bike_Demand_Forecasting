@@ -23,8 +23,8 @@ class WeatherProcessor:
     
     Handles three scenarios:
     - all_weather: All 8 variables, no degradation
-    - clean_only: 6 degradable variables (exclude Dew point), no degradation
-    - degraded: 6 degradable variables (exclude Dew point), with degradation
+    - clean_only: 7 degradable variables (exclude Dew point), no degradation
+    - degraded: 7 degradable variables (exclude Dew point), with degradation
     
     Parameters
     ----------
@@ -68,15 +68,15 @@ class WeatherProcessor:
         Notes
         -----
         - all_weather: All (8) variables from config.weather_covariates
-        - clean_only: Only the 6 degradable variables (excludes Dew point)
-        - degraded: Same 6 degradable variables as clean_only
+        - clean_only: Only the 7 degradable variables (excludes Dew point)
+        - degraded: Same 7 degradable variables as clean_only
         """
         if scenario == "all_weather":
             # Return all 8 weather variables
             return self.config.weather_covariates.copy()
         
         elif scenario in ["clean_only", "degraded"]:
-            # Return only degradable variables (6 vars, exclude Dew point and visibility)
+            # Return only degradable variables (7 vars, exclude Dew point)
             # These are the ones in weather_degradation_mapping
             degradable_vars = list(self.config.weather_degradation_mapping.keys())
 
@@ -264,7 +264,7 @@ class WeatherProcessor:
         >>> print(summary)
         {
             'scenario': 'degraded',
-            'num_vars': 6,
+            'num_vars': 7,
             'variables': ['Temperature', 'Humidity', ...],
             'degraded': True
         }

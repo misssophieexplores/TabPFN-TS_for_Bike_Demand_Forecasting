@@ -30,6 +30,7 @@ def get_config() -> ForecastConfig:
         "Solar Radiation",
         "Rainfall",
         "Snowfall",
+        "Visibility"
     ]
     config.weather_degradation_mapping = {
         "Temperature": "temperature",
@@ -38,11 +39,13 @@ def get_config() -> ForecastConfig:
         "Solar Radiation": "solar_radiation",
         "Rainfall": "precipitation",
         "Snowfall": "precipitation",
+        "Visibility": "visibility"
     }
+    config.column_scale_factors = {"visibility": 0.001}
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_20260311_190232.json"
-    config.sarimax_params_file = "results/tuning/sarimax_best_params_20260311_193129.json"
-    config.xgb_params_file = "results/tuning/xgboost_best_params_20260309_172323.json"
+    config.sarimax_params_file = "results/tuning/sarimax_best_params_20260311_193129.json" #TODO
+    config.xgb_params_file = "results/tuning/xgboost_best_params_20260309_172323.json" #TODO
 
     return config

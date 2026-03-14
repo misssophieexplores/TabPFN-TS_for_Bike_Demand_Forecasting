@@ -404,6 +404,11 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
     # Extract dataset name from filename (stem without extension)
     dataset_name = Path(config.data_filename).stem
 
+    # Apply column-specific scale factors if defined in config
+    for col, factor in config.column_scale_factors.items():
+        if col in df.columns:
+            df[col] = df[col] * factor
+
     # Normalize and append holiday column (→ 0/1 int)
     if config.holiday_col and config.holiday_col in df.columns:
         col = df[config.holiday_col]

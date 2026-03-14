@@ -1,217 +1,137 @@
 """
-Unit tests for weather degradation functions.
+Test script: Apply maximum weather degradation and save for inspection.
 
-Run with: pytest test_weather_unit.py -v
+Usage:
+  python forecasting/testing/test_max_degradation.py --city seoul
+  python forecasting/testing/test_max_degradation.py --city london
+  python forecasting/testing/test_max_degradation.py --city washington
 """
 import sys
+import argparse
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import numpy as np
 import pandas as pd
-import pytest
+import numpy as np
+from weather.weather_degradation import prepare_degradation_parameters, degrade_weather_dataset
 
-from config import ForecastConfig
-from weather.weather_degradation import (
-    degrade_weather_forecast,
-    prepare_degradation_parameters,
-    degrade_weather_dataset  
+parser = argparse.ArgumentParser(description="Apply maximum degradation and save for inspection.")
+parser.add_argument(
+    "--city",
+    choices=["seoul", "washington", "london"],
+    required=True,
+    help="City dataset to use.",
 )
-from weather.weather_processor import WeatherProcessor
+args = parser.parse_args()
 
-class TestWeatherDegradation:
-    """Unit tests for individual degradation functions"""
-    
-    def test_temperature_degradation_reasonable(self):
-        """Test temperature degradation produces reasonable values"""
-        rng = np.random.default_rng(seed=42)
-        actual = 15.0
-        degraded = degrade_weather_forecast(actual, 'temperature', 24, rng=rng)
-        
-        # Should be within reasonable range (e.g., ±10°C)
-        assert abs(degraded - actual) < 10.0, f"Degraded temp {degraded} too far from actual {actual}"
-    
-    def test_wind_speed_non_negative(self):
-        """Test wind speed is never negative"""
-        rng = np.random.default_rng(seed=42)
-        
-        # Test multiple values
-        for actual in [0.5, 1.0, 5.0]:
-            degraded = degrade_weather_forecast(actual, 'wind_speed', 168, rng=rng)
-            assert degraded >= 0, f"Wind speed {degraded} is negative!"
-    
-    def test_reproducibility(self):
-        """Test same seed produces identical results"""
-        rng1 = np.random.default_rng(seed=42)
-        rng2 = np.random.default_rng(seed=42)
-        
-        actual = 15.0
-        deg1 = degrade_weather_forecast(actual, 'temperature', 24, rng=rng1)
-        deg2 = degrade_weather_forecast(actual, 'temperature', 24, rng=rng2)
-        
-        assert deg1 == deg2, "Same seed should produce identical results"
-    
-    def test_different_seeds_different_results(self):
-        """Test different seeds produce different results"""
-        rng1 = np.random.default_rng(seed=42)
-        rng2 = np.random.default_rng(seed=99)
-        
-        actual = 15.0
-        deg1 = degrade_weather_forecast(actual, 'temperature', 24, rng=rng1)
-        deg2 = degrade_weather_forecast(actual, 'temperature', 24, rng=rng2)
-        
-        assert deg1 != deg2, "Different seeds should produce different results"
-    
-    def test_precipitation_event_detection(self):
-        """Test precipitation can have false alarms and misses"""
-        rng = np.random.default_rng(seed=42)
-        
-        # Test actual = 0 (potential false alarm)
-        # Run multiple times to see if false alarm occurs
-        false_alarms = []
-        for i in range(100):
-            rng_i = np.random.default_rng(seed=42 + i)
-            degraded = degrade_weather_forecast(0.0, 'precipitation', 24, rng=rng_i)
-            if degraded > 0:
-                false_alarms.append(degraded)
-        
-        # Should have some false alarms (but not all)
-        assert 5 < len(false_alarms) < 95, f"Expected some false alarms, got {len(false_alarms)}/100"
-    
-    def test_prepare_degradation_parameters(self):
-        """Test degradation parameter computation"""
-        column_mapping = {
-            'Temperature': 'temperature',
-            'Solar Radiation': 'solar_radiation',
-        }
+from config_seoul import get_config as seoul_config
+from config_washington import get_config as washington_config
+from config_london import get_config as london_config
 
-        df = pd.DataFrame({
-            'Temperature': np.random.randn(100) * 10 + 15,
-            'Solar Radiation': np.random.rand(100) * 3
-        })
-        
-        params = prepare_degradation_parameters(df, column_mapping)
-        
-        assert 'solar_cap' in params
-        assert params['solar_cap'] > 0
-    
-    def test_degrade_dataframe(self):
-        """Test dataframe degradation"""
-        column_mapping = {
-            'Temperature': 'temperature',
-            'Humidity': 'humidity',
-            'Wind speed': 'wind_speed',
-            'Solar Radiation': 'solar_radiation',
-        }
+city_configs = {
+    "seoul":      seoul_config,
+    "washington": washington_config,
+    "london":     london_config,
+}
+config = city_configs[args.city]()
+COLUMN_MAPPING = config.weather_degradation_mapping
 
-        df = pd.DataFrame({
-            'Temperature': [15.0, 16.0, 17.0],
-            'Humidity': [60.0, 65.0, 70.0],
-            'Wind speed': [2.0, 3.0, 4.0],
-            'Solar Radiation': [1.5, 2.0, 2.5]
-        })
-        
-        params = prepare_degradation_parameters(df, column_mapping)
-        
-        df_degraded = degrade_weather_dataset(
-            df, 24, params, column_mapping,
-            seed=42
-        )
-        
-        assert df_degraded.shape == df.shape
-        assert list(df_degraded.columns) == list(df.columns)
-        assert not df_degraded.equals(df)
+# Load data
+data_path = Path("data") / config.data_filename
+print(f"Loading data from {data_path}...")
+df = pd.read_csv(data_path)
+print(f"Loaded {len(df)} rows")
 
-    def _make_weather_processor(self):
-        """Helper: minimal config + WeatherProcessor that doesn't need real data."""
-        config = ForecastConfig()
-        config.dataset_name = "test"
-        config.degradation_seed = 42
-        config.weather_covariates = [
-            'Temperature', 'Humidity', 'Wind speed', 'Solar Radiation',
-            'Rainfall', 'Snowfall',
-        ]
-        config.weather_degradation_mapping = {
-            'Temperature': 'temperature',
-            'Humidity': 'humidity',
-            'Wind speed': 'wind_speed',
-            'Solar Radiation': 'solar_radiation',
-            'Rainfall': 'precipitation',
-            'Snowfall': 'precipitation',
-        }
-        config.holiday_col = None
-        config.season_col = None
-        return WeatherProcessor(config)
+# Prepare degradation parameters (solar cap from training data)
+print("\nComputing degradation parameters...")
+params = prepare_degradation_parameters(df, COLUMN_MAPPING)
+print(f"Solar cap: {params['solar_cap']:.2f} MJ/m²")
 
-    def _make_test_df(self, n_rows=24):
-        """Helper: synthetic weather DataFrame with n_rows rows."""
-        rng = np.random.default_rng(seed=0)
-        return pd.DataFrame({
-            'Temperature':    rng.normal(15, 5, n_rows),
-            'Humidity':       rng.uniform(40, 90, n_rows),
-            'Wind speed':     rng.uniform(0.5, 8, n_rows),
-            'Solar Radiation': rng.uniform(0, 3, n_rows),
-            'Rainfall':       np.zeros(n_rows),
-            'Snowfall':       np.zeros(n_rows),
-        })
+# Apply worst-case degradation (168h horizon)
+print("\nApplying 168h degradation (worst case)...")
+df_degraded = degrade_weather_dataset(
+    df=df,
+    horizon_hours=168,
+    degradation_params=params,
+    column_mapping=COLUMN_MAPPING,
+    seed=config.degradation_seed
+)
 
-    def test_train_data_never_degraded(self):
-        """Training data must be identical for clean_only and degraded scenarios.
+# Save degraded dataset alongside the original, with a descriptive suffix
+stem = Path(config.data_filename).stem
+output_file = Path("data") / f"{stem}_degraded_168h.csv"
+df_degraded.to_csv(output_file, index=False)
+print(f"\nSaved degraded dataset to: {output_file}")
 
-        In an operational setting the model is trained on observed weather, not
-        NWP forecasts.  Degrading training covariates would conflate fitting-time
-        and inference-time uncertainty, so prepare_weather_data(..., split='train')
-        must always return clean data regardless of scenario.
-        """
-        processor = self._make_weather_processor()
-        df = self._make_test_df()
+# Quick comparison stats
+print("\n" + "="*70)
+print("COMPARISON: Original vs Degraded (168h forecast)")
+print("="*70)
 
-        X_train_clean = processor.prepare_weather_data(
-            df, 'clean_only', horizon=24, fold_idx=0, split='train'
-        )
-        X_train_deg = processor.prepare_weather_data(
-            df, 'degraded', horizon=24, fold_idx=0, split='train'
-        )
+for col in COLUMN_MAPPING.keys():
+    if col in df.columns:
+        orig_mean = df[col].mean()
+        deg_mean = df_degraded[col].mean()
+        orig_std = df[col].std()
+        deg_std = df_degraded[col].std()
 
-        pd.testing.assert_frame_equal(
-            X_train_clean.reset_index(drop=True),
-            X_train_deg.reset_index(drop=True),
-            check_like=True,
-            obj="Training data should be identical for clean_only and degraded scenarios"
-        )
+        print(f"\n{col}:")
+        print(f"  Original: mean={orig_mean:.2f}, std={orig_std:.2f}")
+        print(f"  Degraded: mean={deg_mean:.2f}, std={deg_std:.2f}")
+        print(f"  Diff:     mean={deg_mean-orig_mean:.2f}, std={deg_std-orig_std:.2f}")
 
-    def test_noise_grows_with_lead_time(self):
-        """Test error magnitude increases from first to last row of the test window.
+print("\n" + "="*70)
+print("Ready for manual inspection!")
+print("="*70)
 
-        Row i is degraded with lead time (i+1) hours, so the second half of the
-        test window should have larger absolute errors than the first half on
-        average.  Verified across multiple fold seeds to guard against stochastic
-        failures on any single seed.
-        """
-        processor = self._make_weather_processor()
-        horizon = 48
-        df = self._make_test_df(n_rows=horizon)
+# Derive column names from mapping by variable type (works for any city)
+def col_for(var_type):
+    """Return first column mapped to var_type, or None if not present."""
+    return next((c for c, v in COLUMN_MAPPING.items() if v == var_type), None)
 
-        wins = 0
-        n_trials = 10
-        for fold_idx in range(n_trials):
-            X_clean = processor.prepare_weather_data(
-                df, 'clean_only', horizon=horizon, fold_idx=fold_idx, split='test'
-            )
-            X_deg = processor.prepare_weather_data(
-                df, 'degraded', horizon=horizon, fold_idx=fold_idx, split='test'
-            )
+temp_col  = col_for('temperature')
+solar_col = col_for('solar_radiation')
+wind_col  = col_for('wind_speed')
+precip_cols = [c for c, v in COLUMN_MAPPING.items() if v == 'precipitation']
 
-            errors = (X_deg['Temperature'] - X_clean['Temperature']).abs()
-            first_half  = errors.iloc[:horizon // 2].mean()
-            second_half = errors.iloc[horizon // 2:].mean()
-            if second_half > first_half:
-                wins += 1
+# Specific cases to inspect
+print("\n" + "="*70)
+print("SPECIFIC CASES TO INSPECT")
+print("="*70)
 
-        # Expect the second half to be noisier in the large majority of trials
-        assert wins >= 7, (
-            f"Expected noise to grow with lead time in ≥7/10 trials, got {wins}/10"
-        )
-if __name__ == "__main__":
-    # Run tests
-    pytest.main([__file__, "-v"])
+# Case 1: Temperature near 0°C with precipitation
+if temp_col and precip_cols:
+    precip_filter = pd.Series(False, index=df.index)
+    for pc in precip_cols:
+        precip_filter |= df[pc] > 0
+    freezing = df[(df[temp_col] >= -2) & (df[temp_col] <= 2) & precip_filter].head(10)
+    inspect_cols = [temp_col] + precip_cols
+    print("\nCase 1: Near-freezing temperatures with precipitation")
+    print("Original:")
+    print(freezing[inspect_cols])
+    print("\nDegraded:")
+    print(df_degraded.loc[freezing.index, inspect_cols])
+else:
+    print("\nCase 1: skipped (temperature or precipitation column not found)")
+
+# Case 2: Night-time solar radiation (should stay 0)
+if solar_col:
+    night = df[df[solar_col] == 0].head(10)
+    print("\nCase 2: Night-time (zero solar radiation)")
+    print(f"Original zeros: {(df[solar_col] == 0).sum()}")
+    print(f"Degraded zeros: {(df_degraded[solar_col] == 0).sum()}")
+    print(f"Any night values became non-zero? {(df_degraded.loc[night.index, solar_col] != 0).any()}")
+else:
+    print("\nCase 2: skipped (solar radiation column not found)")
+
+# Case 3: Low wind speeds (check truncation at zero)
+if wind_col:
+    low_wind = df[df[wind_col] < 1.0].head(10)
+    print("\nCase 3: Low wind speeds (<1 m/s)")
+    print("Original:")
+    print(low_wind[wind_col].values)
+    print("Degraded:")
+    print(df_degraded.loc[low_wind.index, wind_col].values)
+else:
+    print("\nCase 3: skipped (wind speed column not found)")

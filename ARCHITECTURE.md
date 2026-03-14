@@ -63,8 +63,8 @@ results/                                           # Output directory
 
 **Weather Data Flow:**
 - **all_weather**: Use all weather columns from `config.weather_covariates` as-is (not used for V3)
-- **clean_only**: 6 degradable columns + holiday + season (no degradation)
-- **degraded**: 6 degradable columns + holiday + season + apply degradation to degradable columns only with seed(fold_idx, horizon). Degradation applied to **test split only** (training always uses clean observed weather). Each test row receives noise scaled to its own lead time (row *i* → lead time *i + 1* hours).
+- **clean_only**: 7 degradable columns + holiday + season (no degradation)
+- **degraded**: 7 degradable columns + holiday + season + apply degradation to degradable columns only with seed(fold_idx, horizon). Degradation applied to **test split only** (training always uses clean observed weather). Each test row receives noise scaled to its own lead time (row *i* → lead time *i + 1* hours).
 
 ## Core Components
 
@@ -91,8 +91,8 @@ results/                                           # Output directory
 
 **Weather Scenarios:**
 1. **all_weather**: All weather variables from `config.weather_covariates`, no degradation (original baseline)
-2. **clean_only**: 6 degradable variables + holiday + season (excludes Dew point), no degradation
-3. **degraded**: 6 degradable variables + holiday + season with realistic NWP forecast errors on degradable columns only
+2. **clean_only**: 7 degradable variables + holiday + season (excludes Dew point), no degradation
+3. **degraded**: 7 degradable variables + holiday + season with realistic NWP forecast errors on degradable columns only
 
 **Degradation Variables (6, currently — see TODO below):**
 - Temperature → Additive Gaussian error
@@ -358,7 +358,7 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 - `weather_scenario`: 'all_weather' (only used in Pilot project), 'clean_only', or 'degraded'
 - `model_uses_covariates`: Boolean (from model.use_covariates property)
 - `degradation_seed`: Random seed used (42 by default)
-- `num_weather_vars`: Count of weather variables passed to model (0 for models without covariates; for models with covariates: 6 degradable + holiday + season = 8, plus 4 calendar time features for XGBoost = 12 total features; TabPFN creates its own calendar features, which is 17 additional features)
+- `num_weather_vars`: Count of weather variables passed to model (0 for models without covariates; for models with covariates: 7 degradable + holiday + season = 9, plus 4 calendar time features for XGBoost = 13 total features; TabPFN creates its own calendar features, which is 17 additional features)
 
 
 ## Known Limitations

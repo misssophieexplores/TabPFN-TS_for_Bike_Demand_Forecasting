@@ -153,8 +153,8 @@ config.xgb_params_file = "results/tuning/xgboost_best_params_<timestamp>.json"
 | Scenario | Covariates | Degradation | Notes |
 |---|---|---|---|
 | `all_weather` | All vars in `weather_covariates` | No | Original baseline |
-| `clean_only` | 6 degradable vars + holiday + season (excl. Dew point) | No | New clean baseline |
-| `degraded` | 6 degradable vars + holiday + season | Yes (degradable cols only) | Robustness test |
+| `clean_only` | 7 degradable vars + holiday + season (excl. Dew point) | No | New clean baseline |
+| `degraded` | 7 degradable vars + holiday + season | Yes (degradable cols only) | Robustness test |
 
 Models without covariates are automatically skipped for the `degraded` scenario.
 

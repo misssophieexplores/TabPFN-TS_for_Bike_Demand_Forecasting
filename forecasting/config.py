@@ -28,6 +28,7 @@ class ForecastConfig:
     season_mapping: Optional[Dict] = None
     weather_covariates: Optional[List[str]] = None
     weather_degradation_mapping: Optional[Dict[str, str]] = None
+    column_scale_factors: Dict[str, float] = field(default_factory=dict)
 
     # --- Model parameters (dataset-specific — override in city config) ---
     arima_params_file: Optional[str] = None
@@ -56,7 +57,7 @@ class ForecastConfig:
 
     # --- Output (shared) ---
     output_dir: str = "results"
-    results_version: str = "t5-01" 
+    results_version: str = "t5-02" 
     verbose: bool = False
 
     # # --- W&B (shared) ---
