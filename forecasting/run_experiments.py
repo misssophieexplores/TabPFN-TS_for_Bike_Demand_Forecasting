@@ -20,6 +20,7 @@ from models.base import BaseForecaster
 from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster
 from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
+from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from weather.weather_processor import WeatherProcessor
@@ -161,6 +162,20 @@ class ForecastingExperiment:
                 time_test = add_time_features(test_df, self.config.date_col)
                 X_train = pd.concat([X_train.reset_index(drop=True), time_train], axis=1) if X_train is not None else time_train
                 X_test = pd.concat([X_test.reset_index(drop=True), time_test], axis=1) if X_test is not None else time_test
+
+            # Attach real DatetimeIndex for models that need timestamps (Prophet, TabPFN).
+            # This replaces any previously hardcoded date ranges in those models.
+            if getattr(model, "needs_datetime", False):
+                train_dates = pd.DatetimeIndex(train_df[self.config.date_col].values)
+                test_dates  = pd.DatetimeIndex(test_df[self.config.date_col].values)
+                if X_train is None:
+                    X_train = pd.DataFrame(index=train_dates)
+                else:
+                    X_train = X_train.set_index(train_dates)
+                if X_test is None:
+                    X_test = pd.DataFrame(index=test_dates)
+                else:
+                    X_test = X_test.set_index(test_dates)
 
 
 
@@ -477,6 +492,9 @@ def main():
         ARIMAForecaster(order=config.arima_order),
         SARIMAXForecaster(order=config.sarimax_order, seasonal_order=config.sarimax_seasonal_order),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
+        ProphetForecaster(),
+        NeuralProphetForecaster(),
+        NeuralProphetForecaster_NoWeather(),
         TabPFNPipelineForecaster(),
         TabPFNPipelineForecaster_NoWeather(),
     ]

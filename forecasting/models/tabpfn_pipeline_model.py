@@ -6,8 +6,11 @@ Covariates are passed directly as extra columns — no manual FeatureTransformer
 Context length and truncation are handled internally by the pipeline.
 
 Two variants:
-  - TabPFNPipelineForecaster:          WITH weather covariates
-  - TabPFNPipelineForecaster_NoWeather: WITHOUT weather covariates (univariate)
+  - TabPFNPipelineForecaster:            WITH weather covariates
+  - TabPFNPipelineForecaster_NoWeather:  WITHOUT weather covariates (univariate)
+
+Both set needs_datetime = True so run_experiments.py attaches a real
+DatetimeIndex to X_train/X_test from the dataset's date column.
 """
 
 import os
@@ -34,13 +37,9 @@ class TabPFNPipelineForecaster(BaseForecaster):
     Context length is handled internally by the pipeline.
     """
 
+    needs_datetime = True
+
     def __init__(self, tabpfn_mode: TabPFNMode = TabPFNMode.LOCAL):
-        """
-        Parameters
-        ----------
-        tabpfn_mode : TabPFNMode
-            LOCAL (CPU/GPU on your machine) or CLIENT (cloud API).
-        """
         super().__init__("TabPFN", use_covariates=True)
         self.tabpfn_mode = tabpfn_mode
         self.pipeline = None
@@ -50,74 +49,61 @@ class TabPFNPipelineForecaster(BaseForecaster):
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
         """
         Store training context. Pipeline is zero-shot — no actual training occurs.
-        Context length is managed internally by TabPFNTSPipeline.
 
         Parameters
         ----------
         y_train : np.ndarray
             Training target values.
-        X_train : pd.DataFrame, optional
-            Training weather covariates (aligned with y_train).
+        X_train : pd.DataFrame
+            Must have a DatetimeIndex (set by run_experiments.py).
+            Weather covariates are included as extra columns.
         """
         if hasattr(torch.backends, 'mps'):
             torch.backends.mps.is_available = lambda: False
 
-        timestamps = pd.date_range(start='2017-12-01', periods=len(y_train), freq='h')
+        if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
+            raise ValueError(
+                "TabPFNPipelineForecaster requires X_train with a DatetimeIndex. "
+                "Ensure needs_datetime=True is handled in run_experiments.py."
+            )
 
-        context_data = {
+        context_df = pd.DataFrame({
             'item_id': 'series_1',
-            'timestamp': timestamps,
+            'timestamp': X_train.index,
             'target': y_train,
-        }
+        })
 
-        context_df = pd.DataFrame(context_data)
-
-        if X_train is not None:
-            X_reset = X_train.reset_index(drop=True)
-            for col in X_reset.columns:
-                context_df[col] = X_reset[col].values
+        for col in X_train.columns:
+            context_df[col] = X_train[col].values
 
         self.context_df = context_df
-        self.last_timestamp = timestamps[-1]
+        self.last_timestamp = X_train.index[-1]
         self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode)
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
         """
-        Generate forecast using the pipeline.
-
         Parameters
         ----------
         horizon : int
-            Number of steps ahead to forecast.
-        X_future : pd.DataFrame, optional
-            Future weather covariates for the forecast horizon.
-
-        Returns
-        -------
-        np.ndarray
-            Forecast values of shape (horizon,).
+        X_future : pd.DataFrame
+            Must have a DatetimeIndex. Weather covariates as columns.
         """
         if not self._is_fitted:
             raise RuntimeError("Model must be fitted before predicting")
 
-        future_timestamps = pd.date_range(
-            start=self.last_timestamp + pd.Timedelta(hours=1),
-            periods=horizon,
-            freq='h'
-        )
+        if X_future is None or not isinstance(X_future.index, pd.DatetimeIndex):
+            raise ValueError(
+                "TabPFNPipelineForecaster requires X_future with a DatetimeIndex."
+            )
 
-        future_data = {
+        future_df = pd.DataFrame({
             'item_id': 'series_1',
-            'timestamp': future_timestamps,
-        }
+            'timestamp': X_future.index[:horizon],
+        })
 
-        future_df = pd.DataFrame(future_data)
-
-        if X_future is not None:
-            X_reset = X_future.reset_index(drop=True)
-            for col in X_reset.columns:
-                future_df[col] = X_reset[col].values[:horizon]
+        for col in X_future.columns:
+            future_df[col] = X_future[col].values[:horizon]
 
         pred_df = self.pipeline.predict_df(
             context_df=self.context_df,
@@ -127,7 +113,6 @@ class TabPFNPipelineForecaster(BaseForecaster):
         return pred_df['target'].values
 
     def reset(self) -> None:
-        """Reset model state between CV folds."""
         super().reset()
         self.pipeline = None
         self.context_df = None
@@ -138,17 +123,13 @@ class TabPFNPipelineForecaster_NoWeather(BaseForecaster):
     """
     TabPFN-TS forecaster using the new TabPFNTSPipeline API, WITHOUT weather covariates.
 
-    Univariate only — X_train and X_future are ignored.
-    Context length is handled internally by the pipeline.
+    Univariate only — X_train columns are ignored, but DatetimeIndex is still used
+    for timestamps.
     """
 
+    needs_datetime = True
+
     def __init__(self, tabpfn_mode: TabPFNMode = TabPFNMode.LOCAL):
-        """
-        Parameters
-        ----------
-        tabpfn_mode : TabPFNMode
-            LOCAL (CPU/GPU on your machine) or CLIENT (cloud API).
-        """
         super().__init__("TabPFN_NoWeather", use_covariates=False)
         self.tabpfn_mode = tabpfn_mode
         self.pipeline = None
@@ -157,58 +138,50 @@ class TabPFNPipelineForecaster_NoWeather(BaseForecaster):
 
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
         """
-        Store training context. X_train is ignored.
-
         Parameters
         ----------
         y_train : np.ndarray
-            Training target values.
-        X_train : pd.DataFrame, optional
-            Ignored.
+        X_train : pd.DataFrame
+            Must have a DatetimeIndex. Columns are ignored (univariate).
         """
         if hasattr(torch.backends, 'mps'):
             torch.backends.mps.is_available = lambda: False
 
-        timestamps = pd.date_range(start='2017-12-01', periods=len(y_train), freq='h')
+        if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
+            raise ValueError(
+                "TabPFNPipelineForecaster_NoWeather requires X_train with a DatetimeIndex. "
+                "Ensure needs_datetime=True is handled in run_experiments.py."
+            )
 
         self.context_df = pd.DataFrame({
             'item_id': 'series_1',
-            'timestamp': timestamps,
+            'timestamp': X_train.index,
             'target': y_train,
         })
 
-        self.last_timestamp = timestamps[-1]
+        self.last_timestamp = X_train.index[-1]
         self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode)
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
         """
-        Generate forecast. X_future is ignored.
-
         Parameters
         ----------
         horizon : int
-            Number of steps ahead to forecast.
-        X_future : pd.DataFrame, optional
-            Ignored.
-
-        Returns
-        -------
-        np.ndarray
-            Forecast values of shape (horizon,).
+        X_future : pd.DataFrame
+            Must have a DatetimeIndex. Columns are ignored (univariate).
         """
         if not self._is_fitted:
             raise RuntimeError("Model must be fitted before predicting")
 
-        future_timestamps = pd.date_range(
-            start=self.last_timestamp + pd.Timedelta(hours=1),
-            periods=horizon,
-            freq='h'
-        )
+        if X_future is None or not isinstance(X_future.index, pd.DatetimeIndex):
+            raise ValueError(
+                "TabPFNPipelineForecaster_NoWeather requires X_future with a DatetimeIndex."
+            )
 
         future_df = pd.DataFrame({
             'item_id': 'series_1',
-            'timestamp': future_timestamps,
+            'timestamp': X_future.index[:horizon],
         })
 
         pred_df = self.pipeline.predict_df(
@@ -219,7 +192,6 @@ class TabPFNPipelineForecaster_NoWeather(BaseForecaster):
         return pred_df['target'].values
 
     def reset(self) -> None:
-        """Reset model state between CV folds."""
         super().reset()
         self.pipeline = None
         self.context_df = None

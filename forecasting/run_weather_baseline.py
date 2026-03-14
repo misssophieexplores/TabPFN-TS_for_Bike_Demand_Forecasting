@@ -25,6 +25,7 @@ from config import ForecastConfig
 from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster
 from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
+from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
 from run_experiments import ForecastingExperiment, load_and_prepare_data
 
 
@@ -70,7 +71,9 @@ def main(config=None, no_confirm=False):
         ARIMAForecaster(order=tuple(arima_cfg["order"])),
         SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
-
+        ProphetForecaster(),
+        NeuralProphetForecaster(),
+        NeuralProphetForecaster_NoWeather(),
         # TabPFNForecaster_Custom(),
         # TabPFNForecaster_NoWeather(),
         TabPFNPipelineForecaster(),
