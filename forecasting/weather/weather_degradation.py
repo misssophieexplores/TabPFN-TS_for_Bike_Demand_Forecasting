@@ -67,6 +67,9 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
       
     - **Precipitation (magnitude)**: CONSERVATIVE ESTIMATE - ensemble spread theory
       CV growth: 0.15%/h (half the theoretical bound)
+      
+    - **Visibility**: ECMWF Forecast User Guide (Owens & Hewson, 2018), Section 9.4
+      Constant CV = 25%; horizon-independent (skill non-monotonic with lead time)
     
     **Error Models:**
     
@@ -203,18 +206,18 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
     
     elif variable_type == 'visibility':
         # Lognormal multiplicative noise.
-        # CV(h) = 20 + 0.15*h (%)
-        # Anchored to published NWP verification: ML-corrected AROME forecasts
-        # over mid-latitude stations achieve MAE ~1300m, RMSE ~2000m at 24h
-        # (Bari & Ouagabi, 2020), implying ~25% relative error at 24h for a
-        # typical mean visibility of ~7-8km. Raw NWP parametrization errors
-        # commonly exceed 50% (Gultepe et al., 2006). The 20% base CV reflects
-        # a conservative estimate for typical (non-fog) conditions; growth rate
-        # 0.15%/h is consistent with other multiplicative variables.
-        # ECMWF explicitly characterises visibility as its lowest-skill surface
-        # forecast variable with no guaranteed skill improvement at shorter
-        # lead times (ECMWF Forecast User Guide, Section 9.4).
-        cv = (20 + 0.15 * h) / 100
+        # CV = 25% (constant, horizon-independent)
+        # ECMWF characterises visibility as its lowest-skill surface forecast
+        # variable. Crucially, Section 9.4.1 explicitly states that shorter
+        # lead times are not necessarily more skilful than longer ones — i.e.
+        # skill is non-monotonic with horizon. A horizon-dependent growth rate
+        # is therefore inconsistent with the cited evidence. A flat CV = 25%
+        # is anchored to Bari & Ouagabi (2020): ML-corrected NWP achieves
+        # MAE ~1300m, RMSE ~2000m at 24h, implying ~25% relative error for a
+        # typical mean visibility of ~7-8km. Raw NWP errors are higher
+        # (Gultepe et al., 2006); 25% is therefore a conservative lower bound.
+        # Source: Owens & Hewson (2018), ECMWF Forecast User Guide, Sec. 9.4
+        cv = 0.25
         sigma_log = np.sqrt(np.log(1 + cv**2))
         mu_log = -0.5 * sigma_log**2  # Mean-preserving: E[multiplier] = 1
         multiplier = rng.lognormal(mean=mu_log, sigma=sigma_log)

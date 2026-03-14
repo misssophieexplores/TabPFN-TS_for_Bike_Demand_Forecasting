@@ -86,6 +86,18 @@ These values are derived from Sukovich et al. (2014) reporting Day 1 POD ≈ 0.6
 
 **Note:** The 50% cap at 168h reflects near-random skill for week-ahead precipitation event detection, consistent with operational NWP performance.
 
+### Visibility
+
+Visibility forecast errors were modelled as lognormal multiplicative noise with a constant coefficient of variation:
+
+**CV = 25% (horizon-independent)**
+
+The ECMWF Forecast User Guide (Owens & Hewson, 2018, Section 9.4) explicitly characterises visibility as the lowest-skill surface forecast variable in IFS, noting that the product is experimental and that "expectations regarding the quality of this product should remain low." Critically, Section 9.4.1 states that forecasts with shorter lead times will not necessarily be more skilful than those from longer lead times. This non-monotonic skill relationship makes any horizon-dependent growth rate inconsistent with the primary source; a flat CV is therefore more faithful to the evidence than a formula such as CV(h) = a + b·h.
+
+The CV value of 25% is anchored to Bari & Ouagabi (2020), who report MAE ≈ 1300 m and RMSE ≈ 2000 m at 24h for ML-corrected mesoscale NWP forecasts over mid-latitude stations, implying approximately 25% relative error for a typical mean visibility of 7–8 km. This represents a best-case (post-processed) lower bound; raw NWP parametrization errors frequently exceed 50% (Gultepe et al., 2006).
+
+The lognormal model is mean-preserving (E[multiplier] = 1) with a physical floor at zero.
+
 ## Noise Application
 
 ### Train / Test Split
@@ -193,9 +205,13 @@ Despite these limitations, the degradation methodology provides a realistic and 
 
 ## References
 
+Bari, D. & Ouagabi, A. (2020). Machine-learning regression applied to diagnose horizontal visibility from mesoscale NWP model forecasts. Discover Applied Sciences, 2, 389. https://doi.org/10.1007/s42452-020-2327-x
+
 European Centre for Medium-Range Weather Forecasts (2024). *Evaluation of ECMWF forecasts, including the 2023-2024 upgrade*. ECMWF Technical Memorandum No. 918. Reading, UK.
 
 Hersbach, H. (2000). Decomposition of the continuous ranked probability score for ensemble prediction systems. *Weather and Forecasting*, 15(5), 559-570.
+
+Gultepe, I., Müller, M. D., & Boybeyi, Z. (2006). A new visibility parameterization for warm-fog applications in numerical weather prediction models. Journal of Applied Meteorology and Climatology, 45(11), 1469–1480.
 
 Jolliffe, I. T., & Stephenson, D. B. (Eds.). (2003). *Forecast Verification: A Practitioner's Guide in Atmospheric Science*. John Wiley & Sons, Chichester, UK.
 
@@ -208,6 +224,8 @@ Kleissl, J. (Ed.). (2013). *Solar Energy Forecasting and Resource Assessment*. A
 meteoblue (2018). *Global Weather Forecast Verification Report 2017*. Temperature, wind speed, precipitation, and dew point verification over 10,000+ meteorological stations worldwide. Available at: https://content.meteoblue.com/en/research-education/weather-data-accuracy
 
 Sukovich, E. M., Ralph, F. M., Barthold, F. E., Reynolds, D. W., & Novak, D. R. (2014). Extreme Quantitative Precipitation Forecast Performance at the Weather Prediction Center from 2001 to 2011. *Weather and Forecasting*, 29(4), 894-911.
+
+
 
 ---
 
@@ -286,3 +304,15 @@ Sukovich, E. M., Ralph, F. M., Barthold, F. E., Reynolds, D. W., & Novak, D. R. 
 | 168h    | 50            | 50                   |
 
 *Note: Miss rate = probability of missing actual precipitation (forecast = 0 when actual > 0). False alarm rate = probability of forecasting precipitation when none occurs (forecast > 0 when actual = 0). Rates based on Sukovich et al. (2014) with linear interpolation at 0.0015/hour (miss) and 0.0010/hour (FAR), capped at 50%.*
+
+### Visibility Error Growth
+
+| Horizon | CV (%) | Multiplier Range (90% interval) |
+|---------|--------|---------------------------------|
+| 6h      | 25.0   | 0.64 – 1.50                     |
+| 24h     | 25.0   | 0.64 – 1.50                     |
+| 48h     | 25.0   | 0.64 – 1.50                     |
+| 72h     | 25.0   | 0.64 – 1.50                     |
+| 168h    | 25.0   | 0.64 – 1.50                     |
+
+*Note: CV is horizon-independent. ECMWF Section 9.4.1 establishes that visibility forecast skill is non-monotonic with lead time; a growth term is therefore not supported by the primary source. Multiplier ranges represent 5th to 95th percentiles of the mean-preserving lognormal distribution.*
