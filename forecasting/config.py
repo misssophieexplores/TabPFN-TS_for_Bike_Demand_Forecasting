@@ -36,15 +36,15 @@ class ForecastConfig:
     xgb_params_file: Optional[str] = None
 
     # # --- Forecasting (shared) ---
-    # horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168])
-    # n_folds: int = 20
-    # n_train_samples: int = 4096
-    # seasonal_period: int = 24
-    # --- Forecasting (shared) ---
-    horizons: List[int] = field(default_factory=lambda: [6])
-    n_folds: int = 2
-    n_train_samples: int = 500
+    horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168])
+    n_folds: int = 20
+    n_train_samples: int = 4096
     seasonal_period: int = 24
+    # --- Forecasting (shared) ---
+    # horizons: List[int] = field(default_factory=lambda: [6])
+    # n_folds: int = 2
+    # n_train_samples: int = 500
+    # seasonal_period: int = 24
 
 
     # --- Weather degradation (shared) ---

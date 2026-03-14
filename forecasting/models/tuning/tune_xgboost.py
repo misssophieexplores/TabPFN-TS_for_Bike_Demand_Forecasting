@@ -57,11 +57,14 @@ def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -
     """
     if scenario == "all_weather":
         candidates = config.weather_covariates
+        return [c for c in candidates if c in df.columns]
     else:
-        # clean_only / degraded — exclude non-degradable covariates (e.g. Dew point)
-        candidates = list(config.weather_degradation_mapping.keys())
-
-    return [c for c in candidates if c in df.columns]
+        # clean_only: degradable vars + calendar covariates (not degraded)
+        covariates = [c for c in config.weather_degradation_mapping.keys() if c in df.columns]
+        for col in [config.holiday_col, config.season_col]:
+            if col and col in df.columns:
+                covariates.append(col)
+        return covariates
 
 
 def create_lagged_features(

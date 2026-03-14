@@ -89,9 +89,13 @@ def tune_sarimax(
     # Select covariates based on scenario
     if scenario == "clean_only":
         covariates = [c for c in config.weather_degradation_mapping.keys() if c in df.columns]
+        # Mirror WeatherProcessor: append calendar covariates (not degradable)
+        for col in [config.holiday_col, config.season_col]:
+            if col and col in df.columns:
+                covariates.append(col)
     else:
         covariates = [c for c in config.weather_covariates if c in df.columns]
-    config.weather_covariates = covariates
+
 
     cv = TimeSeriesCV(config)
     calc = MetricsCalculator()
