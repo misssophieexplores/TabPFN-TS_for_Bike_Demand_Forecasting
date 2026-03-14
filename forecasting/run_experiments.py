@@ -416,6 +416,13 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
     df[config.date_col] = pd.to_datetime(df[config.date_col])
     df = df.sort_values(config.date_col).reset_index(drop=True)
 
+    # Drop duplicate timestamps (e.g. DST clock-back hours)
+    n_dupes = df[config.date_col].duplicated().sum()
+    if n_dupes > 0:
+        df = df.drop_duplicates(subset=config.date_col, keep="first").reset_index(drop=True)
+        if config.verbose:
+            print(f"Dropped {n_dupes} duplicate timestamps (DST)")
+
     # Extract dataset name from filename (stem without extension)
     dataset_name = Path(config.data_filename).stem
 

@@ -7,6 +7,7 @@ Usage:
   python forecasting/testing/test_weather_single_model.py --city seoul --model arima --scenario clean_only
   python forecasting/testing/test_weather_single_model.py --city seoul --model prophet --scenario clean_only
   python forecasting/testing/test_weather_single_model.py --city seoul --model neuralprophet --scenario degraded
+  python forecasting/testing/test_weather_single_model.py --city seoul --model neuralprophet_noweather --scenario clean_only
   
 Tests with 3 folds (quick validation)
 """

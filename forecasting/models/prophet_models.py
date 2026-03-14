@@ -141,7 +141,27 @@ class NeuralProphetForecaster(BaseForecaster):
             self.model.add_lagged_regressor(col)
 
         self._last_train_df = train_df
-        self.model.fit(train_df, freq="h")
+
+        # Monkey-patch torch.load to fix PyTorch 2.4+ checkpoint loading incompatibility
+        import torch
+        _original_load = torch.load
+        torch.load = lambda *args, **kwargs: _original_load(*args, **{**kwargs, 'weights_only': False})
+        try:
+            self.model.fit(train_df, freq="h")
+        finally:
+            torch.load = _original_load
+
+        # Sync to cols NeuralProphet actually kept (it silently drops e.g. all-zero cols)
+        if self.model.config_lagged_regressors:
+            self._covariate_cols = [c for c in self._covariate_cols
+                                    if c in self.model.config_lagged_regressors]
+        else:
+            self._covariate_cols = []
+
+        # Drop removed cols from training context used in predict()
+        keep_cols = ["ds", "y"] + self._covariate_cols
+        self._last_train_df = self._last_train_df[keep_cols]
+
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
@@ -221,7 +241,16 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
 
         train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
         self._last_train_df = train_df
-        self.model.fit(train_df, freq="h")
+
+        # Monkey-patch torch.load to fix PyTorch 2.4+ checkpoint loading incompatibility
+        import torch
+        _original_load = torch.load
+        torch.load = lambda *args, **kwargs: _original_load(*args, **{**kwargs, 'weights_only': False})
+        try:
+            self.model.fit(train_df, freq="h")
+        finally:
+            torch.load = _original_load
+
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:

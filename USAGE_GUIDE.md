@@ -174,10 +174,27 @@ cd ../seoul-bike-demand
 **Why from source:** Published pip version requires GPU for LOCAL mode. Source includes CPU fallback.
 
 **Two variants:**
-- `TabPFNForecaster`: With weather covariates
-- `TabPFNForecaster_NoWeather`: Univariate only
+- `TabPFNPipelineForecaster`: With weather covariates
+- `TabPFNPipelineForecaster_NoWeather`: Univariate only
 
 Requires `n_train_samples` (4096) observations — early folds are automatically skipped.
+
+
+## Prophet & NeuralProphet Models
+
+**Installation (required before first use):**
+```bash
+pip install prophet neuralprophet
+```
+
+**Three variants:**
+- `ProphetForecaster`: Univariate, no covariates. Uses real calendar timestamps for correct daily/weekly/yearly seasonality decomposition.
+- `NeuralProphetForecaster`: With weather covariates, added as lagged regressors.
+- `NeuralProphetForecaster_NoWeather`: Univariate NeuralProphet variant.
+
+All three set `needs_datetime = True`, which causes `run_experiments.py` to attach a real `DatetimeIndex` to `X_train`/`X_test` from the dataset's date column. This is required for correct seasonality — do not remove it.
+
+**Known issue:** NeuralProphet silently drops covariates that are all-zero in a training fold (e.g. Snowfall in summer). This is handled automatically — dropped columns are synced out of `_covariate_cols` after `fit()` so `predict()` never passes them.
 
 
 ## Adding a New Model
@@ -219,10 +236,11 @@ all_models = [
 ]
 ```
 
-3. Test individually:
+3. If your model needs real timestamps (e.g. like Prophet), set `needs_datetime = True` as a class attribute. `run_experiments.py` will then attach a real `DatetimeIndex` to `X_train`/`X_test` automatically.
+
+4. Test individually:
 ```bash
-# Add to MODEL_MAP in test_single_model.py, then:
-python testing/test_single_model.py --model my_model
+python forecasting/testing/test_weather_single_model.py --city seoul --model my_model --scenario clean_only
 ```
 
 ## Results Files
@@ -268,4 +286,3 @@ Because `dataset_name` is part of the checkpoint key, Seoul and Washington compl
 Access at: `https://wandb.ai/{entity}/bike-forecasting/runs`
 
 All datasets log to the same W&B project (`bike-forecasting`), distinguished by the `dataset` field logged per run. The project name is controlled by `config.wandb_project`. Test scripts can override it: `config.wandb_project = "bike-forecasting-testing"`.
-
