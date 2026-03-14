@@ -5,7 +5,9 @@ Usage:
   python forecasting/testing/test_weather_single_model.py --city seoul --model tabpfn --scenario degraded
   python forecasting/testing/test_weather_single_model.py --city seoul --model xgboost --scenario clean_only
   python forecasting/testing/test_weather_single_model.py --city seoul --model arima --scenario clean_only
-
+  python forecasting/testing/test_weather_single_model.py --city seoul --model prophet --scenario clean_only
+  python forecasting/testing/test_weather_single_model.py --city seoul --model neuralprophet --scenario degraded
+  
 Tests with 3 folds (quick validation)
 """
 
@@ -20,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster
 from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
+from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from weather.weather_processor import WeatherProcessor
@@ -32,8 +35,11 @@ def build_model_map(config, arima_cfg, sarimax_cfg, xgb_cfg):
         'arima':            ARIMAForecaster(order=tuple(arima_cfg["order"])),
         'sarimax':          SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
         'xgboost':          XGBoostForecaster(n_lags=xgb_cfg["n_lags"], **xgb_cfg["xgb_params"]),
-        'tabpfn':           TabPFNPipelineForecaster(),
-        'tabpfn_noweather': TabPFNPipelineForecaster_NoWeather(),
+        'tabpfn':                  TabPFNPipelineForecaster(),
+        'tabpfn_noweather':        TabPFNPipelineForecaster_NoWeather(),
+        'prophet':                 ProphetForecaster(),
+        'neuralprophet':           NeuralProphetForecaster(),
+        'neuralprophet_noweather': NeuralProphetForecaster_NoWeather(),
     }
 
 
@@ -90,6 +96,19 @@ def test_single_model_scenario(config, model_map, model_name: str, scenario: str
             print(f"Fold {fold_idx}: ALL columns in X_train: {X_train.columns.tolist()}")
             print(f"  holiday present: {config.holiday_col in X_train.columns if config.holiday_col else 'N/A (not configured)'}")
             print(f"  season present:  {config.season_col in X_train.columns if config.season_col else 'N/A (not configured)'}")
+
+        # Attach real DatetimeIndex for models that need timestamps (Prophet, TabPFN)
+        if getattr(model, "needs_datetime", False):
+            train_dates = pd.DatetimeIndex(train_df[config.date_col].values)
+            test_dates  = pd.DatetimeIndex(test_df[config.date_col].values)
+            if X_train is None:
+                X_train = pd.DataFrame(index=train_dates)
+            else:
+                X_train = X_train.set_index(train_dates)
+            if X_test is None:
+                X_test = pd.DataFrame(index=test_dates)
+            else:
+                X_test = X_test.set_index(test_dates)
         try:
             model.reset()
             model.fit(y_train, X_train)
