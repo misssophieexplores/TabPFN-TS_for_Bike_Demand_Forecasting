@@ -50,7 +50,7 @@ class XGBoostForecaster(BaseForecaster):
         X: Optional[pd.DataFrame] = None
     ) -> pd.DataFrame:
         """
-        Create lagged features from target variable.
+        Create lagged features from target variable for the full training set.
         
         Parameters:
         -----------
@@ -62,7 +62,7 @@ class XGBoostForecaster(BaseForecaster):
         Returns:
         --------
         pd.DataFrame
-            Feature matrix with lagged values
+            Feature matrix with lagged values (first n_lags rows removed)
         """
         features = pd.DataFrame()
         
@@ -79,7 +79,37 @@ class XGBoostForecaster(BaseForecaster):
         features = features.iloc[self.n_lags:]
         
         return features
-        
+
+    def _create_predict_row(
+        self,
+        y_history: np.ndarray,
+        X_h: Optional[pd.DataFrame] = None
+    ) -> pd.DataFrame:
+        """
+        Create a single feature row for one prediction step.
+
+        Parameters:
+        -----------
+        y_history : np.ndarray
+            All observed and predicted values so far
+        X_h : pd.DataFrame, optional
+            Covariates for this single step (one row)
+
+        Returns:
+        --------
+        pd.DataFrame
+            Single-row feature DataFrame matching training feature names
+        """
+        # lag_1 = most recent, lag_n = oldest
+        lag_vals = y_history[-self.n_lags:][::-1]
+        row = {f'lag_{i + 1}': float(lag_vals[i]) for i in range(self.n_lags)}
+
+        if X_h is not None:
+            for col in X_h.columns:
+                row[col] = float(X_h.iloc[0][col])
+
+        return pd.DataFrame([row])
+
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
         """
         Fit XGBoost model.
@@ -129,19 +159,16 @@ class XGBoostForecaster(BaseForecaster):
         
         for h in range(horizon):
             # Get covariates for this step if available
-            if X_future is not None and h < len(X_future):
-                X_h = X_future.iloc[h:h+1].copy()
-            else:
-                X_h = None
-            
-            # Create features using current history
-            X_features = self._create_lagged_features(y_history, X_h)
-            
+            X_h = X_future.iloc[h:h+1].copy() if X_future is not None and h < len(X_future) else None
+
+            # Build single prediction row directly from history
+            X_row = self._create_predict_row(y_history, X_h)
+
             # Ensure correct feature order
-            X_features = X_features[self.feature_names]
-            
+            X_row = X_row[self.feature_names]
+
             # Predict next step
-            y_pred = self.model.predict(X_features.iloc[-1:].values)[0]
+            y_pred = float(self.model.predict(X_row.values)[0])
             forecasts.append(y_pred)
             
             # Update history with prediction

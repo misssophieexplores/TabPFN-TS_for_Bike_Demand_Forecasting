@@ -68,6 +68,9 @@ class ForecastConfig:
     wandb_project: str = "bike-forecasting-testing" #TODO
     experiment_name: Optional[str] = None
 
+    # Tuning parameters:
+    tune_folds: int = 5
+    
     def __post_init__(self):
         if self.experiment_name is None:
             self.experiment_name = f"{self.dataset_name}_{self.results_version}"

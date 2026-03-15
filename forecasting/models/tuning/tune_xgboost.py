@@ -39,13 +39,7 @@ from config import ForecastConfig
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from features import add_time_features
-
-
-def load_data(filepath: str, config: ForecastConfig) -> pd.DataFrame:
-    df = pd.read_csv(filepath)
-    df[config.date_col] = pd.to_datetime(df[config.date_col])
-    df = df.sort_values(config.date_col).reset_index(drop=True)
-    return df  # no drop — covariate selection happens in tune_xgboost
+from run_experiments import load_and_prepare_data
 
 
 def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -> List[str]:
@@ -187,7 +181,7 @@ def tune_xgboost(
     horizon: int = 24,
     folds: int = 10,
     tune_folds: int = 5,
-    trials: int = 600,
+    trials: int = 10, #TODO --- set to 600 for final runs
     seed: int = 42,
     n_lags_options: Optional[List[int]] = None,
     max_train_size: int = 8000,
@@ -367,8 +361,6 @@ def main() -> None:
     parser.add_argument("--city", type=str, required=True, choices=["seoul", "london", "washington"])
     parser.add_argument("--scenario", type=str, default="clean_only", choices=["all_weather", "clean_only"])
     parser.add_argument("--horizon", type=int, default=24, help="Forecast horizon for validation")
-    parser.add_argument("--folds", type=int, default=10, help="Number of validation folds")
-    parser.add_argument("--tune-folds", type=int, default=5, help="Number of folds used during tuning")
     parser.add_argument("--trials", type=int, default=600, help="Random search trials")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--max-train-size", type=int, default=8000, help="Maximum training observations")
@@ -388,7 +380,7 @@ def main() -> None:
 
     data_path = str(Path("data") / config.data_filename)
     print(f"Loading data from {data_path}")
-    df = load_data(data_path, config)
+    df, _ = load_and_prepare_data(config) 
     print(f"Loaded {len(df)} observations\n")
 
     params = tune_xgboost(
@@ -396,8 +388,8 @@ def main() -> None:
         config=config,
         scenario=args.scenario,
         horizon=args.horizon,
-        folds=args.folds,
-        tune_folds=args.tune_folds,
+        folds=config.n_folds,
+        tune_folds=config.tune_folds,
         trials=args.trials,
         seed=args.seed,
         n_lags_options=n_lags_options,
