@@ -489,6 +489,13 @@ def main():
     if config.experiment_name is None or config.experiment_name.startswith("None"):
         config.experiment_name = f"{config.dataset_name}_{config.results_version}"
 
+    # Load tuned model parameters
+    with open(config.arima_params_file) as f:
+        arima_cfg = json.load(f)
+
+    with open(config.sarimax_params_file) as f:
+        sarimax_cfg = json.load(f)
+
     with open(config.xgb_params_file) as f:
         xgb_cfg = json.load(f)
     xgb_params = xgb_cfg["xgb_params"]
@@ -496,8 +503,8 @@ def main():
 
     models = [
         SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
-        ARIMAForecaster(order=config.arima_order),
-        SARIMAXForecaster(order=config.sarimax_order, seasonal_order=config.sarimax_seasonal_order),
+        ARIMAForecaster(order=tuple(arima_cfg["order"])),
+        SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
         ProphetForecaster(),
         NeuralProphetForecaster(),
