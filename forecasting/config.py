@@ -36,15 +36,15 @@ class ForecastConfig:
     xgb_params_file: Optional[str] = None
 
     # # --- Forecasting (shared) ---
-    horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168])
-    n_folds: int = 20
-    n_train_samples: int = 4096
-    seasonal_period: int = 24
-    # --- Forecasting (shared) ---
-    # horizons: List[int] = field(default_factory=lambda: [6])
-    # n_folds: int = 2
-    # n_train_samples: int = 500
+    # horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168])
+    # n_folds: int = 20
+    # n_train_samples: int = 4096
     # seasonal_period: int = 24
+    # --- Forecasting (shared) ---
+    horizons: List[int] = field(default_factory=lambda: [3])
+    n_folds: int = 2
+    n_train_samples: int = 500
+    seasonal_period: int = 24
 
 
     # --- Weather degradation (shared) ---
@@ -57,7 +57,7 @@ class ForecastConfig:
 
     # --- Output (shared) ---
     output_dir: str = "results"
-    results_version: str = "t5-02" 
+    results_version: str = "t5-01-4" 
     verbose: bool = False
 
     # # --- W&B (shared) ---
@@ -70,7 +70,7 @@ class ForecastConfig:
 
     # Tuning parameters:
     tune_folds: int = 5
-    
+
     def __post_init__(self):
         if self.experiment_name is None:
             self.experiment_name = f"{self.dataset_name}_{self.results_version}"

@@ -25,6 +25,7 @@
     "solar_radiation_wm2",
     "rainfall_mm",
     "snowfall_cm",
+    "visibility_km",
     "holiday",
     "season"
   ],

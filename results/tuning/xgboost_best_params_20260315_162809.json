@@ -5,15 +5,15 @@
     "random_state": 42,
     "tree_method": "hist",
     "n_jobs": -1,
-    "n_estimators": 1600,
-    "learning_rate": 0.09496640009272164,
-    "max_depth": 10,
-    "min_child_weight": 2.8280674719737684,
-    "subsample": 0.9916898534829118,
-    "colsample_bytree": 0.7508578721422723,
-    "gamma": 14.386250673816471,
-    "reg_lambda": 0.00294612239049057,
-    "reg_alpha": 1.5375926678948273e-08
+    "n_estimators": 800,
+    "learning_rate": 0.020665980021765038,
+    "max_depth": 5,
+    "min_child_weight": 14.788433398516275,
+    "subsample": 0.9056304213685162,
+    "colsample_bytree": 0.7985154971316943,
+    "gamma": 18.384911644344516,
+    "reg_lambda": 0.0070653388220659,
+    "reg_alpha": 5.852297408124341e-07
   },
   "tuning": {
     "search_type": "wide_random_search_no_early_stopping_joint_n_lags",
@@ -22,8 +22,8 @@
     "tune_folds": 5,
     "seed": 42,
     "metric_optimized": "MAE",
-    "best_tune_mae_mean": 29.475732115904492,
-    "best_tune_rmse_mean": 43.12440398628088,
+    "best_tune_mae_mean": 30.435932675997417,
+    "best_tune_rmse_mean": 43.530350282233535,
     "n_lags_options": [
       12,
       24,
@@ -31,11 +31,11 @@
       168
     ]
   },
-  "mae_mean": 34.350872898101805,
-  "mae_std": 10.834515007057911,
-  "rmse_mean": 53.36133433524079,
-  "rmse_std": 18.910212994333317,
-  "validation_folds": 10,
+  "mae_mean": 37.630356917778656,
+  "mae_std": 18.799830497567186,
+  "rmse_mean": 56.77275937199803,
+  "rmse_std": 30.47154415882879,
+  "validation_folds": 20,
   "max_train_size": 8000,
   "horizon": 24,
   "covariates_used": [
@@ -44,7 +44,10 @@
     "wind_speed_ms",
     "solar_radiation_wm2",
     "rainfall_mm",
-    "snowfall_cm"
+    "snowfall_cm",
+    "visibility_km",
+    "holiday",
+    "season"
   ],
   "time_features_used": [
     "hour",
