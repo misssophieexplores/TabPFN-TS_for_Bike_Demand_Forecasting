@@ -131,6 +131,7 @@ class NeuralProphetForecaster(BaseForecaster):
             weekly_seasonality=self.weekly_seasonality,
             daily_seasonality=self.daily_seasonality,
             epochs=self.epochs,
+            drop_missing=True,
         )
 
         train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
@@ -173,18 +174,24 @@ class NeuralProphetForecaster(BaseForecaster):
                 "NeuralProphetForecaster requires X_future with a DatetimeIndex."
             )
 
-        future_df = pd.DataFrame({"ds": X_future.index[:horizon]})
-        for col in self._covariate_cols:
-            future_df[col] = X_future[col].values[:horizon]
-
-        # NeuralProphet needs training tail as context for AR lags
-        context_df = pd.concat(
-            [self._last_train_df.tail(self.n_lags), future_df], ignore_index=True
+        # make_future_dataframe returns the full training df + horizon future rows.
+        # Covariates are already correct for training rows; we only need to fill
+        # the last `horizon` rows with future covariate values.
+        # We then take iloc[-horizon:] from predictions to get only the forecast.
+        future_df = self.model.make_future_dataframe(
+            self._last_train_df,
+            periods=horizon,
+            n_historic_predictions=True,
         )
 
-        forecast = self.model.predict(context_df)
+        for col in self._covariate_cols:
+            future_df.iloc[-horizon:, future_df.columns.get_loc(col)] = (
+                X_future[col].values[:horizon]
+            )
+
+        forecast = self.model.predict(future_df)
         yhat_cols = sorted([c for c in forecast.columns if c.startswith("yhat")])
-        return forecast[yhat_cols].values.flatten()[:horizon]
+        return forecast[yhat_cols].iloc[-horizon:].values.flatten()[:horizon]
 
     def reset(self) -> None:
         super().reset()
@@ -237,6 +244,7 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
             weekly_seasonality=self.weekly_seasonality,
             daily_seasonality=self.daily_seasonality,
             epochs=self.epochs,
+            drop_missing=True,
         )
 
         train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
@@ -262,15 +270,17 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
                 "NeuralProphetForecaster_NoWeather requires X_future with a DatetimeIndex."
             )
 
-        future_df = pd.DataFrame({"ds": X_future.index[:horizon]})
-
-        context_df = pd.concat(
-            [self._last_train_df.tail(self.n_lags), future_df], ignore_index=True
+        # make_future_dataframe returns training df + horizon future rows.
+        # No covariates to fill. Take iloc[-horizon:] from predictions.
+        future_df = self.model.make_future_dataframe(
+            self._last_train_df,
+            periods=horizon,
+            n_historic_predictions=True,
         )
 
-        forecast = self.model.predict(context_df)
+        forecast = self.model.predict(future_df)
         yhat_cols = sorted([c for c in forecast.columns if c.startswith("yhat")])
-        return forecast[yhat_cols].values.flatten()[:horizon]
+        return forecast[yhat_cols].iloc[-horizon:].values.flatten()[:horizon]
 
     def reset(self) -> None:
         super().reset()
