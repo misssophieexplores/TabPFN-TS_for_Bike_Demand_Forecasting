@@ -1,0 +1,15 @@
+\begin{table}[h]
+\centering
+\caption{Performance degradation — washington (averaged across all horizons).}
+\label{tab:degradation_summary_washington}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Clean MAE & Degraded MAE & Increase & Increase \% \\
+\midrule
+XGBoost & 40.61 & 47.80 & 7.19 & 17.71 \\
+TabPFN & 31.81 & 48.67 & 16.86 & 53.00 \\
+SARIMAX & 118.63 & 243.74 & 125.11 & 105.47 \\
+NeuralProphet & 172.64 & 425.77 & 253.14 & 146.63 \\
+\bottomrule
+\end{tabular}
+\end{table}

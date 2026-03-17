@@ -1,0 +1,24 @@
+\begin{table}[ht!]
+\centering
+\caption{Overall model rankings — washington (clean weather, mean across all horizons).}
+\label{tab:overall_rankings_washington}
+{\small
+\setlength{\tabcolsep}{3pt}
+\scriptsize
+\begin{tabular}{clrlrlrlrl}
+\toprule
+Rank & Model & MAE & ~~\(\Delta\) & RMSE & ~~\(\Delta\) & MASE & ~~\(\Delta\) & sMAPE & ~~\(\Delta\) \\
+\midrule
+1 & TabPFN & 31.81 &  & 47.92 &  & 0.39 &  & 17.86 &  \\
+2 & XGBoost & 40.61 & +8.80 & 61.26 & +13.34 & 0.49 & +0.10 & 21.92 & +4.06 \\
+3 & TabPFN_NoWeather & 41.37 & +9.56 & 63.52 & +15.60 & 0.50 & +0.11 & 21.20 & +3.34 \\
+4 & Seasonal_Naive & 82.19 & +50.38 & 118.39 & +70.47 & 1.00 & +0.61 & 40.29 & +22.43 \\
+5 & Prophet & 103.09 & +71.28 & 138.39 & +90.47 & 1.25 & +0.86 & 60.47 & +42.61 \\
+6 & SARIMAX & 118.63 & +86.82 & 148.58 & +100.66 & 1.44 & +1.05 & 68.91 & +51.05 \\
+7 & NeuralProphet_NoWeather & 164.58 & +132.77 & 209.89 & +161.97 & 2.01 & +1.62 & 76.81 & +58.95 \\
+8 & NeuralProphet & 172.64 & +140.83 & 227.01 & +179.09 & 2.11 & +1.72 & 76.87 & +59.01 \\
+9 & ARIMA & 211.51 & +179.70 & 269.36 & +221.44 & 2.57 & +2.18 & 96.10 & +78.24 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

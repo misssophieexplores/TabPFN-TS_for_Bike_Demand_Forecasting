@@ -1,0 +1,14 @@
+Model,Scenario,Mean_MAE,Std_MAE,CV_%
+ARIMA,clean_only,1021.37,188.54,18.46
+NeuralProphet,clean_only,818.8,128.01,15.63
+NeuralProphet_NoWeather,clean_only,825.35,139.19,16.86
+Prophet,clean_only,588.28,64.08,10.89
+SARIMAX,clean_only,883.39,314.91,35.65
+Seasonal_Naive,clean_only,396.65,141.7,35.72
+TabPFN,clean_only,163.21,51.22,31.38
+TabPFN_NoWeather,clean_only,244.47,76.87,31.45
+XGBoost,clean_only,192.29,45.54,23.68
+NeuralProphet,degraded,1124.08,455.01,40.48
+SARIMAX,degraded,1117.43,298.46,26.71
+TabPFN,degraded,223.46,45.08,20.18
+XGBoost,degraded,227.75,37.42,16.43

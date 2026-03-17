@@ -1,0 +1,15 @@
+\begin{table}[h]
+\centering
+\caption{Performance degradation — seoul (averaged across all horizons).}
+\label{tab:degradation_summary_seoul}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Clean MAE & Degraded MAE & Increase & Increase \% \\
+\midrule
+SARIMAX & 360.41 & 370.70 & 10.29 & 2.86 \\
+NeuralProphet & 440.15 & 458.18 & 18.03 & 4.10 \\
+XGBoost & 139.37 & 298.23 & 158.85 & 113.98 \\
+TabPFN & 129.75 & 335.48 & 205.72 & 158.55 \\
+\bottomrule
+\end{tabular}
+\end{table}

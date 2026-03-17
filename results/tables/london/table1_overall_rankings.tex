@@ -1,0 +1,24 @@
+\begin{table}[ht!]
+\centering
+\caption{Overall model rankings — london (clean weather, mean across all horizons).}
+\label{tab:overall_rankings_london}
+{\small
+\setlength{\tabcolsep}{3pt}
+\scriptsize
+\begin{tabular}{clrlrlrlrl}
+\toprule
+Rank & Model & MAE & ~~\(\Delta\) & RMSE & ~~\(\Delta\) & MASE & ~~\(\Delta\) & sMAPE & ~~\(\Delta\) \\
+\midrule
+1 & TabPFN & 163.21 &  & 245.66 &  & 0.42 &  & 15.19 &  \\
+2 & XGBoost & 192.29 & +29.08 & 289.82 & +44.16 & 0.49 & +0.07 & 18.93 & +3.74 \\
+3 & TabPFN_NoWeather & 244.47 & +81.26 & 360.18 & +114.52 & 0.63 & +0.21 & 20.58 & +5.39 \\
+4 & Seasonal_Naive & 396.65 & +233.44 & 619.55 & +373.89 & 1.02 & +0.60 & 33.28 & +18.09 \\
+5 & Prophet & 588.28 & +425.07 & 765.24 & +519.58 & 1.51 & +1.09 & 68.24 & +53.05 \\
+6 & NeuralProphet & 818.80 & +655.59 & 1069.75 & +824.09 & 2.10 & +1.68 & 75.59 & +60.40 \\
+7 & NeuralProphet_NoWeather & 825.35 & +662.14 & 1100.03 & +854.37 & 2.12 & +1.70 & 73.44 & +58.25 \\
+8 & SARIMAX & 883.39 & +720.18 & 1071.55 & +825.89 & 2.25 & +1.83 & 80.07 & +64.88 \\
+9 & ARIMA & 1021.37 & +858.16 & 1344.58 & +1098.92 & 2.62 & +2.20 & 91.78 & +76.59 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

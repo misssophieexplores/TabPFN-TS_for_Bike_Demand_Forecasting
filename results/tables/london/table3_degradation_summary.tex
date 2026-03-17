@@ -1,0 +1,15 @@
+\begin{table}[h]
+\centering
+\caption{Performance degradation — london (averaged across all horizons).}
+\label{tab:degradation_summary_london}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Clean MAE & Degraded MAE & Increase & Increase \% \\
+\midrule
+XGBoost & 192.29 & 227.75 & 35.46 & 18.44 \\
+SARIMAX & 883.39 & 1117.43 & 234.04 & 26.49 \\
+TabPFN & 163.21 & 223.46 & 60.24 & 36.91 \\
+NeuralProphet & 818.80 & 1124.08 & 305.29 & 37.29 \\
+\bottomrule
+\end{tabular}
+\end{table}
