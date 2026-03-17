@@ -7,3 +7,10 @@ wandb/
 tabpfn-v2-regressor-2noar4o2.ckpt
 .lr_find_*
 lightning_logs
+results/figures
+results/tables
+results/results_master_t*
+results/detailed_results_master_t*
+checkpoint_seoul_t*
+checkpoint_london_t*
+checkpoint_washington_t*
