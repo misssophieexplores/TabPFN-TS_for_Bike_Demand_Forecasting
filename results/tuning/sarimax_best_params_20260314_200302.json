@@ -1,0 +1,33 @@
+{
+  "order": [
+    2,
+    1,
+    0
+  ],
+  "seasonal_order": [
+    2,
+    0,
+    0,
+    24
+  ],
+  "scenario": "clean_only",
+  "aic": 55914.61000445507,
+  "bic": 55946.1976144365,
+  "mae_mean": 240.45236815134922,
+  "mae_std": 86.55956850815028,
+  "rmse_mean": 295.3195923552853,
+  "rmse_std": 124.71156762829996,
+  "validation_folds": 20,
+  "covariates_used": [
+    "Temperature",
+    "Humidity",
+    "Wind speed",
+    "Solar Radiation",
+    "Rainfall",
+    "Snowfall",
+    "Visibility",
+    "Holiday",
+    "Seasons"
+  ],
+  "m": 24
+}

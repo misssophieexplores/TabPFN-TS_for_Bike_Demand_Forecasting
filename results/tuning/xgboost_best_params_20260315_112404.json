@@ -1,0 +1,55 @@
+{
+  "n_lags": 24,
+  "xgb_params": {
+    "objective": "reg:squarederror",
+    "random_state": 42,
+    "tree_method": "hist",
+    "n_jobs": -1,
+    "n_estimators": 100,
+    "learning_rate": 0.08687484140587472,
+    "max_depth": 9,
+    "min_child_weight": 8.440010483124313,
+    "subsample": 0.9902489406547024,
+    "colsample_bytree": 0.9044558807961411,
+    "gamma": 15.721286105539075,
+    "reg_lambda": 0.11541881841022276,
+    "reg_alpha": 0.1535017711689418
+  },
+  "tuning": {
+    "search_type": "wide_random_search_no_early_stopping_joint_n_lags",
+    "scenario": "clean_only",
+    "trials": 3,
+    "tune_folds": 1,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 70.1495901743571,
+    "best_tune_rmse_mean": 81.92499393841508,
+    "n_lags_options": [
+      24
+    ]
+  },
+  "mae_mean": 147.77420384089152,
+  "mae_std": 72.37390895459727,
+  "rmse_mean": 199.0955731045288,
+  "rmse_std": 100.39232892147496,
+  "validation_folds": 20,
+  "max_train_size": 8000,
+  "horizon": 24,
+  "covariates_used": [
+    "Temperature",
+    "Humidity",
+    "Wind speed",
+    "Solar Radiation",
+    "Rainfall",
+    "Snowfall",
+    "Visibility",
+    "Holiday",
+    "Seasons"
+  ],
+  "time_features_used": [
+    "hour",
+    "dayofweek",
+    "month",
+    "is_weekend"
+  ]
+}
