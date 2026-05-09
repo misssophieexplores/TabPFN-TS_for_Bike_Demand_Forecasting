@@ -54,7 +54,7 @@ class ForecastConfig:
 
     # --- Output (shared) ---
     output_dir: str = "results"
-    results_version: str = "v5" 
+    results_version: str = "t6" 
     verbose: bool = False
 
     # --- W&B (shared) ---
@@ -62,7 +62,8 @@ class ForecastConfig:
     experiment_name: Optional[str] = None
 
     # Tuning parameters:
-    tune_folds: int = 5
+    tune_folds: Optional[int] = None
+    tune_horizon: int = 24
 
     def __post_init__(self):
         if self.experiment_name is None:

@@ -6,7 +6,7 @@ Uses pmdarima's auto_arima for automatic parameter search with:
 - Exogenous variables (weather covariates)
 
 Usage:
-    # Tune all cities and all horizons:
+    # Tune all cities:
     python forecasting/models/tuning/tune_sarimax.py
 
     # Tune a specific city only:
@@ -57,16 +57,11 @@ def tune_sarimax(
     df: pd.DataFrame,
     config: ForecastConfig,
     city: str,
-    horizon: int = 24,
     scenario: str = "clean_only",
-    max_folds: int = None,
     seasonal: bool = True,
     m: int = 24,
     verbose: bool = True
 ) -> dict:
-    if max_folds is None:
-        max_folds = config.n_folds
-
     covariates = select_covariates(config, df, scenario)
     cv = TimeSeriesCV(config)
     calc = MetricsCalculator()
@@ -77,16 +72,17 @@ def tune_sarimax(
 
     if verbose:
         print("="*70)
-        print(f"SARIMAX AUTO-TUNING (pmdarima) | city={city} | horizon={horizon}h | scenario={scenario}")
+        print(f"SARIMAX AUTO-TUNING (pmdarima) | city={city} | horizon={config.tune_horizon}h | scenario={scenario}")
         print("="*70)
         print(f"Covariates ({len(covariates)}): {covariates}")
         print(f"Seasonal: {seasonal}, m={m}")
-        print(f"Validation folds: {max_folds}")
         print(f"Cutoff date (held-out test start): {cutoff_date}")
         print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
+        print(f"n_train_samples: {config.n_train_samples}")
+        print(f"Validation folds: {'all available' if config.tune_folds is None else config.tune_folds}")
         print("="*70)
 
-    splits = cv.split(tune_df, horizon)
+    splits = cv.split(tune_df, config.tune_horizon)
     train_df, test_df = splits[0]
     y_train = train_df[config.target_col].values
     X_train = train_df[covariates].values
@@ -125,12 +121,16 @@ def tune_sarimax(
         print(f"seasonal_order: {seasonal_order}")
         print(f"AIC: {aic:.2f}")
         print(f"BIC: {bic:.2f}")
-        print(f"\nValidating on {max_folds} folds...")
+
+    fold_range = range(len(splits)) if config.tune_folds is None else range(min(config.tune_folds, len(splits)))
+
+    if verbose:
+        print(f"\nValidating on {len(fold_range)} folds...")
 
     mae_values = []
     rmse_values = []
 
-    for fold_idx in range(min(max_folds, len(splits))):
+    for fold_idx in fold_range:
         train_df, test_df = splits[fold_idx]
         y_train_fold = train_df[config.target_col].values
         y_test_fold = test_df[config.target_col].values
@@ -149,7 +149,7 @@ def tune_sarimax(
                 suppress_warnings=True,
                 error_action='ignore'
             )
-            y_pred = model_fold.predict(n_periods=horizon, exogenous=X_test_fold)
+            y_pred = model_fold.predict(n_periods=config.tune_horizon, exogenous=X_test_fold)
             metrics = calc.calculate_all(y_test_fold, y_pred, y_train_fold)
             mae_values.append(metrics['MAE'])
             rmse_values.append(metrics['RMSE'])
@@ -172,8 +172,8 @@ def tune_sarimax(
 
     return {
         'city': city,
-        'horizon': horizon,
         'scenario': scenario,
+        'n_train_samples': config.n_train_samples,
         'order': order,
         'seasonal_order': seasonal_order,
         'aic': float(aic),
@@ -192,8 +192,8 @@ def save_results(params: dict, output_dir: str = '.') -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    city, horizon, scenario = params['city'], params['horizon'], params['scenario']
-    output_file = output_dir / f'sarimax_best_params_{city}_{horizon}h_{scenario}_{timestamp}.json'
+    city, scenario, n_train = params['city'], params['scenario'], params['n_train_samples']
+    output_file = output_dir / f'sarimax_best_params_{city}_{scenario}_{n_train}_{timestamp}.json'
     with open(output_file, 'w') as f:
         json.dump(params, f, indent=2)
     print(f"\nResults saved to: {output_file}")
@@ -212,20 +212,10 @@ def run_city(city: str, args) -> None:
     df, _ = load_and_prepare_data(config)
     print(f"Loaded {len(df)} observations for {city}")
 
-    for horizon in config.horizons:
-        params = tune_sarimax(
-            df=df,
-            config=config,
-            city=city,
-            horizon=horizon,
-            scenario=args.scenario,
-            max_folds=config.n_folds,
-            seasonal=True,
-            m=args.seasonal_period,
-            verbose=True
-        )
-        output_file = save_results(params, args.output_dir)
-        print(f"  --> config.sarimax_params_file = '{output_file}'")
+    params = tune_sarimax(df=df, config=config, city=city, scenario=args.scenario,
+                          seasonal=True, m=args.seasonal_period, verbose=True)
+    output_file = save_results(params, args.output_dir)
+    print(f"  --> config.sarimax_params_file = '{output_file}'")
 
 
 def main():

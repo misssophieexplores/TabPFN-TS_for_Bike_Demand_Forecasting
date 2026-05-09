@@ -5,7 +5,7 @@ Uses pmdarima's auto_arima for automatic parameter search.
 Non-seasonal ARIMA only (no covariates).
 
 Usage:
-    # Tune all cities and all horizons:
+    # Tune all cities:
     python forecasting/models/tuning/tune_arima.py
 
     # Tune a specific city only:
@@ -31,6 +31,7 @@ import warnings
 from config import ForecastConfig
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
+from run_experiments import load_and_prepare_data
 
 try:
     from pmdarima import auto_arima
@@ -38,13 +39,6 @@ except ImportError:
     print("ERROR: pmdarima not installed")
     print("Install with: pip install pmdarima")
     sys.exit(1)
-
-
-def load_data(filepath: str, config: ForecastConfig) -> pd.DataFrame:
-    df = pd.read_csv(filepath)
-    df[config.date_col] = pd.to_datetime(df[config.date_col])
-    df = df.sort_values(config.date_col).reset_index(drop=True)
-    return df
 
 
 def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -> list:
@@ -62,9 +56,7 @@ def tune_arima(
     df: pd.DataFrame,
     config: ForecastConfig,
     city: str,
-    horizon: int = 24,
     scenario: str = "clean_only",
-    max_folds: int = 20,
     verbose: bool = True
 ) -> dict:
     cv = TimeSeriesCV(config)
@@ -76,14 +68,15 @@ def tune_arima(
 
     if verbose:
         print("="*70)
-        print(f"ARIMA AUTO-TUNING (pmdarima) | city={city} | horizon={horizon}h | scenario={scenario}")
+        print(f"ARIMA AUTO-TUNING (pmdarima) | city={city} | horizon={config.tune_horizon}h | scenario={scenario}")
         print("="*70)
-        print(f"Validation folds: {max_folds}")
         print(f"Cutoff date (held-out test start): {cutoff_date}")
         print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
+        print(f"n_train_samples: {config.n_train_samples}")
+        print(f"Validation folds: {'all available' if config.tune_folds is None else config.tune_folds}")
         print("="*70)
 
-    splits = cv.split(tune_df, horizon)
+    splits = cv.split(tune_df, config.tune_horizon)
     train_df, test_df = splits[0]
     y_train = train_df[config.target_col].values
 
@@ -116,12 +109,16 @@ def tune_arima(
         print(f"order: {order}")
         print(f"AIC: {aic:.2f}")
         print(f"BIC: {bic:.2f}")
-        print(f"\nValidating on {max_folds} folds...")
+
+    fold_range = range(len(splits)) if config.tune_folds is None else range(min(config.tune_folds, len(splits)))
+
+    if verbose:
+        print(f"\nValidating on {len(fold_range)} folds...")
 
     mae_values = []
     rmse_values = []
 
-    for fold_idx in range(min(max_folds, len(splits))):
+    for fold_idx in fold_range:
         train_df, test_df = splits[fold_idx]
         y_train_fold = train_df[config.target_col].values
         y_test_fold = test_df[config.target_col].values
@@ -136,7 +133,7 @@ def tune_arima(
                 suppress_warnings=True,
                 error_action='ignore'
             )
-            y_pred = model_fold.predict(n_periods=horizon)
+            y_pred = model_fold.predict(n_periods=config.tune_horizon)
             metrics = calc.calculate_all(y_test_fold, y_pred, y_train_fold)
             mae_values.append(metrics['MAE'])
             rmse_values.append(metrics['RMSE'])
@@ -160,8 +157,8 @@ def tune_arima(
 
     return {
         'city': city,
-        'horizon': horizon,
         'scenario': scenario,
+        'n_train_samples': config.n_train_samples,
         'order': order,
         'aic': float(aic),
         'bic': float(bic),
@@ -177,8 +174,8 @@ def save_results(params: dict, output_dir: str = '.') -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    city, horizon, scenario = params['city'], params['horizon'], params['scenario']
-    output_file = output_dir / f'arima_best_params_{city}_{horizon}h_{scenario}_{timestamp}.json'
+    city, scenario, n_train = params['city'], params['scenario'], params['n_train_samples']
+    output_file = output_dir / f'arima_best_params_{city}_{scenario}_{n_train}_{timestamp}.json'
     with open(output_file, 'w') as f:
         json.dump(params, f, indent=2)
     print(f"\nResults saved to: {output_file}")
@@ -194,23 +191,12 @@ def run_city(city: str, args) -> None:
         from config_washington import get_config
     config = get_config()
 
-    data_path = str(Path("data") / config.data_filename)
-    print(f"\nLoading data for {city} from {data_path}...")
-    df = load_data(data_path, config)
-    print(f"Loaded {len(df)} observations")
+    df, _ = load_and_prepare_data(config)
+    print(f"Loaded {len(df)} observations for {city}")
 
-    for horizon in config.horizons:
-        params = tune_arima(
-            df=df,
-            config=config,
-            city=city,
-            horizon=horizon,
-            scenario=args.scenario,
-            max_folds=args.folds,
-            verbose=True
-        )
-        output_file = save_results(params, args.output_dir)
-        print(f"  --> config.arima_params_file = '{output_file}'")
+    params = tune_arima(df=df, config=config, city=city, scenario=args.scenario, verbose=True)
+    output_file = save_results(params, args.output_dir)
+    print(f"  --> config.arima_params_file = '{output_file}'")
 
 
 def main():
@@ -219,7 +205,6 @@ def main():
                         default=None, help='City to tune (default: all cities)')
     parser.add_argument('--scenario', type=str, choices=['clean_only', 'all_weather'],
                         default='clean_only', help='Covariate set (default: clean_only)')
-    parser.add_argument('--folds', type=int, default=20, help='Number of validation folds')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
 

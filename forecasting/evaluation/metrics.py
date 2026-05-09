@@ -364,3 +364,86 @@ class MetricsCalculator:
             'MASE': cls.mase(y_true, y_pred, y_train),
             'sMAPE': cls.smape(y_true, y_pred)
         }
+
+    @staticmethod
+    def compute_comparative_metrics(
+        results_df,
+        baseline_model: str = "SeasonalNaive",
+        seed: int = 42,
+    ):
+        """
+        Compute win_rate and skill_score for each model vs. a baseline,
+        with bootstrapped 95% CIs. Operates on MASE_mean as the per-task error.
+
+        A "task" is a unique (horizon, weather_scenario) combination. Only tasks
+        where both the candidate model and the baseline have results are used.
+
+        Parameters:
+        -----------
+        results_df : pd.DataFrame
+            Aggregated results with one row per (model, horizon, weather_scenario),
+            as produced by ForecastingExperiment.run_all_experiments().
+        baseline_model : str
+            Model name to use as reference (default: 'SeasonalNaive').
+        seed : int
+            Random seed for bootstrap reproducibility (default: 42).
+
+        Returns:
+        --------
+        pd.DataFrame
+            One row per non-baseline model with columns:
+            model, baseline, n_tasks,
+            win_rate, win_rate_ci_lower, win_rate_ci_upper,
+            skill_score, skill_score_ci_lower, skill_score_ci_upper.
+        """
+        import pandas as pd
+
+        if baseline_model not in results_df['model'].values:
+            raise ValueError(
+                f"Baseline model '{baseline_model}' not found in results_df. "
+                f"Available models: {sorted(results_df['model'].unique().tolist())}"
+            )
+
+        # Pivot to (horizon, weather_scenario) x model matrix of MASE_mean values
+        pivot = results_df.pivot_table(
+            index=['horizon', 'weather_scenario'],
+            columns='model',
+            values='MASE_mean',
+        )
+
+        baseline_errors = pivot[baseline_model].values
+        rows = []
+
+        for model_name in pivot.columns:
+            if model_name == baseline_model:
+                continue
+
+            model_errors = pivot[model_name].values
+
+            # Only compare on tasks where both model and baseline have a result
+            valid = ~(np.isnan(model_errors) | np.isnan(baseline_errors))
+            if valid.sum() < 2:
+                raise ValueError(
+                    f"Not enough shared tasks to compare '{model_name}' vs "
+                    f"'{baseline_model}' (found {valid.sum()}, need at least 2)."
+                )
+
+            errs_j = model_errors[valid]
+            errs_b = baseline_errors[valid]
+
+            wr = MetricsCalculator.win_rate_with_ci(errs_j, errs_b, seed=seed)
+            ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+
+            rows.append({
+                'model': model_name,
+                'baseline': baseline_model,
+                'n_tasks': int(valid.sum()),
+                'win_rate': wr['win_rate'],
+                'win_rate_ci_lower': wr['ci_lower'],
+                'win_rate_ci_upper': wr['ci_upper'],
+                'skill_score': ss['skill_score'],
+                'skill_score_ci_lower': ss['ci_lower'],
+                'skill_score_ci_upper': ss['ci_upper'],
+            })
+
+        return pd.DataFrame(rows)

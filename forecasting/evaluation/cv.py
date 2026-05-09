@@ -31,60 +31,129 @@ class TimeSeriesCV:
         self._actual_n_folds = None
         self._imputed_fold_info = []
 
+    def get_cutoff_date(self, df: pd.DataFrame) -> pd.Timestamp:
+        """
+        Return the first fold cutoff date (start of held-out test period).
+
+        This is the single source of truth for the cutoff calculation.
+        split() calls this method internally to guarantee consistency.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            Full dataset with datetime index or column
+
+        Returns:
+        --------
+        pd.Timestamp
+            Cutoff date separating tuning/training data from held-out test period
+        """
+        df = df.copy()
+        df[self.config.date_col] = pd.to_datetime(df[self.config.date_col])
+        data_end = df[self.config.date_col].max()
+        n_eval_hours = self.config.n_folds * max(self.config.horizons)
+        return data_end - pd.Timedelta(hours=n_eval_hours)
+
     def split(
         self,
         df: pd.DataFrame,
         horizon: int,
     ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
-        # ... (validation and setup unchanged) ...
-
-        # Calculate first fold date dynamically (unchanged)
+        """
+        Generate train/test splits for time series cross-validation.
+        
+        Dynamically calculates the first fold date and number of folds
+        based on available data. Tracks which folds contain imputed data.
+        Uses all available data from the first fold date onward.
+        
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            Full dataset with datetime index or column
+        horizon : int
+            Forecast horizon (number of hours)
+            
+        Returns:
+        --------
+        List[Tuple[pd.DataFrame, pd.DataFrame]]
+            List of (train_df, test_df) tuples, one per fold
+        """
+        # Validate input
+        if self.config.date_col not in df.columns:
+            raise ValueError(f"Column '{self.config.date_col}' not found in dataframe")
+        
+        df = df.copy()
+        df[self.config.date_col] = pd.to_datetime(df[self.config.date_col])
+        df = df.sort_values(self.config.date_col).reset_index(drop=True)
+        
         data_start = df[self.config.date_col].min()
         data_end = df[self.config.date_col].max()
 
-        n_eval_hours = self.config.n_folds * max(self.config.horizons)
-        first_fold_date = data_end - pd.Timedelta(hours=n_eval_hours)
-
-        # For reporting only — no longer used to cap the loop
+        # Use get_cutoff_date as single source of truth for first fold date
+        first_fold_date = self.get_cutoff_date(df)
+        
+        # Calculate available testing hours
         total_hours = len(df)
         available_for_testing = total_hours - self.config.n_train_samples
+        
+        # Calculate maximum possible folds for this horizon
         longest_horizon = max(self.config.horizons)
         max_possible_folds = int(np.floor(available_for_testing / longest_horizon))
-        actual_n_folds = max_possible_folds  # will be updated after loop
-
+        
+        # Store for reporting
         self._first_fold_date = first_fold_date
         self._actual_n_folds = None  # set after loop
         self._imputed_fold_info = []
-
+        
         if self.config.verbose:
             print(f"CV Info for horizon={horizon}h:")
             print(f"  Data: {data_start} to {data_end} ({total_hours} hours)")
             print(f"  First fold date: {first_fold_date}")
             print(f"  Available for testing: {available_for_testing} hours")
-            print(f"  Requested folds: {self.config.n_folds} (cutoff anchor only)")
-            print(f"  Using all available test data from first fold date onward")
-
+            print(f"  Max possible folds: {max_possible_folds}")
+            print(f"  Requested folds: {self.config.n_folds}")
+            print(f"  Using all available data from first fold date onward")
+  
         # Generate splits — run until data is exhausted
         splits = []
         fold = 0
 
         while True:
+            # Calculate fold boundaries
             test_start = first_fold_date + pd.Timedelta(hours=fold * horizon)
             test_end = test_start + pd.Timedelta(hours=horizon)
-
+            
+            # Break if we've run out of data
             if test_end > data_end:
                 break
-
+            
+            # Create train/test split (rolling: fixed-size window ending at test_start)
             train_end = test_start
             train_start = train_end - pd.Timedelta(hours=self.config.n_train_samples)
             train_mask = (df[self.config.date_col] > train_start) & (df[self.config.date_col] <= train_end)
             test_mask = (df[self.config.date_col] > test_start) & (df[self.config.date_col] <= test_end)
-
+            
             train_df = df[train_mask].copy()
             test_df = df[test_mask].copy()
-
-            # ... (imputation tracking unchanged) ...
-
+            
+            # Check for imputed data in this fold
+            train_imputed = 0
+            test_imputed = 0
+            fday = self.config.functioning_day_col
+            if fday and fday in train_df.columns:
+                train_imputed = (train_df[fday] == 'No').sum()
+                test_imputed = (test_df[fday] == 'No').sum()
+            
+            # Store imputation info
+            self._imputed_fold_info.append({
+                'fold': fold,
+                'train_imputed': train_imputed,
+                'test_imputed': test_imputed,
+                'train_total': len(train_df),
+                'test_total': len(test_df)
+            })
+            
+            # Verify training size and valid test size
             if len(train_df) >= self.config.n_train_samples and len(test_df) == horizon:
                 splits.append((train_df, test_df))
 
@@ -95,10 +164,15 @@ class TimeSeriesCV:
         if self.config.verbose:
             print(f"  Actual folds generated: {self._actual_n_folds}")
 
-        # ... (imputation reporting unchanged) ...
-
+        # Report imputation summary
+        imputed_folds = [info for info in self._imputed_fold_info if info['test_imputed'] > 0]
+        if imputed_folds and self.config.verbose:
+            print(f"\n  Imputation info:")
+            print(f"    Folds with imputed test data: {len(imputed_folds)}/{len(splits)}")
+            for info in imputed_folds:
+                print(f"      Fold {info['fold']}: {info['test_imputed']}/{info['test_total']} test observations imputed")
+                
         return splits
-    
     
     def get_split_info(self, splits: List[Tuple[pd.DataFrame, pd.DataFrame]]) -> pd.DataFrame:
         """

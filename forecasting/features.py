@@ -7,7 +7,7 @@ TabPFN and SARIMAX do NOT use this — they handle temporal structure internally
 """
 
 import pandas as pd
-
+from typing import Optional 
 
 TIME_FEATURES = ["hour", "dayofweek", "month", "is_weekend"]
 
@@ -47,3 +47,18 @@ def add_time_features(df: pd.DataFrame, date_col: str) -> pd.DataFrame:
     features["is_weekend"] = (dt.dt.dayofweek >= 5).astype(int)
 
     return features.reset_index(drop=True)
+
+
+def prepare_xgboost_features(
+    df: pd.DataFrame,
+    date_col: str,
+    X_covariates: Optional[pd.DataFrame] = None
+) -> pd.DataFrame:
+    """
+    Build XGBoost feature matrix: covariates + time features.
+    Single source of truth used by both tuning and experiment runner.
+    """
+    time_feats = add_time_features(df, date_col)
+    if X_covariates is not None:
+        return pd.concat([X_covariates.reset_index(drop=True), time_feats], axis=1)
+    return time_feats

@@ -7,17 +7,17 @@ What this does:
     clean_only   : degradable covariates only (keys of weather_degradation_mapping)
     all_weather  : all weather_covariates from config
 - Uses wide search space (less restrictive) for a "final good" tuning.
-- Saves best config to results/tuning/xgboost_best_params_<city>_<horizon>h_<scenario>_<timestamp>.json
+- Saves best config to results/tuning/xgboost_best_params_<city>_<scenario>_<n_train>_<timestamp>.json
 
 Run:
-    # Tune all cities and all horizons:
+    # Tune all cities:
     python forecasting/models/tuning/tune_xgboost.py
 
     # Tune a specific city only:
     python forecasting/models/tuning/tune_xgboost.py --city seoul
 
     # Override scenario or other options:
-    python forecasting/models/tuning/tune_xgboost.py --city seoul --scenario all_weather --trials 600
+    python forecasting/models/tuning/tune_xgboost.py --city seoul --scenario clean_only --trials 3
 """
 
 import sys
@@ -145,10 +145,7 @@ def tune_xgboost(
     df: pd.DataFrame,
     config: ForecastConfig,
     city: str,
-    horizon: int = 24,
     scenario: str = "clean_only",
-    folds: int = 10,
-    tune_folds: int = 5,
     trials: int = 10,  # TODO --- set to 600 for final runs
     seed: int = 42,
     n_lags_options: Optional[List[int]] = None,
@@ -162,12 +159,13 @@ def tune_xgboost(
     cutoff_date = cv.get_cutoff_date(df)
     tune_df = df[df[config.date_col] <= cutoff_date].copy()
 
-    splits = cv.split(tune_df, horizon)
+    splits = cv.split(tune_df, config.tune_horizon)
     if len(splits) == 0:
         raise RuntimeError("No CV splits available for the given horizon/config.")
 
-    tune_folds = min(tune_folds, len(splits))
-    folds = min(folds, len(splits))
+    # None means use all available splits
+    tune_split_indices = range(len(splits)) if config.tune_folds is None else range(len(splits) - min(config.tune_folds, len(splits)), len(splits))
+    val_split_indices  = range(len(splits)) if config.tune_folds is None else range(len(splits) - min(config.tune_folds, len(splits)), len(splits))
 
     if not n_lags_options:
         n_lags_options = [12, 24, 48, 168]
@@ -176,15 +174,16 @@ def tune_xgboost(
 
     if verbose:
         print("=" * 70)
-        print(f"XGBOOST TUNING (wide random search) | city={city} | horizon={horizon}h | scenario={scenario}")
+        print(f"XGBOOST TUNING (wide random search) | city={city} | horizon={config.tune_horizon}h | scenario={scenario}")
         print("=" * 70)
         print(f"Trials: {trials}")
-        print(f"Tune folds: {tune_folds}")
-        print(f"Validate folds: {folds}")
+        print(f"Tune folds: {len(tune_split_indices)} ({'all' if config.tune_folds is None else config.tune_folds})")
+        print(f"Validate folds: {len(val_split_indices)} ({'all' if config.tune_folds is None else config.tune_folds})")
         print(f"n_lags_options: {n_lags_options}")
         print(f"Max train size: {max_train_size}")
         print(f"Cutoff date (held-out test start): {cutoff_date}")
         print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
+        print(f"n_train_samples: {config.n_train_samples}")
         print(f"Covariates used ({len(config.weather_covariates)}): {config.weather_covariates}")
         print("=" * 70)
 
@@ -200,7 +199,6 @@ def tune_xgboost(
         rmses: List[float] = []
         failed = False
 
-        tune_split_indices = range(len(splits) - tune_folds, len(splits))
         for fold_idx in tune_split_indices:
             train_df, test_df = splits[fold_idx]
             try:
@@ -252,7 +250,7 @@ def tune_xgboost(
     mae_values: List[float] = []
     rmse_values: List[float] = []
 
-    for fold_idx in range(len(splits) - folds, len(splits)):
+    for fold_idx in val_split_indices:
         train_df, test_df = splits[fold_idx]
         try:
             mae, rmse = evaluate_params_on_fold(
@@ -280,14 +278,14 @@ def tune_xgboost(
 
     return {
         "city": city,
-        "horizon": horizon,
         "scenario": scenario,
+        "n_train_samples": config.n_train_samples,
         "n_lags": int(best_n_lags),
         "xgb_params": best_params,
         "tuning": {
             "search_type": "wide_random_search_no_early_stopping_joint_n_lags",
             "trials": int(trials),
-            "tune_folds": int(tune_folds),
+            "tune_folds": len(tune_split_indices),
             "seed": int(seed),
             "metric_optimized": "MAE",
             "best_tune_mae_mean": float(best_mae),
@@ -309,8 +307,8 @@ def save_results(params: dict, output_dir: str) -> Path:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    city, horizon, scenario = params['city'], params['horizon'], params['scenario']
-    output_file = out_dir / f"xgboost_best_params_{city}_{horizon}h_{scenario}_{timestamp}.json"
+    city, scenario, n_train = params['city'], params['scenario'], params['n_train_samples']
+    output_file = out_dir / f"xgboost_best_params_{city}_{scenario}_{n_train}_{timestamp}.json"
     with open(output_file, "w") as f:
         json.dump(params, f, indent=2)
     print(f"\nResults saved to: {output_file}")
@@ -331,23 +329,19 @@ def run_city(city: str, args) -> None:
     df, _ = load_and_prepare_data(config)
     print(f"Loaded {len(df)} observations for {city}")
 
-    for horizon in config.horizons:
-        params = tune_xgboost(
-            df=df,
-            config=config,
-            city=city,
-            horizon=horizon,
-            scenario=args.scenario,
-            folds=config.n_folds,
-            tune_folds=config.tune_folds,
-            trials=args.trials,
-            seed=args.seed,
-            n_lags_options=n_lags_options,
-            max_train_size=args.max_train_size,
-            verbose=True,
-        )
-        output_file = save_results(params, args.output_dir)
-        print(f"  --> config.xgb_params_file = '{output_file}'")
+    params = tune_xgboost(
+        df=df,
+        config=config,
+        city=city,
+        scenario=args.scenario,
+        trials=args.trials,
+        seed=args.seed,
+        n_lags_options=n_lags_options,
+        max_train_size=args.max_train_size,
+        verbose=True,
+    )
+    output_file = save_results(params, args.output_dir)
+    print(f"  --> config.xgb_params_file = '{output_file}'")
 
 
 def main() -> None:

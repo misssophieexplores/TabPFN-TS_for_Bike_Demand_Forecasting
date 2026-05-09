@@ -13,9 +13,11 @@ from dotenv import load_dotenv
 import wandb
 import json
 
+
 warnings.filterwarnings('ignore')
 
 from config import ForecastConfig
+from features import prepare_xgboost_features
 from models.base import BaseForecaster
 from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster
 from models.ml_models import XGBoostForecaster
@@ -28,6 +30,9 @@ from features import add_time_features
 
 # Load environment variables
 load_dotenv()
+
+# Name used as baseline for skill_score / win_rate comparisons
+BASELINE_MODEL = "SeasonalNaive"
 
 class ForecastingExperiment:
     """Manages and runs forecasting experiments with W&B logging"""
@@ -158,10 +163,8 @@ class ForecastingExperiment:
             # Append calendar time features for models that need them (e.g. XGBoost).
             # Done here so timestamps are available — models never see raw datetimes.
             if model.use_time_features:
-                time_train = add_time_features(train_df, self.config.date_col)
-                time_test = add_time_features(test_df, self.config.date_col)
-                X_train = pd.concat([X_train.reset_index(drop=True), time_train], axis=1) if X_train is not None else time_train
-                X_test = pd.concat([X_test.reset_index(drop=True), time_test], axis=1) if X_test is not None else time_test
+                X_train = prepare_xgboost_features(train_df, self.config.date_col, X_train)
+                X_test = prepare_xgboost_features(test_df, self.config.date_col, X_test)
 
             # Attach real DatetimeIndex for models that need timestamps (Prophet, TabPFN).
             # This replaces any previously hardcoded date ranges in those models.
@@ -285,7 +288,7 @@ class ForecastingExperiment:
         wandb.log({f"{model.name}_{weather_scenario}_h{horizon}_folds": fold_table})
 
         return aggregated, fold_results
-    
+
     def run_all_experiments(
         self,
         models: List[BaseForecaster],
@@ -365,10 +368,41 @@ class ForecastingExperiment:
                 "results_summary": wandb.Table(dataframe=summary.reset_index())
             })
 
+            # --- Comparative metrics (win_rate, skill_score) ---
+            comparative_df = MetricsCalculator.compute_comparative_metrics(
+                results_df, baseline_model=BASELINE_MODEL
+            )
+            self.comparative_results = comparative_df
+
+            if len(comparative_df) > 0:
+                # Log summary table to W&B
+                wandb.log({
+                    "comparative_metrics": wandb.Table(dataframe=comparative_df)
+                })
+
+                # Also log scalar values per model so they appear in the W&B
+                # run summary and can be used in sweeps / comparisons
+                for _, row in comparative_df.iterrows():
+                    wandb.log({
+                        f"{row['model']}_vs_{row['baseline']}_win_rate": row['win_rate'],
+                        f"{row['model']}_vs_{row['baseline']}_win_rate_ci_lower": row['win_rate_ci_lower'],
+                        f"{row['model']}_vs_{row['baseline']}_win_rate_ci_upper": row['win_rate_ci_upper'],
+                        f"{row['model']}_vs_{row['baseline']}_skill_score": row['skill_score'],
+                        f"{row['model']}_vs_{row['baseline']}_skill_score_ci_lower": row['skill_score_ci_lower'],
+                        f"{row['model']}_vs_{row['baseline']}_skill_score_ci_upper": row['skill_score_ci_upper'],
+                    })
+
+                if verbose:
+                    print("\nComparative metrics vs", BASELINE_MODEL)
+                    print(comparative_df[
+                        ['model', 'n_tasks', 'win_rate', 'skill_score']
+                    ].to_string(index=False))
+
         # Save detailed fold results
         self.detailed_results = all_fold_results
 
         return results_df
+
     def save_results(self, results_df: pd.DataFrame) -> str:
         """Append results to master CSV"""
         
@@ -387,6 +421,22 @@ class ForecastingExperiment:
                 existing = pd.read_csv(filename_detailed)
                 detailed_df = pd.concat([existing, detailed_df], ignore_index=True)
             detailed_df.to_csv(filename_detailed, index=False)
+
+        # Comparative metrics (win_rate / skill_score) - APPEND mode
+        if hasattr(self, 'comparative_results') and len(self.comparative_results) > 0:
+            filename_comparative = (
+                self.output_dir / f"comparative_metrics_{self.config.results_version}.csv"
+            )
+            comparative_df = self.comparative_results.copy()
+            comparative_df['dataset'] = self.config.dataset_name
+            comparative_df['run_name'] = self.run_name
+            comparative_df['timestamp'] = datetime.now().isoformat()
+            if filename_comparative.exists():
+                existing = pd.read_csv(filename_comparative)
+                comparative_df = pd.concat([existing, comparative_df], ignore_index=True)
+            comparative_df.to_csv(filename_comparative, index=False)
+            if self.config.verbose:
+                print(f"Comparative metrics saved to: {filename_comparative}")
         
         if self.config.verbose:
             print(f"Results appended to: {filename_agg}")
