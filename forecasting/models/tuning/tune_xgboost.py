@@ -3,22 +3,21 @@ XGBoost Hyperparameter Tuning (random search, NO early stopping)
 
 What this does:
 - Jointly tunes n_lags AND XGBoost hyperparameters in ONE run.
-- Covariate selection is driven by --scenario:
-    all_weather  : all weather_covariates from config (incl. Dew point)
+- Covariate selection is driven by --scenario (default: clean_only):
     clean_only   : degradable covariates only (keys of weather_degradation_mapping)
+    all_weather  : all weather_covariates from config
 - Uses wide search space (less restrictive) for a "final good" tuning.
-- Saves best config to results/tuning/xgboost_best_params_<timestamp>.json
+- Saves best config to results/tuning/xgboost_best_params_<city>_<horizon>h_<scenario>_<timestamp>.json
 
 Run:
+    # Tune all cities and all horizons:
+    python forecasting/models/tuning/tune_xgboost.py
+
+    # Tune a specific city only:
     python forecasting/models/tuning/tune_xgboost.py --city seoul
-    python forecasting/models/tuning/tune_xgboost.py --city london
-    python forecasting/models/tuning/tune_xgboost.py --city washington
 
-    # Specify scenario (default: clean_only):
-    python forecasting/models/tuning/tune_xgboost.py --city seoul --scenario clean_only
-
-    # Override other options:
-    python forecasting/models/tuning/tune_xgboost.py --city seoul --horizon 24 --trials 600
+    # Override scenario or other options:
+    python forecasting/models/tuning/tune_xgboost.py --city seoul --scenario all_weather --trials 600
 """
 
 import sys
@@ -43,17 +42,9 @@ from run_experiments import load_and_prepare_data
 
 
 def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -> List[str]:
-    """
-    Return the covariate columns to use for a given scenario.
-
-    all_weather : all weather_covariates present in df
-    clean_only  : only degradable covariates (weather_degradation_mapping keys) present in df
-    """
     if scenario == "all_weather":
-        candidates = config.weather_covariates
-        return [c for c in candidates if c in df.columns]
-    else:
-        # clean_only: degradable vars + calendar covariates (not degraded)
+        return [c for c in config.weather_covariates if c in df.columns]
+    else:  # clean_only
         covariates = [c for c in config.weather_degradation_mapping.keys() if c in df.columns]
         for col in [config.holiday_col, config.season_col]:
             if col and col in df.columns:
@@ -67,17 +58,13 @@ def create_lagged_features(
     n_lags: int,
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     y = np.asarray(y)
-
     lag_mat = np.column_stack([np.roll(y, lag) for lag in range(1, n_lags + 1)])
     lag_mat = lag_mat[n_lags:, :]
-
     lag_cols = [f"lag_{lag}" for lag in range(1, n_lags + 1)]
     feats = pd.DataFrame(lag_mat, columns=lag_cols)
-
     if X is not None:
         X_part = X.reset_index(drop=True).iloc[n_lags:].reset_index(drop=True)
         feats = pd.concat([feats, X_part], axis=1)
-
     y_target = y[n_lags:]
     return feats, y_target
 
@@ -91,34 +78,22 @@ def iterative_forecast(
     preds: List[float] = []
     hist = y_history.astype(float).tolist()
     Xf = X_future.reset_index(drop=True)
-
     for t in range(len(Xf)):
-        lag_vals = list(reversed(hist[-n_lags:]))  # lag_1 is most recent
+        lag_vals = list(reversed(hist[-n_lags:]))
         row = {f"lag_{i + 1}": float(lag_vals[i]) for i in range(n_lags)}
         for col in Xf.columns:
             row[col] = float(Xf.loc[t, col])
-
         X_row = pd.DataFrame([row])
         yhat = float(model.predict(X_row)[0])
         preds.append(yhat)
         hist.append(yhat)
-
     return np.array(preds, dtype=float)
 
 
 def sample_params(rng: np.random.Generator) -> Dict:
-    """
-    Random-search space sized to be realistic (not extreme) and still meaningful.
-
-    Goals:
-    - Avoid very slow configs (no DART, no 8000 trees, no depth 14).
-    - Avoid trivial configs (not capped at tiny models only).
-    - Use fast training implementation (hist) and all CPU cores.
-    """
     learning_rate = float(np.exp(rng.uniform(np.log(0.005), np.log(0.2))))
     reg_lambda = float(np.exp(rng.uniform(np.log(1e-3), np.log(50.0))))
     reg_alpha = float(np.exp(rng.uniform(np.log(1e-10), np.log(5.0))))
-
     return {
         "objective": "reg:squarederror",
         "random_state": 42,
@@ -149,7 +124,6 @@ def evaluate_params_on_fold(
     y_test = test_df[config.target_col].values
     X_test = test_df[config.weather_covariates].reset_index(drop=True)
 
-    # Append calendar time features — must match what run_experiments.py does at inference
     X_train = pd.concat([X_train, add_time_features(train_df, config.date_col)], axis=1)
     X_test = pd.concat([X_test, add_time_features(test_df, config.date_col)], axis=1)
 
@@ -158,16 +132,9 @@ def evaluate_params_on_fold(
         X_train = X_train.iloc[-max_train_size:].reset_index(drop=True)
 
     X_sup, y_sup = create_lagged_features(y_train, X_train, n_lags=n_lags)
-
     model = xgb.XGBRegressor(**params)
     model.fit(X_sup, y_sup)
-
-    y_pred = iterative_forecast(
-        model=model,
-        y_history=y_train,
-        X_future=X_test,
-        n_lags=n_lags,
-    )
+    y_pred = iterative_forecast(model=model, y_history=y_train, X_future=X_test, n_lags=n_lags)
 
     calc = MetricsCalculator()
     metrics = calc.calculate_all(y_test, y_pred, y_train)
@@ -177,20 +144,25 @@ def evaluate_params_on_fold(
 def tune_xgboost(
     df: pd.DataFrame,
     config: ForecastConfig,
-    scenario: str = "clean_only",
+    city: str,
     horizon: int = 24,
+    scenario: str = "clean_only",
     folds: int = 10,
     tune_folds: int = 5,
-    trials: int = 10, #TODO --- set to 600 for final runs
+    trials: int = 10,  # TODO --- set to 600 for final runs
     seed: int = 42,
     n_lags_options: Optional[List[int]] = None,
     max_train_size: int = 8000,
     verbose: bool = True,
 ) -> Dict:
     config.weather_covariates = select_covariates(config, df, scenario)
-
     cv = TimeSeriesCV(config)
-    splits = cv.split(df, horizon)
+
+    # Only tune on pre-cutoff data — never touch the held-out test period
+    cutoff_date = cv.get_cutoff_date(df)
+    tune_df = df[df[config.date_col] <= cutoff_date].copy()
+
+    splits = cv.split(tune_df, horizon)
     if len(splits) == 0:
         raise RuntimeError("No CV splits available for the given horizon/config.")
 
@@ -204,15 +176,15 @@ def tune_xgboost(
 
     if verbose:
         print("=" * 70)
-        print("XGBOOST FINAL TUNING (wide random search, NO early stopping)")
+        print(f"XGBOOST TUNING (wide random search) | city={city} | horizon={horizon}h | scenario={scenario}")
         print("=" * 70)
-        print(f"Scenario: {scenario}")
-        print(f"Horizon: {horizon}h")
         print(f"Trials: {trials}")
         print(f"Tune folds: {tune_folds}")
         print(f"Validate folds: {folds}")
         print(f"n_lags_options: {n_lags_options}")
         print(f"Max train size: {max_train_size}")
+        print(f"Cutoff date (held-out test start): {cutoff_date}")
+        print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
         print(f"Covariates used ({len(config.weather_covariates)}): {config.weather_covariates}")
         print("=" * 70)
 
@@ -224,23 +196,17 @@ def tune_xgboost(
     for t in range(1, trials + 1):
         params = sample_params(rng)
         trial_n_lags = int(rng.choice(n_lags_options))
-
         maes: List[float] = []
         rmses: List[float] = []
         failed = False
-
 
         tune_split_indices = range(len(splits) - tune_folds, len(splits))
         for fold_idx in tune_split_indices:
             train_df, test_df = splits[fold_idx]
             try:
                 mae, rmse = evaluate_params_on_fold(
-                    train_df=train_df,
-                    test_df=test_df,
-                    config=config,
-                    params=params,
-                    n_lags=trial_n_lags,
-                    max_train_size=max_train_size,
+                    train_df=train_df, test_df=test_df, config=config,
+                    params=params, n_lags=trial_n_lags, max_train_size=max_train_size,
                 )
                 maes.append(mae)
                 rmses.append(rmse)
@@ -290,12 +256,8 @@ def tune_xgboost(
         train_df, test_df = splits[fold_idx]
         try:
             mae, rmse = evaluate_params_on_fold(
-                train_df=train_df,
-                test_df=test_df,
-                config=config,
-                params=best_params,
-                n_lags=best_n_lags,
-                max_train_size=max_train_size,
+                train_df=train_df, test_df=test_df, config=config,
+                params=best_params, n_lags=best_n_lags, max_train_size=max_train_size,
             )
             mae_values.append(mae)
             rmse_values.append(rmse)
@@ -317,11 +279,13 @@ def tune_xgboost(
         print(f"  RMSE: {rmse_mean:.2f} ± {rmse_std:.2f}")
 
     return {
+        "city": city,
+        "horizon": horizon,
+        "scenario": scenario,
         "n_lags": int(best_n_lags),
         "xgb_params": best_params,
         "tuning": {
             "search_type": "wide_random_search_no_early_stopping_joint_n_lags",
-            "scenario": scenario,
             "trials": int(trials),
             "tune_folds": int(tune_folds),
             "seed": int(seed),
@@ -336,7 +300,6 @@ def tune_xgboost(
         "rmse_std": rmse_std,
         "validation_folds": int(len(mae_values)),
         "max_train_size": int(max_train_size),
-        "horizon": int(horizon),
         "covariates_used": list(config.weather_covariates),
         "time_features_used": ["hour", "dayofweek", "month", "is_weekend"],
     }
@@ -345,22 +308,54 @@ def tune_xgboost(
 def save_results(params: dict, output_dir: str) -> Path:
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = out_dir / f"xgboost_best_params_{timestamp}.json"
-
+    city, horizon, scenario = params['city'], params['horizon'], params['scenario']
+    output_file = out_dir / f"xgboost_best_params_{city}_{horizon}h_{scenario}_{timestamp}.json"
     with open(output_file, "w") as f:
         json.dump(params, f, indent=2)
-
     print(f"\nResults saved to: {output_file}")
     return output_file
 
 
+def run_city(city: str, args) -> None:
+    if city == "seoul":
+        from config_seoul import get_config
+    elif city == "london":
+        from config_london import get_config
+    elif city == "washington":
+        from config_washington import get_config
+    config = get_config()
+
+    n_lags_options = [int(x.strip()) for x in args.n_lags_options.split(",") if x.strip()]
+
+    df, _ = load_and_prepare_data(config)
+    print(f"Loaded {len(df)} observations for {city}")
+
+    for horizon in config.horizons:
+        params = tune_xgboost(
+            df=df,
+            config=config,
+            city=city,
+            horizon=horizon,
+            scenario=args.scenario,
+            folds=config.n_folds,
+            tune_folds=config.tune_folds,
+            trials=args.trials,
+            seed=args.seed,
+            n_lags_options=n_lags_options,
+            max_train_size=args.max_train_size,
+            verbose=True,
+        )
+        output_file = save_results(params, args.output_dir)
+        print(f"  --> config.xgb_params_file = '{output_file}'")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tune XGBoost (wide random search, no early stopping)")
-    parser.add_argument("--city", type=str, required=True, choices=["seoul", "london", "washington"])
-    parser.add_argument("--scenario", type=str, default="clean_only", choices=["all_weather", "clean_only"])
-    parser.add_argument("--horizon", type=int, default=24, help="Forecast horizon for validation")
+    parser.add_argument('--city', type=str, choices=["seoul", "london", "washington"],
+                        default=None, help='City to tune (default: all cities)')
+    parser.add_argument('--scenario', type=str, choices=['clean_only', 'all_weather'],
+                        default='clean_only', help='Covariate set (default: clean_only)')
     parser.add_argument("--trials", type=int, default=600, help="Random search trials")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--max-train-size", type=int, default=8000, help="Maximum training observations")
@@ -368,38 +363,17 @@ def main() -> None:
     parser.add_argument("--n-lags-options", type=str, default="12,24,48,168")
     args = parser.parse_args()
 
-    if args.city == "seoul":
-        from config_seoul import get_config
-    elif args.city == "london":
-        from config_london import get_config
-    elif args.city == "washington":
-        from config_washington import get_config
-    config = get_config()
+    cities = [args.city] if args.city else ["seoul", "london", "washington"]
 
-    n_lags_options = [int(x.strip()) for x in args.n_lags_options.split(",") if x.strip()]
+    for city in cities:
+        print("\n" + "=" * 70)
+        print(f"TUNING XGBOOST FOR: {city.upper()}")
+        print("=" * 70)
+        run_city(city, args)
 
-    data_path = str(Path("data") / config.data_filename)
-    print(f"Loading data from {data_path}")
-    df, _ = load_and_prepare_data(config) 
-    print(f"Loaded {len(df)} observations\n")
-
-    params = tune_xgboost(
-        df=df,
-        config=config,
-        scenario=args.scenario,
-        horizon=args.horizon,
-        folds=config.n_folds,
-        tune_folds=config.tune_folds,
-        trials=args.trials,
-        seed=args.seed,
-        n_lags_options=n_lags_options,
-        max_train_size=args.max_train_size,
-        verbose=True,
-    )
-
-    output_file = save_results(params, args.output_dir)
-    print(f"\nUpdate config_{args.city}.py with:")
-    print(f"  config.xgb_params_file = '{output_file}'")
+    print("\n" + "=" * 70)
+    print("ALL TUNING COMPLETE")
+    print("=" * 70)
 
 
 if __name__ == "__main__":
