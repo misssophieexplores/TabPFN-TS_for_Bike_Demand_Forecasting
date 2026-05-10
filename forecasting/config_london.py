@@ -45,5 +45,7 @@ def get_config() -> ForecastConfig:
     config.arima_params_file = "results/tuning/arima_best_params_20260314_190725.json"
     config.sarimax_params_file = "results/tuning/sarimax_best_params_20260315_135209.json" 
     config.xgb_params_file = "results/tuning/xgboost_best_params_20260309_081759.json" 
+    config.prophet_params_file = "" #TODO
+    config.neuralprophet_params_file = "" #TODO
 
     return config

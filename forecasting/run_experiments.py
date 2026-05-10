@@ -551,18 +551,26 @@ def main():
     xgb_params = xgb_cfg["xgb_params"]
     n_lags = xgb_cfg["n_lags"]
 
+    with open(config.prophet_params_file) as f:
+        prophet_cfg = json.load(f)
+    prophet_params = prophet_cfg["prophet_params"]
+
+    with open(config.neuralprophet_params_file) as f:
+        np_cfg = json.load(f)
+    np_lags = np_cfg["n_lags"]
+    np_params = np_cfg["neuralprophet_params"]
+
     models = [
         SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
         ARIMAForecaster(order=tuple(arima_cfg["order"])),
         SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
-        ProphetForecaster(),
-        NeuralProphetForecaster(),
-        NeuralProphetForecaster_NoWeather(),
+        ProphetForecaster(**prophet_params),
+        NeuralProphetForecaster(n_lags=np_lags, **np_params),
+        NeuralProphetForecaster_NoWeather(n_lags=np_lags, **np_params),
         TabPFNPipelineForecaster(),
         TabPFNPipelineForecaster_NoWeather(),
     ]
-
     experiment = ForecastingExperiment(
         config=config,
         output_dir=config.output_dir,

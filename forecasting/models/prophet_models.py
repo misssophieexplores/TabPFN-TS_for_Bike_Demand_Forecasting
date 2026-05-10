@@ -32,12 +32,18 @@ class ProphetForecaster(BaseForecaster):
         weekly_seasonality: bool = True,
         daily_seasonality: bool = True,
         seasonality_mode: str = "multiplicative",
+        changepoint_prior_scale: float = 0.05, # model defaults 
+        seasonality_prior_scale: float = 10.0, # model defaults
+        holidays_prior_scale: float = 10.0, # model defaults
     ):
         super().__init__("Prophet", use_covariates=False, use_time_features=False)
         self.yearly_seasonality = yearly_seasonality
         self.weekly_seasonality = weekly_seasonality
         self.daily_seasonality = daily_seasonality
         self.seasonality_mode = seasonality_mode
+        self.changepoint_prior_scale = changepoint_prior_scale
+        self.seasonality_prior_scale = seasonality_prior_scale
+        self.holidays_prior_scale = holidays_prior_scale
         self.model = None
         self._last_timestamp = None
 
@@ -57,6 +63,9 @@ class ProphetForecaster(BaseForecaster):
             weekly_seasonality=self.weekly_seasonality,
             daily_seasonality=self.daily_seasonality,
             seasonality_mode=self.seasonality_mode,
+            changepoint_prior_scale=self.changepoint_prior_scale,
+            seasonality_prior_scale=self.seasonality_prior_scale,
+            holidays_prior_scale=self.holidays_prior_scale,
         )
         train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
         self.model.fit(train_df)
@@ -97,6 +106,7 @@ class NeuralProphetForecaster(BaseForecaster):
     def __init__(
         self,
         n_lags: int = 24,
+        learning_rate: Optional[float] = None,
         epochs: Optional[int] = None,
         seasonality_mode: str = "multiplicative",
         yearly_seasonality: bool = True,
@@ -105,6 +115,7 @@ class NeuralProphetForecaster(BaseForecaster):
     ):
         super().__init__("NeuralProphet", use_covariates=True, use_time_features=False)
         self.n_lags = n_lags
+        self.learning_rate = learning_rate
         self.epochs = epochs
         self.seasonality_mode = seasonality_mode
         self.yearly_seasonality = yearly_seasonality
@@ -126,6 +137,7 @@ class NeuralProphetForecaster(BaseForecaster):
         self.model = NeuralProphet(
             n_lags=self.n_lags,
             n_forecasts=1,
+            learning_rate=self.learning_rate,
             seasonality_mode=self.seasonality_mode,
             yearly_seasonality=self.yearly_seasonality,
             weekly_seasonality=self.weekly_seasonality,
@@ -211,6 +223,7 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
     def __init__(
         self,
         n_lags: int = 24,
+        learning_rate: Optional[float] = None,
         epochs: Optional[int] = None,
         seasonality_mode: str = "multiplicative",
         yearly_seasonality: bool = True,
@@ -219,6 +232,7 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
     ):
         super().__init__("NeuralProphet_NoWeather", use_covariates=False, use_time_features=False)
         self.n_lags = n_lags
+        self.learning_rate = learning_rate
         self.epochs = epochs
         self.seasonality_mode = seasonality_mode
         self.yearly_seasonality = yearly_seasonality
@@ -239,6 +253,7 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
         self.model = NeuralProphet(
             n_lags=self.n_lags,
             n_forecasts=1,
+            learning_rate=self.learning_rate,
             seasonality_mode=self.seasonality_mode,
             yearly_seasonality=self.yearly_seasonality,
             weekly_seasonality=self.weekly_seasonality,
