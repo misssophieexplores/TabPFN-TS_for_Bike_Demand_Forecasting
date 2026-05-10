@@ -93,6 +93,7 @@ class ForecastingExperiment:
                 'last_updated': datetime.now().isoformat()
             }, f, indent=2)
     
+
     def run_single_experiment(
         self,
         model: BaseForecaster,
@@ -122,33 +123,33 @@ class ForecastingExperiment:
         Optional[Dict]
             Aggregated results dictionary, or None if skipped/failed
         """
-        
+
         # Skip if model doesn't use covariates and scenario is degraded
         if not model.use_covariates and weather_scenario == "degraded":
             if verbose:
                 print(f"[SKIP] {model.name} | h={horizon} | {weather_scenario} "
-                      f"(model doesn't use covariates, equivalent to clean_only)")
+                    f"(model doesn't use covariates, equivalent to clean_only)")
             return None
-        
+
         # Skip if already completed
         if (self.config.dataset_name, model.name, horizon, weather_scenario) in self.completed_experiments:
             if verbose:
                 print(f"[SKIP] {model.name} | h={horizon} | {weather_scenario} (already completed)")
             return None
-        
+
         if verbose:
             print(f"[RUN] {model.name} | h={horizon} | {weather_scenario}", end="", flush=True)
-        
+
         # Initialize weather processor
         weather_proc = WeatherProcessor(self.config)
-        
+
         splits = self.cv.split(df, horizon)
         fold_results = []
-        
+
         for fold_idx, (train_df, test_df) in enumerate(splits):
             y_train = train_df[self.config.target_col].values
             y_test = test_df[self.config.target_col].values
-            
+
             # Prepare weather data using WeatherProcessor
             X_train = None
             X_test = None
@@ -161,13 +162,11 @@ class ForecastingExperiment:
                 )
 
             # Append calendar time features for models that need them (e.g. XGBoost).
-            # Done here so timestamps are available — models never see raw datetimes.
             if model.use_time_features:
                 X_train = prepare_xgboost_features(train_df, self.config.date_col, X_train)
                 X_test = prepare_xgboost_features(test_df, self.config.date_col, X_test)
 
             # Attach real DatetimeIndex for models that need timestamps (Prophet, TabPFN).
-            # This replaces any previously hardcoded date ranges in those models.
             if getattr(model, "needs_datetime", False):
                 train_dates = pd.DatetimeIndex(train_df[self.config.date_col].values)
                 test_dates  = pd.DatetimeIndex(test_df[self.config.date_col].values)
@@ -180,13 +179,11 @@ class ForecastingExperiment:
                 else:
                     X_test = X_test.set_index(test_dates)
 
-
-
             try:
                 model.reset()
                 model.fit(y_train, X_train)
                 y_pred = model.predict(horizon, X_test)
-                
+
                 # Calculate metrics
                 metrics = self.metrics_calc.calculate_all(y_test, y_pred, y_train)
                 metrics['dataset'] = self.config.dataset_name
@@ -196,14 +193,12 @@ class ForecastingExperiment:
                 metrics['fold'] = fold_idx
                 metrics['model'] = model.name
                 metrics['horizon'] = horizon
-
-                # Track weather scenario information
                 metrics['weather_scenario'] = weather_scenario
                 metrics['model_uses_covariates'] = model.use_covariates
                 metrics['degradation_seed'] = self.config.degradation_seed
                 metrics['num_weather_vars'] = len(X_train.columns) if X_train is not None else 0
 
-                # Track imputation info (no printing)
+                # Track imputation info
                 fday = self.config.functioning_day_col
                 test_imputed = (test_df[fday] == 'No').sum() if fday and fday in test_df.columns else 0
                 train_imputed = (train_df[fday] == 'No').sum() if fday and fday in train_df.columns else 0
@@ -212,19 +207,9 @@ class ForecastingExperiment:
 
                 fold_results.append(metrics)
 
-                # Log fold results to W&B
-                # wandb.log({
-                #     f"{model.name}_h{horizon}_fold{fold_idx}_MAE": metrics['MAE'],
-                #     f"{model.name}_h{horizon}_fold{fold_idx}_RMSE": metrics['RMSE'],
-                #     f"{model.name}_h{horizon}_fold{fold_idx}_MASE": metrics['MASE'],
-                #     "fold": fold_idx,
-                #     "horizon": horizon,
-                # })
-                
-                
                 if verbose and (fold_idx + 1) % 5 == 0:
                     print(".", end="", flush=True)
-                    
+
             except Exception as e:
                 error_msg = f"Error in {model.name} h={horizon} fold={fold_idx}: {str(e)}"
                 print(f"\n[ERROR] {error_msg}")
@@ -237,12 +222,12 @@ class ForecastingExperiment:
                     traceback.print_exc(file=f)
                 wandb.log({"error": error_msg})
                 continue
-        
+
         if len(fold_results) == 0:
             print(f" [FAILED] All folds failed")
             return None
-        
-        # Aggregate results
+
+        # Aggregate fold results
         results_df = pd.DataFrame(fold_results)
         aggregated = {
             'dataset': self.config.dataset_name,
@@ -268,7 +253,7 @@ class ForecastingExperiment:
             'total_train_imputed': results_df['train_imputed'].sum(),
             'folds_with_imputed_test': (results_df['test_imputed'] > 0).sum(),
         }
-        
+
         # Log aggregated results to W&B
         wandb.log({
             f"{model.name}_{weather_scenario}_h{horizon}_MAE": aggregated['MAE_mean'],
@@ -276,16 +261,21 @@ class ForecastingExperiment:
             f"{model.name}_{weather_scenario}_h{horizon}_MASE": aggregated['MASE_mean'],
             f"{model.name}_{weather_scenario}_h{horizon}_sMAPE": aggregated['sMAPE_mean'],
         })
-        
+
+        # Append to master CSV incrementally
         self.results.append(aggregated)
         self._save_checkpoint(model.name, horizon, weather_scenario)
-        
-        if verbose:
-            print(f" [DONE] ({len(fold_results)} folds) | MAE: {aggregated['MAE_mean']:.1f}")
-        
+        filename_agg = self.output_dir / f"results_master_{self.config.results_version}.csv"
+        pd.DataFrame([aggregated]).to_csv(
+            filename_agg, mode='a', header=not filename_agg.exists(), index=False
+        )
+
         # Log all folds as table
         fold_table = wandb.Table(dataframe=pd.DataFrame(fold_results))
         wandb.log({f"{model.name}_{weather_scenario}_h{horizon}_folds": fold_table})
+
+        if verbose:
+            print(f" [DONE] ({len(fold_results)} folds) | MAE: {aggregated['MAE_mean']:.1f}")
 
         return aggregated, fold_results
 
@@ -315,9 +305,12 @@ class ForecastingExperiment:
         pd.DataFrame
             Results dataframe with all completed experiments
         """
-        
-        if scenarios is None:
-            scenarios = self.config.weather_scenarios
+        # On resume, reload previously completed results from CSV
+        filename_agg = self.output_dir / f"results_master_{self.config.results_version}.csv"
+        if filename_agg.exists():
+            existing = pd.read_csv(filename_agg)
+            self.results = existing.to_dict('records')
+
         
         # Calculate total experiments (accounting for skipped combinations)
         total = 0
@@ -368,51 +361,28 @@ class ForecastingExperiment:
                 "results_summary": wandb.Table(dataframe=summary.reset_index())
             })
 
-            # --- Comparative metrics (win_rate, skill_score) ---
-            comparative_df = MetricsCalculator.compute_comparative_metrics(
-                results_df, baseline_model=BASELINE_MODEL
-            )
-            self.comparative_results = comparative_df
 
-            if len(comparative_df) > 0:
-                # Log summary table to W&B
-                wandb.log({
-                    "comparative_metrics": wandb.Table(dataframe=comparative_df)
-                })
-
-                # Also log scalar values per model so they appear in the W&B
-                # run summary and can be used in sweeps / comparisons
-                for _, row in comparative_df.iterrows():
-                    wandb.log({
-                        f"{row['model']}_vs_{row['baseline']}_win_rate": row['win_rate'],
-                        f"{row['model']}_vs_{row['baseline']}_win_rate_ci_lower": row['win_rate_ci_lower'],
-                        f"{row['model']}_vs_{row['baseline']}_win_rate_ci_upper": row['win_rate_ci_upper'],
-                        f"{row['model']}_vs_{row['baseline']}_skill_score": row['skill_score'],
-                        f"{row['model']}_vs_{row['baseline']}_skill_score_ci_lower": row['skill_score_ci_lower'],
-                        f"{row['model']}_vs_{row['baseline']}_skill_score_ci_upper": row['skill_score_ci_upper'],
-                    })
-
-                if verbose:
-                    print("\nComparative metrics vs", BASELINE_MODEL)
-                    print(comparative_df[
-                        ['model', 'n_tasks', 'win_rate', 'skill_score']
-                    ].to_string(index=False))
 
         # Save detailed fold results
         self.detailed_results = all_fold_results
 
         return results_df
+    
 
     def save_results(self, results_df: pd.DataFrame) -> str:
         """Append results to master CSV"""
-        
+
         # Aggregated results - APPEND mode
         filename_agg = self.output_dir / f"results_master_{self.config.results_version}.csv"
         if filename_agg.exists():
             existing = pd.read_csv(filename_agg)
             results_df = pd.concat([existing, results_df], ignore_index=True)
+            results_df = results_df.drop_duplicates(
+                subset=['dataset', 'model', 'horizon', 'weather_scenario', 'run_name'],
+                keep='last'
+            )
         results_df.to_csv(filename_agg, index=False)
-        
+
         # Detailed results - APPEND mode
         filename_detailed = self.output_dir / f"detailed_results_master_{self.config.results_version}.csv"
         if hasattr(self, 'detailed_results') and self.detailed_results:
@@ -422,31 +392,9 @@ class ForecastingExperiment:
                 detailed_df = pd.concat([existing, detailed_df], ignore_index=True)
             detailed_df.to_csv(filename_detailed, index=False)
 
-        # Comparative metrics (win_rate / skill_score) - APPEND mode
-        if hasattr(self, 'comparative_results') and len(self.comparative_results) > 0:
-            filename_comparative = (
-                self.output_dir / f"comparative_metrics_{self.config.results_version}.csv"
-            )
-            comparative_df = self.comparative_results.copy()
-            comparative_df['dataset'] = self.config.dataset_name
-            comparative_df['run_name'] = self.run_name
-            comparative_df['timestamp'] = datetime.now().isoformat()
-            if filename_comparative.exists():
-                existing = pd.read_csv(filename_comparative)
-                comparative_df = pd.concat([existing, comparative_df], ignore_index=True)
-            comparative_df.to_csv(filename_comparative, index=False)
-            if self.config.verbose:
-                print(f"Comparative metrics saved to: {filename_comparative}")
-        
         if self.config.verbose:
             print(f"Results appended to: {filename_agg}")
         return str(filename_agg)
-
-    def finish(self):
-        """Cleanup and finish W&B run"""
-        wandb.finish()
-        if self.config.verbose:
-            print("W&B run finished")
 
 
 
@@ -527,19 +475,40 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
     return df, dataset_name
 
 
+
+def compute_and_log_comparative_metrics(config):
+    """Compute, save, and log comparative metrics to W&B."""
+    filename_agg = Path(config.output_dir) / f"results_master_{config.results_version}.csv"
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+        filename_agg, config.output_dir, config.results_version
+    )
+    wandb.log({"comparative_metrics": wandb.Table(dataframe=comparative_df)})
+    for _, row in comparative_df.iterrows():
+        wandb.log({
+            f"{row['model']}_vs_{row['baseline']}_win_rate": row['win_rate'],
+            f"{row['model']}_vs_{row['baseline']}_win_rate_ci_lower": row['win_rate_ci_lower'],
+            f"{row['model']}_vs_{row['baseline']}_win_rate_ci_upper": row['win_rate_ci_upper'],
+            f"{row['model']}_vs_{row['baseline']}_skill_score": row['skill_score'],
+            f"{row['model']}_vs_{row['baseline']}_skill_score_ci_lower": row['skill_score_ci_lower'],
+            f"{row['model']}_vs_{row['baseline']}_skill_score_ci_upper": row['skill_score_ci_upper'],
+        })
+    if config.verbose:
+        print("\nComparative metrics vs", BASELINE_MODEL)
+        print(comparative_df[['model', 'dataset', 'n_tasks', 'win_rate', 'skill_score']].to_string(index=False))
+    return comparative_df
+
+
 def main():
     """Main execution"""
 
     config = ForecastConfig()
 
-    # Load data using config (no separate filepath argument)
     df, dataset_name = load_and_prepare_data(config)
     if config.dataset_name is None:
         config.dataset_name = dataset_name
     if config.experiment_name is None or config.experiment_name.startswith("None"):
         config.experiment_name = f"{config.dataset_name}_{config.results_version}"
 
-    # Load tuned model parameters
     with open(config.arima_params_file) as f:
         arima_cfg = json.load(f)
 
@@ -571,6 +540,7 @@ def main():
         TabPFNPipelineForecaster(),
         TabPFNPipelineForecaster_NoWeather(),
     ]
+
     experiment = ForecastingExperiment(
         config=config,
         output_dir=config.output_dir,
@@ -589,7 +559,8 @@ def main():
         print(results_df.groupby('horizon')[['MAE_mean', 'RMSE_mean', 'MASE_mean']].mean().round(2))
 
         experiment.save_results(results_df)
-
+        compute_and_log_comparative_metrics(config)
+        
     except KeyboardInterrupt:
         print("\n\nInterrupted - Progress saved to checkpoint")
     except Exception as e:
@@ -606,6 +577,7 @@ def main():
         raise
     finally:
         experiment.finish()
+
 
 
 if __name__ == "__main__":

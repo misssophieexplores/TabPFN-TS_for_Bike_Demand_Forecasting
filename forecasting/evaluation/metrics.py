@@ -2,6 +2,7 @@
 Forecasting evaluation metrics.
 """
 import numpy as np
+import warnings
 from typing import Dict, Optional
 
 
@@ -370,6 +371,7 @@ class MetricsCalculator:
         results_df,
         baseline_model: str = "SeasonalNaive",
         seed: int = 42,
+        error_log_path = None,
     ):
         """
         Compute win_rate and skill_score for each model vs. a baseline,
@@ -423,10 +425,14 @@ class MetricsCalculator:
             # Only compare on tasks where both model and baseline have a result
             valid = ~(np.isnan(model_errors) | np.isnan(baseline_errors))
             if valid.sum() < 2:
-                raise ValueError(
-                    f"Not enough shared tasks to compare '{model_name}' vs "
-                    f"'{baseline_model}' (found {valid.sum()}, need at least 2)."
+                msg = (
+                    f"[WARN] Skipping {model_name} vs {baseline_model}: "
+                    f"only {valid.sum()} shared tasks, need at least 2."
                 )
+                if error_log_path is not None:
+                    with open(error_log_path, "a") as f:
+                        f.write(f"\n{msg}\n")
+                continue
 
             errs_j = model_errors[valid]
             errs_b = baseline_errors[valid]
@@ -447,3 +453,17 @@ class MetricsCalculator:
             })
 
         return pd.DataFrame(rows)
+    
+    @staticmethod
+    def compute_and_save_comparative_metrics(results_csv_path, output_dir, version, baseline_model="SeasonalNaive"):
+        import pandas as pd
+        df = pd.read_csv(results_csv_path)
+        results = []
+        for dataset, group in df.groupby('dataset'):
+            comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+            comp['dataset'] = dataset
+            results.append(comp)
+        combined = pd.concat(results, ignore_index=True)
+        out = Path(output_dir) / f"comparative_metrics_{version}.csv"
+        combined.to_csv(out, index=False)
+        return combined

@@ -26,7 +26,7 @@ from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAX
 from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
 from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
-from run_experiments import ForecastingExperiment, load_and_prepare_data
+from run_experiments import ForecastingExperiment, load_and_prepare_data, compute_and_log_comparative_metrics
 
 
 def main(config=None, no_confirm=False):
@@ -146,6 +146,7 @@ def main(config=None, no_confirm=False):
         
         # Save results
         output_file = experiment.save_results(results_df)
+        compute_and_log_comparative_metrics(config)
         print(f"\nResults saved to: {output_file}")
         detailed = f"{config.output_dir}/detailed_results_master_{config.results_version}.csv"
         print(f"Detailed results saved to: {detailed}")
