@@ -1,12 +1,14 @@
 """
-XGBoost Hyperparameter Tuning (random search, NO early stopping)
+XGBoost Hyperparameter Tuning (Optuna TPE + early stopping)
 
 What this does:
 - Jointly tunes n_lags AND XGBoost hyperparameters in ONE run.
+- Uses Optuna TPE (Tree-structured Parzen Estimator) instead of random search.
+- n_estimators is NOT searched — determined automatically via XGBoost early stopping
+  on a held-out slice of each training fold (last 15%, min 24 obs).
 - Covariate selection is driven by --scenario (default: clean_only):
     clean_only   : degradable covariates only (keys of weather_degradation_mapping)
     all_weather  : all weather_covariates from config
-- Uses wide search space (less restrictive) for a "final good" tuning.
 - Saves best config to results/tuning/xgboost_best_params_<city>_<scenario>_<n_train>_<timestamp>.json
 
 Run:
@@ -17,7 +19,7 @@ Run:
     python forecasting/models/tuning/tune_xgboost.py --city seoul
 
     # Override scenario or other options:
-    python forecasting/models/tuning/tune_xgboost.py --city seoul --scenario clean_only --trials 3
+    python forecasting/models/tuning/tune_xgboost.py --city seoul --scenario clean_only --trials 100
 """
 
 import sys
@@ -31,14 +33,22 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+import optuna
 import pandas as pd
 import xgboost as xgb
+
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 from config import ForecastConfig
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from features import add_time_features
 from run_experiments import load_and_prepare_data
+
+EARLY_STOPPING_ROUNDS = 50
+MAX_ESTIMATORS = 3000
+EVAL_FRAC = 0.15
+MIN_EVAL_SIZE = 24
 
 
 def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -> List[str]:
@@ -90,27 +100,6 @@ def iterative_forecast(
     return np.array(preds, dtype=float)
 
 
-def sample_params(rng: np.random.Generator) -> Dict:
-    learning_rate = float(np.exp(rng.uniform(np.log(0.005), np.log(0.2))))
-    reg_lambda = float(np.exp(rng.uniform(np.log(1e-3), np.log(50.0))))
-    reg_alpha = float(np.exp(rng.uniform(np.log(1e-10), np.log(5.0))))
-    return {
-        "objective": "reg:squarederror",
-        "random_state": 42,
-        "tree_method": "hist",
-        "n_jobs": -1,
-        "n_estimators": int(rng.choice([400, 800, 1200, 1600, 2000, 3000, 5000])),
-        "learning_rate": learning_rate,
-        "max_depth": int(rng.integers(2, 13)),
-        "min_child_weight": float(rng.uniform(1.0, 80.0)),
-        "subsample": float(rng.uniform(0.6, 1.0)),
-        "colsample_bytree": float(rng.uniform(0.6, 1.0)),
-        "gamma": float(rng.uniform(0.0, 20.0)),
-        "reg_lambda": reg_lambda,
-        "reg_alpha": reg_alpha,
-    }
-
-
 def evaluate_params_on_fold(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
@@ -118,7 +107,9 @@ def evaluate_params_on_fold(
     params: Dict,
     n_lags: int,
     max_train_size: Optional[int],
-) -> Tuple[float, float]:
+    use_early_stopping: bool = True,
+) -> Tuple[float, float, int]:
+    """Returns (MAE, RMSE, best_n_estimators)."""
     y_train = train_df[config.target_col].values
     X_train = train_df[config.weather_covariates].reset_index(drop=True)
     y_test = test_df[config.target_col].values
@@ -132,13 +123,30 @@ def evaluate_params_on_fold(
         X_train = X_train.iloc[-max_train_size:].reset_index(drop=True)
 
     X_sup, y_sup = create_lagged_features(y_train, X_train, n_lags=n_lags)
+
     model = xgb.XGBRegressor(**params)
-    model.fit(X_sup, y_sup)
+
+    if use_early_stopping:
+        eval_size = max(MIN_EVAL_SIZE, int(len(X_sup) * EVAL_FRAC))
+        X_fit = X_sup.iloc[:-eval_size]
+        y_fit = y_sup[:-eval_size]
+        X_eval_es = X_sup.iloc[-eval_size:]
+        y_eval_es = y_sup[-eval_size:]
+        model.fit(
+            X_fit, y_fit,
+            eval_set=[(X_eval_es, y_eval_es)],
+            verbose=False,
+        )
+        best_iteration = int(model.best_iteration) + 1
+    else:
+        model.fit(X_sup, y_sup)
+        best_iteration = params.get("n_estimators", MAX_ESTIMATORS)
+
     y_pred = iterative_forecast(model=model, y_history=y_train, X_future=X_test, n_lags=n_lags)
 
     calc = MetricsCalculator()
     metrics = calc.calculate_all(y_test, y_pred, y_train)
-    return float(metrics["MAE"]), float(metrics["RMSE"])
+    return float(metrics["MAE"]), float(metrics["RMSE"]), best_iteration
 
 
 def tune_xgboost(
@@ -146,7 +154,7 @@ def tune_xgboost(
     config: ForecastConfig,
     city: str,
     scenario: str = "clean_only",
-    trials: int = 10,  # TODO --- set to 600 for final runs
+    trials: int = 100,
     seed: int = 42,
     n_lags_options: Optional[List[int]] = None,
     max_train_size: int = 8000,
@@ -155,7 +163,6 @@ def tune_xgboost(
     config.weather_covariates = select_covariates(config, df, scenario)
     cv = TimeSeriesCV(config)
 
-    # Only tune on pre-cutoff data — never touch the held-out test period
     cutoff_date = cv.get_cutoff_date(df)
     tune_df = df[df[config.date_col] <= cutoff_date].copy()
 
@@ -163,99 +170,120 @@ def tune_xgboost(
     if len(splits) == 0:
         raise RuntimeError("No CV splits available for the given horizon/config.")
 
-    # None means use all available splits
-    tune_split_indices = range(len(splits)) if config.tune_folds is None else range(len(splits) - min(config.tune_folds, len(splits)), len(splits))
-    val_split_indices  = range(len(splits)) if config.tune_folds is None else range(len(splits) - min(config.tune_folds, len(splits)), len(splits))
+    tune_split_indices = (
+        range(len(splits)) if config.tune_folds is None
+        else range(len(splits) - min(config.tune_folds, len(splits)), len(splits))
+    )
+    val_split_indices = tune_split_indices
 
     if not n_lags_options:
         n_lags_options = [12, 24, 48, 168]
 
-    rng = np.random.default_rng(seed)
-
     if verbose:
         print("=" * 70)
-        print(f"XGBOOST TUNING (wide random search) | city={city} | horizon={config.tune_horizon}h | scenario={scenario}")
+        print(f"XGBOOST TUNING (Optuna TPE + early stopping) | city={city} | horizon={config.tune_horizon}h | scenario={scenario}")
         print("=" * 70)
         print(f"Trials: {trials}")
         print(f"Tune folds: {len(tune_split_indices)} ({'all' if config.tune_folds is None else config.tune_folds})")
-        print(f"Validate folds: {len(val_split_indices)} ({'all' if config.tune_folds is None else config.tune_folds})")
         print(f"n_lags_options: {n_lags_options}")
         print(f"Max train size: {max_train_size}")
+        print(f"Early stopping rounds: {EARLY_STOPPING_ROUNDS} | Max estimators: {MAX_ESTIMATORS}")
         print(f"Cutoff date (held-out test start): {cutoff_date}")
         print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
         print(f"n_train_samples: {config.n_train_samples}")
         print(f"Covariates used ({len(config.weather_covariates)}): {config.weather_covariates}")
         print("=" * 70)
 
-    best_params: Optional[Dict] = None
-    best_n_lags: Optional[int] = None
-    best_mae = float("inf")
-    best_rmse = float("inf")
+    # Store best_iterations per trial for final n_estimators selection
+    trial_best_iterations: Dict[int, List[int]] = {}
 
-    for t in range(1, trials + 1):
-        params = sample_params(rng)
-        trial_n_lags = int(rng.choice(n_lags_options))
+    def objective(trial: optuna.Trial) -> float:
+        params = {
+            "objective": "reg:squarederror",
+            "random_state": 42,
+            "tree_method": "hist",
+            "n_jobs": -1,
+            "n_estimators": MAX_ESTIMATORS,
+            "early_stopping_rounds": EARLY_STOPPING_ROUNDS,
+            "learning_rate": trial.suggest_float("learning_rate", 0.005, 0.2, log=True),
+            "max_depth": trial.suggest_int("max_depth", 2, 12),
+            "min_child_weight": trial.suggest_float("min_child_weight", 1.0, 80.0),
+            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+            "gamma": trial.suggest_float("gamma", 0.0, 20.0),
+            "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 50.0, log=True),
+            "reg_alpha": trial.suggest_float("reg_alpha", 1e-10, 5.0, log=True),
+        }
+        trial_n_lags = trial.suggest_categorical("n_lags", n_lags_options)
+
         maes: List[float] = []
-        rmses: List[float] = []
-        failed = False
+        best_iters: List[int] = []
 
         for fold_idx in tune_split_indices:
             train_df, test_df = splits[fold_idx]
             try:
-                mae, rmse = evaluate_params_on_fold(
+                mae, rmse, best_iter = evaluate_params_on_fold(
                     train_df=train_df, test_df=test_df, config=config,
                     params=params, n_lags=trial_n_lags, max_train_size=max_train_size,
+                    use_early_stopping=True,
                 )
                 maes.append(mae)
-                rmses.append(rmse)
+                best_iters.append(best_iter)
             except Exception as e:
-                failed = True
-                if verbose and (t <= 10 or t % 25 == 0):
-                    print(f"[{t:>4}/{trials}] FAILED fold {fold_idx}: {str(e)[:160]}")
-                break
+                if verbose:
+                    print(f"  Trial {trial.number} FAILED fold {fold_idx}: {str(e)[:160]}")
+                raise optuna.exceptions.TrialPruned()
 
-        if failed or not maes:
-            continue
-
+        trial_best_iterations[trial.number] = best_iters
         mae_mean = float(np.mean(maes))
-        rmse_mean = float(np.mean(rmses))
 
-        if verbose and (t <= 10 or t % 25 == 0):
+        if verbose:
             print(
-                f"[{t:>4}/{trials}] "
-                f"MAE={mae_mean:.2f} RMSE={rmse_mean:.2f} "
-                f"n_lags={trial_n_lags} "
-                f"n_estimators={params['n_estimators']} "
-                f"depth={params['max_depth']}"
+                f"  Trial {trial.number:>3}/{trials} | MAE={mae_mean:.2f} | "
+                f"n_lags={trial_n_lags} | depth={params['max_depth']} | "
+                f"lr={params['learning_rate']:.4f} | avg_n_estimators={int(np.mean(best_iters))}"
             )
 
-        if mae_mean < best_mae:
-            best_mae = mae_mean
-            best_rmse = rmse_mean
-            best_params = params
-            best_n_lags = trial_n_lags
+        return mae_mean
 
-    if best_params is None or best_n_lags is None:
-        raise RuntimeError("No successful trials.")
+    sampler = optuna.samplers.TPESampler(seed=seed, multivariate=True)
+    study = optuna.create_study(direction="minimize", sampler=sampler)
+    study.optimize(objective, n_trials=trials)
+
+    best_trial = study.best_trial
+    best_params_optuna = best_trial.params
+    best_n_lags = int(best_params_optuna.pop("n_lags"))
+    best_n_estimators = int(np.mean(trial_best_iterations[best_trial.number]))
+
+    best_params = {
+        "objective": "reg:squarederror",
+        "random_state": 42,
+        "tree_method": "hist",
+        "n_jobs": -1,
+        "n_estimators": best_n_estimators,
+        **best_params_optuna,
+    }
 
     if verbose:
         print("\n" + "=" * 70)
         print("BEST PARAMETERS FOUND")
         print("=" * 70)
-        print(f"Tuning MAE={best_mae:.2f} RMSE={best_rmse:.2f}")
+        print(f"Tuning MAE={best_trial.value:.2f}")
         print(f"Best n_lags={best_n_lags}")
+        print(f"Best n_estimators (from early stopping)={best_n_estimators}")
         print(json.dumps(best_params, indent=2))
 
-    # Validation on full fold set
+    # Validation using fixed n_estimators (no early stopping)
     mae_values: List[float] = []
     rmse_values: List[float] = []
 
     for fold_idx in val_split_indices:
         train_df, test_df = splits[fold_idx]
         try:
-            mae, rmse = evaluate_params_on_fold(
+            mae, rmse, _ = evaluate_params_on_fold(
                 train_df=train_df, test_df=test_df, config=config,
                 params=best_params, n_lags=best_n_lags, max_train_size=max_train_size,
+                use_early_stopping=False,
             )
             mae_values.append(mae)
             rmse_values.append(rmse)
@@ -280,17 +308,18 @@ def tune_xgboost(
         "city": city,
         "scenario": scenario,
         "n_train_samples": config.n_train_samples,
-        "n_lags": int(best_n_lags),
+        "n_lags": best_n_lags,
         "xgb_params": best_params,
         "tuning": {
-            "search_type": "wide_random_search_no_early_stopping_joint_n_lags",
+            "search_type": "optuna_tpe_multivariate_with_early_stopping",
             "trials": int(trials),
-            "tune_folds": len(tune_split_indices),
+            "tune_folds": len(list(tune_split_indices)),
             "seed": int(seed),
             "metric_optimized": "MAE",
-            "best_tune_mae_mean": float(best_mae),
-            "best_tune_rmse_mean": float(best_rmse),
+            "best_tune_mae_mean": float(best_trial.value),
             "n_lags_options": list(map(int, n_lags_options)),
+            "early_stopping_rounds": EARLY_STOPPING_ROUNDS,
+            "max_estimators_cap": MAX_ESTIMATORS,
         },
         "mae_mean": mae_mean,
         "mae_std": mae_std,
@@ -345,12 +374,12 @@ def run_city(city: str, args) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Tune XGBoost (wide random search, no early stopping)")
+    parser = argparse.ArgumentParser(description="Tune XGBoost (Optuna TPE + early stopping)")
     parser.add_argument('--city', type=str, choices=["seoul", "london", "washington"],
                         default=None, help='City to tune (default: all cities)')
     parser.add_argument('--scenario', type=str, choices=['clean_only', 'all_weather'],
                         default='clean_only', help='Covariate set (default: clean_only)')
-    parser.add_argument("--trials", type=int, default=600, help="Random search trials")
+    parser.add_argument("--trials", type=int, default=100, help="Optuna TPE trials")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--max-train-size", type=int, default=8000, help="Maximum training observations")
     parser.add_argument("--output-dir", type=str, default="results/tuning", help="Directory to save results")

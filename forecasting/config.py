@@ -58,7 +58,7 @@ class ForecastConfig:
 
     # --- Output (shared) ---
     output_dir: str = "results"
-    results_version: str = "t6" 
+    results_version: str = "v6" 
     verbose: bool = False
 
     # --- W&B (shared) ---
