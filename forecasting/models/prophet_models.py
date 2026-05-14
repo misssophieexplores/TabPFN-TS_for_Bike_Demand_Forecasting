@@ -10,6 +10,44 @@ This ensures Prophet's seasonality decomposition uses correct calendar positions
   NeuralProphetForecaster_NoWeather — univariate variant
 """
 
+#### Helper to silence NeuralProphet
+
+import logging
+import os
+
+def _silence_neuralprophet():
+    """
+    Reduce NeuralProphet / PyTorch Lightning logging to WARNING.
+    Call before instantiating NeuralProphet. Idempotent.
+    """
+    # NeuralProphet's own loggers
+    for name in ("NP", "neuralprophet", "NP.forecaster", "NP.config", "NP.utils",
+                 "NP.plotting", "NP.time_dataset", "NP.df_utils"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    # PyTorch Lightning (the main offender for per-epoch spam)
+    for name in ("pytorch_lightning", "lightning", "lightning.pytorch",
+                 "lightning.pytorch.utilities.rank_zero",
+                 "lightning.pytorch.accelerators.cuda",
+                 "pytorch_lightning.utilities.rank_zero"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+    # Silence Lightning's "GPU available", "TPU available", etc. banner
+    os.environ.setdefault("PYTORCH_LIGHTNING_VERBOSITY", "0")
+    # Suppress the "Missing logger folder" and similar warnings
+    os.environ.setdefault("LIGHTNING_DISABLE_PROGRESS_BAR", "1")
+
+
+def _silence_prophet():
+    """Silence cmdstanpy chatter emitted by Prophet during fit."""
+    for name in ("cmdstanpy", "prophet", "prophet.plot"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 from typing import Optional
@@ -48,6 +86,7 @@ class ProphetForecaster(BaseForecaster):
         self._last_timestamp = None
 
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
+        _silence_prophet() # minimize output spam
         from prophet import Prophet
 
         if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
@@ -126,8 +165,8 @@ class NeuralProphetForecaster(BaseForecaster):
         self._covariate_cols: list[str] = []
 
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
+        _silence_neuralprophet()
         from neuralprophet import NeuralProphet
-
         if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
             raise ValueError(
                 "NeuralProphetForecaster requires X_train with a DatetimeIndex. "
@@ -242,6 +281,7 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
         self._last_train_df = None
 
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
+        _silence_neuralprophet()
         from neuralprophet import NeuralProphet
 
         if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
