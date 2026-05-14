@@ -10,32 +10,50 @@ This ensures Prophet's seasonality decomposition uses correct calendar positions
   NeuralProphetForecaster_NoWeather — univariate variant
 """
 
-#### Helper to silence NeuralProphet
-
+import contextlib
+import io
 import logging
 import os
+import warnings
 
+import numpy as np
+import pandas as pd
+from typing import Optional
+from models.base import BaseForecaster
+
+
+# ---------------------------------------------------------------------------
+# Silencing helpers
+# ---------------------------------------------------------------------------
 def _silence_neuralprophet():
     """
-    Reduce NeuralProphet / PyTorch Lightning logging to WARNING.
+    Aggressively silence NeuralProphet + PyTorch Lightning logging.
     Call before instantiating NeuralProphet. Idempotent.
     """
-    # NeuralProphet's own loggers
-    for name in ("NP", "neuralprophet", "NP.forecaster", "NP.config", "NP.utils",
-                 "NP.plotting", "NP.time_dataset", "NP.df_utils"):
-        logging.getLogger(name).setLevel(logging.WARNING)
+    for name in (
+        "NP", "neuralprophet",
+        "NP.forecaster", "NP.config", "NP.config_model",
+        "NP.utils", "NP.utils_torch",
+        "NP.plotting", "NP.time_dataset", "NP.df_utils",
+        "NP.data.processing", "NP.data.splitting",
+    ):
+        logging.getLogger(name).setLevel(logging.ERROR)
+        logging.getLogger(name).propagate = False
 
-    # PyTorch Lightning (the main offender for per-epoch spam)
-    for name in ("pytorch_lightning", "lightning", "lightning.pytorch",
-                 "lightning.pytorch.utilities.rank_zero",
-                 "lightning.pytorch.accelerators.cuda",
-                 "pytorch_lightning.utilities.rank_zero"):
-        logging.getLogger(name).setLevel(logging.WARNING)
+    for name in (
+        "pytorch_lightning", "lightning", "lightning.pytorch",
+        "lightning.pytorch.utilities.rank_zero",
+        "lightning.pytorch.accelerators.cuda",
+        "pytorch_lightning.utilities.rank_zero",
+        "pytorch_lightning.accelerators.cuda",
+    ):
+        logging.getLogger(name).setLevel(logging.ERROR)
+        logging.getLogger(name).propagate = False
 
-    # Silence Lightning's "GPU available", "TPU available", etc. banner
-    os.environ.setdefault("PYTORCH_LIGHTNING_VERBOSITY", "0")
-    # Suppress the "Missing logger folder" and similar warnings
-    os.environ.setdefault("LIGHTNING_DISABLE_PROGRESS_BAR", "1")
+    # Disable tqdm progress bars globally (covers Lightning's TQDMProgressBar output)
+    os.environ.setdefault("TQDM_DISABLE", "1")
+    os.environ.setdefault("LIGHTNING_LOGGER_LEVEL", "ERROR")
+    os.environ.setdefault("PYTHONWARNINGS", "ignore")
 
 
 def _silence_prophet():
@@ -44,16 +62,43 @@ def _silence_prophet():
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
+@contextlib.contextmanager
+def _silence_all_output():
+    """Capture stdout/stderr to suppress residual prints from NP/Lightning."""
+    with contextlib.redirect_stdout(io.StringIO()), \
+         contextlib.redirect_stderr(io.StringIO()):
+        yield
 
 
+def _np_fit(model, train_df):
+    """
+    Call NeuralProphet.fit() telling it NOT to install a progress-bar callback.
+    Falls back across NP versions whose `progress` arg accepts different values.
+    """
+    with warnings.catch_warnings(), _silence_all_output():
+        warnings.filterwarnings("ignore")
+        for progress_arg in ("none", None, "off", "bar"):
+            try:
+                if progress_arg == "bar":
+                    # Last-resort: no progress kwarg at all
+                    return model.fit(train_df, freq="h")
+                return model.fit(train_df, freq="h", progress=progress_arg)
+            except TypeError:
+                continue
+        # If everything failed, re-raise by calling without the kwarg
+        return model.fit(train_df, freq="h")
 
 
-import numpy as np
-import pandas as pd
-from typing import Optional
-from models.base import BaseForecaster
+def _np_predict(model, future_df):
+    """Run NeuralProphet inference silently."""
+    with warnings.catch_warnings(), _silence_all_output():
+        warnings.filterwarnings("ignore")
+        return model.predict(future_df)
 
 
+# ---------------------------------------------------------------------------
+# Prophet
+# ---------------------------------------------------------------------------
 class ProphetForecaster(BaseForecaster):
     """
     Univariate Prophet forecaster (no covariates).
@@ -70,9 +115,9 @@ class ProphetForecaster(BaseForecaster):
         weekly_seasonality: bool = True,
         daily_seasonality: bool = True,
         seasonality_mode: str = "multiplicative",
-        changepoint_prior_scale: float = 0.05, # model defaults 
-        seasonality_prior_scale: float = 10.0, # model defaults
-        holidays_prior_scale: float = 10.0, # model defaults
+        changepoint_prior_scale: float = 0.05,
+        seasonality_prior_scale: float = 10.0,
+        holidays_prior_scale: float = 10.0,
     ):
         super().__init__("Prophet", use_covariates=False, use_time_features=False)
         self.yearly_seasonality = yearly_seasonality
@@ -86,7 +131,7 @@ class ProphetForecaster(BaseForecaster):
         self._last_timestamp = None
 
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
-        _silence_prophet() # minimize output spam
+        _silence_prophet()
         from prophet import Prophet
 
         if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
@@ -107,7 +152,8 @@ class ProphetForecaster(BaseForecaster):
             holidays_prior_scale=self.holidays_prior_scale,
         )
         train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
-        self.model.fit(train_df)
+        with _silence_all_output():
+            self.model.fit(train_df)
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
@@ -123,7 +169,8 @@ class ProphetForecaster(BaseForecaster):
                 freq="h",
             )
 
-        forecast = self.model.predict(pd.DataFrame({"ds": future_dates}))
+        with _silence_all_output():
+            forecast = self.model.predict(pd.DataFrame({"ds": future_dates}))
         return forecast["yhat"].values
 
     def reset(self) -> None:
@@ -132,12 +179,12 @@ class ProphetForecaster(BaseForecaster):
         self._last_timestamp = None
 
 
+# ---------------------------------------------------------------------------
+# NeuralProphet with covariates
+# ---------------------------------------------------------------------------
 class NeuralProphetForecaster(BaseForecaster):
     """
     NeuralProphet forecaster with weather covariates.
-
-    All columns in X_train are added as lagged regressors.
-    Real timestamps from X_train.index are used for seasonality.
     """
 
     needs_datetime = True
@@ -167,12 +214,17 @@ class NeuralProphetForecaster(BaseForecaster):
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
         _silence_neuralprophet()
         from neuralprophet import NeuralProphet
+
         if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
             raise ValueError(
                 "NeuralProphetForecaster requires X_train with a DatetimeIndex. "
                 "Ensure needs_datetime=True is handled in run_experiments.py."
             )
 
+        # NOTE: do NOT pass trainer_config={"enable_progress_bar": False} —
+        # NeuralProphet installs its own ProgressBar callback, which conflicts
+        # with that flag and raises MisconfigurationException. Disable the
+        # progress bar via `progress="none"` in .fit() instead (see _np_fit).
         self.model = NeuralProphet(
             n_lags=self.n_lags,
             n_forecasts=1,
@@ -194,23 +246,26 @@ class NeuralProphetForecaster(BaseForecaster):
 
         self._last_train_df = train_df
 
-        # Monkey-patch torch.load to fix PyTorch 2.4+ checkpoint loading incompatibility
+        # PyTorch 2.4+ compat shim for NP's checkpoint loader
         import torch
         _original_load = torch.load
-        torch.load = lambda *args, **kwargs: _original_load(*args, **{**kwargs, 'weights_only': False})
+        torch.load = lambda *args, **kwargs: _original_load(
+            *args, **{**kwargs, "weights_only": False}
+        )
         try:
-            self.model.fit(train_df, freq="h")
+            _np_fit(self.model, train_df)
         finally:
             torch.load = _original_load
 
-        # Sync to cols NeuralProphet actually kept (it silently drops e.g. all-zero cols)
+        # Sync to cols NP actually kept (it silently drops degenerate cols)
         if self.model.config_lagged_regressors:
-            self._covariate_cols = [c for c in self._covariate_cols
-                                    if c in self.model.config_lagged_regressors]
+            self._covariate_cols = [
+                c for c in self._covariate_cols
+                if c in self.model.config_lagged_regressors
+            ]
         else:
             self._covariate_cols = []
 
-        # Drop removed cols from training context used in predict()
         keep_cols = ["ds", "y"] + self._covariate_cols
         self._last_train_df = self._last_train_df[keep_cols]
 
@@ -225,22 +280,19 @@ class NeuralProphetForecaster(BaseForecaster):
                 "NeuralProphetForecaster requires X_future with a DatetimeIndex."
             )
 
-        # make_future_dataframe returns the full training df + horizon future rows.
-        # Covariates are already correct for training rows; we only need to fill
-        # the last `horizon` rows with future covariate values.
-        # We then take iloc[-horizon:] from predictions to get only the forecast.
-        future_df = self.model.make_future_dataframe(
-            self._last_train_df,
-            periods=horizon,
-            n_historic_predictions=True,
-        )
+        with _silence_all_output():
+            future_df = self.model.make_future_dataframe(
+                self._last_train_df,
+                periods=horizon,
+                n_historic_predictions=True,
+            )
 
         for col in self._covariate_cols:
             future_df.iloc[-horizon:, future_df.columns.get_loc(col)] = (
                 X_future[col].values[:horizon]
             )
 
-        forecast = self.model.predict(future_df)
+        forecast = _np_predict(self.model, future_df)
         yhat_cols = sorted([c for c in forecast.columns if c.startswith("yhat")])
         return forecast[yhat_cols].iloc[-horizon:].values.flatten()[:horizon]
 
@@ -251,10 +303,12 @@ class NeuralProphetForecaster(BaseForecaster):
         self._covariate_cols = []
 
 
+# ---------------------------------------------------------------------------
+# NeuralProphet univariate
+# ---------------------------------------------------------------------------
 class NeuralProphetForecaster_NoWeather(BaseForecaster):
     """
     NeuralProphet forecaster, univariate (no covariates).
-    X_train columns are ignored, but DatetimeIndex is still used for seasonality.
     """
 
     needs_datetime = True
@@ -305,12 +359,13 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
         train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
         self._last_train_df = train_df
 
-        # Monkey-patch torch.load to fix PyTorch 2.4+ checkpoint loading incompatibility
         import torch
         _original_load = torch.load
-        torch.load = lambda *args, **kwargs: _original_load(*args, **{**kwargs, 'weights_only': False})
+        torch.load = lambda *args, **kwargs: _original_load(
+            *args, **{**kwargs, "weights_only": False}
+        )
         try:
-            self.model.fit(train_df, freq="h")
+            _np_fit(self.model, train_df)
         finally:
             torch.load = _original_load
 
@@ -325,15 +380,14 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
                 "NeuralProphetForecaster_NoWeather requires X_future with a DatetimeIndex."
             )
 
-        # make_future_dataframe returns training df + horizon future rows.
-        # No covariates to fill. Take iloc[-horizon:] from predictions.
-        future_df = self.model.make_future_dataframe(
-            self._last_train_df,
-            periods=horizon,
-            n_historic_predictions=True,
-        )
+        with _silence_all_output():
+            future_df = self.model.make_future_dataframe(
+                self._last_train_df,
+                periods=horizon,
+                n_historic_predictions=True,
+            )
 
-        forecast = self.model.predict(future_df)
+        forecast = _np_predict(self.model, future_df)
         yhat_cols = sorted([c for c in forecast.columns if c.startswith("yhat")])
         return forecast[yhat_cols].iloc[-horizon:].values.flatten()[:horizon]
 

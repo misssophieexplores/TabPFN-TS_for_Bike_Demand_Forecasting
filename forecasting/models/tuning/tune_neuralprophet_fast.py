@@ -126,7 +126,6 @@ def evaluate_params_on_fold(
             epochs=epochs_override,  # SPEEDUP
             drop_missing=True,
             trainer_config={
-                "enable_progress_bar": False,
                 "enable_model_summary": False,
             },
         )
@@ -167,7 +166,7 @@ def evaluate_params_on_fold(
     try:
         with warnings.catch_warnings(), _silence_all_output():
             warnings.filterwarnings("ignore")
-            model.fit(np_train, freq="h")
+            model.fit(np_train, freq="h", progress="none")
     finally:
         torch.load = _orig_load
 
