@@ -66,7 +66,7 @@ class ForecastConfig:
     experiment_name: Optional[str] = None
 
     # Tuning parameters:
-    tune_folds: Optional[int] = None
+    tune_folds: Optional[int] = 90
     tune_horizon: int = 24
 
     def __post_init__(self):

@@ -181,11 +181,11 @@ def tune_neuralprophet(
     if len(splits) == 0:
         raise RuntimeError("No CV splits available for the given horizon/config.")
 
-    fold_range = (
-        range(len(splits))
-        if config.tune_folds is None
-        else range(len(splits) - min(config.tune_folds, len(splits)), len(splits))
-    )
+    if config.tune_folds is None:
+        fold_range = range(len(splits))
+    else:
+        n = min(config.tune_folds, len(splits))
+        fold_range = range(len(splits) - n, len(splits))
 
     if len(fold_range) == 0:
         raise RuntimeError(

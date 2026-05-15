@@ -122,7 +122,11 @@ def tune_sarimax(
         print(f"AIC: {aic:.2f}")
         print(f"BIC: {bic:.2f}")
 
-    fold_range = range(len(splits)) if config.tune_folds is None else range(min(config.tune_folds, len(splits)))
+    if config.tune_folds is None:
+        fold_range = range(len(splits))
+    else:
+        n = min(config.tune_folds, len(splits))
+        fold_range = range(len(splits) - n, len(splits))
 
     if verbose:
         print(f"\nValidating on {len(fold_range)} folds...")
