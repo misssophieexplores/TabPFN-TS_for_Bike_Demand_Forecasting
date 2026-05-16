@@ -1,0 +1,60 @@
+{
+  "city": "seoul",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "n_lags": 168,
+  "xgb_params": {
+    "objective": "reg:squarederror",
+    "random_state": 42,
+    "tree_method": "hist",
+    "n_jobs": -1,
+    "n_estimators": 292,
+    "learning_rate": 0.04293357807117034,
+    "max_depth": 6,
+    "min_child_weight": 9.681993222555764,
+    "subsample": 0.9559644037394348,
+    "colsample_bytree": 0.6527217245644021,
+    "gamma": 2.6096821086347854,
+    "reg_lambda": 1.8639548287024128,
+    "reg_alpha": 0.1456505999858952
+  },
+  "tuning": {
+    "search_type": "optuna_tpe_multivariate_with_early_stopping",
+    "trials": 100,
+    "tune_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 94.00224325127071,
+    "n_lags_options": [
+      12,
+      24,
+      48,
+      168
+    ],
+    "early_stopping_rounds": 50,
+    "max_estimators_cap": 3000
+  },
+  "mae_mean": 92.26680381386367,
+  "mae_std": 77.67674524012553,
+  "rmse_mean": 124.35574275058208,
+  "rmse_std": 99.56808342918112,
+  "validation_folds": 90,
+  "max_train_size": 8000,
+  "covariates_used": [
+    "Temperature",
+    "Humidity",
+    "Wind speed",
+    "Solar Radiation",
+    "Rainfall",
+    "Snowfall",
+    "Visibility",
+    "Holiday",
+    "Seasons"
+  ],
+  "time_features_used": [
+    "hour",
+    "dayofweek",
+    "month",
+    "is_weekend"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "city": "seoul",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "n_lags": 24,
+  "neuralprophet_params": {
+    "learning_rate": 0.01880456191611351
+  },
+  "tuning": {
+    "search_type": "random_search_fast",
+    "trials": 20,
+    "search_folds": 2,
+    "search_epochs_cap": 50,
+    "validation_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 164.39213577906293,
+    "best_tune_rmse_mean": 211.59351628251295,
+    "n_lags_options": [
+      24,
+      48
+    ],
+    "max_train_rows": null
+  },
+  "mae_mean": 126.2378920365263,
+  "mae_std": 76.24606206196204,
+  "rmse_mean": 169.4994011224964,
+  "rmse_std": 97.95840902450531,
+  "validation_folds": 90,
+  "covariates_used": [
+    "Temperature",
+    "Humidity",
+    "Wind speed",
+    "Solar Radiation",
+    "Rainfall",
+    "Snowfall",
+    "Visibility",
+    "Holiday",
+    "Seasons"
+  ]
+}

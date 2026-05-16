@@ -1,0 +1,35 @@
+{
+  "city": "london",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "order": [
+    3,
+    1,
+    0
+  ],
+  "seasonal_order": [
+    1,
+    0,
+    0,
+    24
+  ],
+  "aic": 10864.469529359802,
+  "bic": 10887.358836148407,
+  "mae_mean": 420.70237207235726,
+  "mae_std": 226.0709732028783,
+  "rmse_mean": 610.6104049054986,
+  "rmse_std": 346.63191946696105,
+  "validation_folds": 90,
+  "covariates_used": [
+    "t1",
+    "hum",
+    "wind_speed",
+    "solar_radiation_wm2",
+    "rainfall_mm",
+    "snowfall_cm",
+    "visibility_km",
+    "is_holiday",
+    "season"
+  ],
+  "m": 24
+}

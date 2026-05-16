@@ -1,0 +1,24 @@
+{
+  "city": "london",
+  "n_train_samples": 720,
+  "prophet_params": {
+    "changepoint_prior_scale": 0.002383349655350177,
+    "seasonality_prior_scale": 0.039785480491272146,
+    "holidays_prior_scale": 0.010521721669668518,
+    "seasonality_mode": "additive"
+  },
+  "tuning": {
+    "search_type": "random_search",
+    "trials": 50,
+    "tune_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 433.6955791218055,
+    "best_tune_rmse_mean": 603.4500119255157
+  },
+  "mae_mean": 433.6955791218055,
+  "mae_std": 104.45986542015989,
+  "rmse_mean": 603.4500119255157,
+  "rmse_std": 123.08955405602136,
+  "validation_folds": 90
+}

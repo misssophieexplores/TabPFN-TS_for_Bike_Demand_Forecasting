@@ -1,0 +1,24 @@
+{
+  "city": "seoul",
+  "n_train_samples": 720,
+  "prophet_params": {
+    "changepoint_prior_scale": 0.006695264692522076,
+    "seasonality_prior_scale": 0.5465862556688605,
+    "holidays_prior_scale": 0.033909262851589204,
+    "seasonality_mode": "multiplicative"
+  },
+  "tuning": {
+    "search_type": "random_search",
+    "trials": 50,
+    "tune_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 118.10057821018268,
+    "best_tune_rmse_mean": 153.31508865310727
+  },
+  "mae_mean": 118.10057821018268,
+  "mae_std": 82.94870597750739,
+  "rmse_mean": 153.31508865310727,
+  "rmse_std": 99.79322146262467,
+  "validation_folds": 90
+}

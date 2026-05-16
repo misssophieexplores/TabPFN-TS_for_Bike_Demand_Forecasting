@@ -1,0 +1,17 @@
+{
+  "city": "london",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "order": [
+    0,
+    1,
+    2
+  ],
+  "aic": 11484.793210684224,
+  "bic": 11498.526794757387,
+  "mae_mean": 731.9893067593224,
+  "mae_std": 214.99691469945748,
+  "rmse_mean": 1033.5779073241797,
+  "rmse_std": 316.6938561720883,
+  "validation_folds": 90
+}

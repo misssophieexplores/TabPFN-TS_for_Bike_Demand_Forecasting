@@ -1,0 +1,41 @@
+{
+  "city": "washington",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "n_lags": 48,
+  "neuralprophet_params": {
+    "learning_rate": 0.019205212018125573
+  },
+  "tuning": {
+    "search_type": "random_search_fast",
+    "trials": 20,
+    "search_folds": 2,
+    "search_epochs_cap": 50,
+    "validation_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 116.19669715563457,
+    "best_tune_rmse_mean": 147.20821193876407,
+    "n_lags_options": [
+      24,
+      48
+    ],
+    "max_train_rows": null
+  },
+  "mae_mean": 104.23712330347409,
+  "mae_std": 35.14524627809176,
+  "rmse_mean": 138.42679717761538,
+  "rmse_std": 45.138810040929364,
+  "validation_folds": 90,
+  "covariates_used": [
+    "temperature_c",
+    "humidity_percent",
+    "wind_speed_ms",
+    "solar_radiation_wm2",
+    "rainfall_mm",
+    "snowfall_cm",
+    "visibility_km",
+    "holiday",
+    "season"
+  ]
+}

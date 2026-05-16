@@ -1,0 +1,41 @@
+{
+  "city": "london",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "n_lags": 24,
+  "neuralprophet_params": {
+    "learning_rate": 0.02163468076306622
+  },
+  "tuning": {
+    "search_type": "random_search_fast",
+    "trials": 20,
+    "search_folds": 2,
+    "search_epochs_cap": 50,
+    "validation_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 535.3823381265005,
+    "best_tune_rmse_mean": 758.0075828549534,
+    "n_lags_options": [
+      24,
+      48
+    ],
+    "max_train_rows": null
+  },
+  "mae_mean": 531.7627995367403,
+  "mae_std": 145.28321638868874,
+  "rmse_mean": 762.9505141998219,
+  "rmse_std": 202.88247421906354,
+  "validation_folds": 90,
+  "covariates_used": [
+    "t1",
+    "hum",
+    "wind_speed",
+    "solar_radiation_wm2",
+    "rainfall_mm",
+    "snowfall_cm",
+    "visibility_km",
+    "is_holiday",
+    "season"
+  ]
+}

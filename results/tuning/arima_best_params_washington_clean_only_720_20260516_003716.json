@@ -1,0 +1,17 @@
+{
+  "city": "washington",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "order": [
+    7,
+    0,
+    0
+  ],
+  "aic": 8330.123350332458,
+  "bic": 8371.33661124055,
+  "mae_mean": 125.29101450234802,
+  "mae_std": 34.48408820357029,
+  "rmse_mean": 166.2723366509661,
+  "rmse_std": 45.97982181247928,
+  "validation_folds": 90
+}

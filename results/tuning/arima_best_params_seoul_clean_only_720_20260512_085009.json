@@ -1,0 +1,17 @@
+{
+  "city": "seoul",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "order": [
+    1,
+    1,
+    3
+  ],
+  "aic": 8621.812603696562,
+  "bic": 8644.701910485168,
+  "mae_mean": 165.7910020884993,
+  "mae_std": 102.73713461554227,
+  "rmse_mean": 209.89580736504345,
+  "rmse_std": 129.07084474423564,
+  "validation_folds": 90
+}

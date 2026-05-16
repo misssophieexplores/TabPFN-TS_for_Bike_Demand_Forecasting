@@ -1,0 +1,35 @@
+{
+  "city": "seoul",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "order": [
+    2,
+    1,
+    0
+  ],
+  "seasonal_order": [
+    1,
+    0,
+    0,
+    24
+  ],
+  "aic": 8312.454977203635,
+  "bic": 8330.766422634519,
+  "mae_mean": 116.73904714048447,
+  "mae_std": 100.99145591388432,
+  "rmse_mean": 151.37348557208065,
+  "rmse_std": 123.24319575254385,
+  "validation_folds": 90,
+  "covariates_used": [
+    "Temperature",
+    "Humidity",
+    "Wind speed",
+    "Solar Radiation",
+    "Rainfall",
+    "Snowfall",
+    "Visibility",
+    "Holiday",
+    "Seasons"
+  ],
+  "m": 24
+}

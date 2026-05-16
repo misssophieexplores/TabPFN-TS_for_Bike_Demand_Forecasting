@@ -1,0 +1,35 @@
+{
+  "city": "washington",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "order": [
+    2,
+    0,
+    1
+  ],
+  "seasonal_order": [
+    1,
+    0,
+    1,
+    24
+  ],
+  "aic": 8007.535094989118,
+  "bic": 8039.589853473189,
+  "mae_mean": 81.07016750193264,
+  "mae_std": 38.91815303090794,
+  "rmse_mean": 107.60747990118466,
+  "rmse_std": 51.479627192300505,
+  "validation_folds": 90,
+  "covariates_used": [
+    "temperature_c",
+    "humidity_percent",
+    "wind_speed_ms",
+    "solar_radiation_wm2",
+    "rainfall_mm",
+    "snowfall_cm",
+    "visibility_km",
+    "holiday",
+    "season"
+  ],
+  "m": 24
+}

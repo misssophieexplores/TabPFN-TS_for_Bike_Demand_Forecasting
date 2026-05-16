@@ -1,0 +1,60 @@
+{
+  "city": "london",
+  "scenario": "clean_only",
+  "n_train_samples": 720,
+  "n_lags": 168,
+  "xgb_params": {
+    "objective": "reg:squarederror",
+    "random_state": 42,
+    "tree_method": "hist",
+    "n_jobs": -1,
+    "n_estimators": 1147,
+    "learning_rate": 0.006681535392467539,
+    "max_depth": 7,
+    "min_child_weight": 1.332711040515317,
+    "subsample": 0.6295138708578941,
+    "colsample_bytree": 0.6525367215197492,
+    "gamma": 18.01506139069722,
+    "reg_lambda": 0.9197471538488187,
+    "reg_alpha": 2.8117972985894852e-08
+  },
+  "tuning": {
+    "search_type": "optuna_tpe_multivariate_with_early_stopping",
+    "trials": 100,
+    "tune_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 210.69339832464854,
+    "n_lags_options": [
+      12,
+      24,
+      48,
+      168
+    ],
+    "early_stopping_rounds": 50,
+    "max_estimators_cap": 3000
+  },
+  "mae_mean": 194.8951240611297,
+  "mae_std": 141.45264241498492,
+  "rmse_mean": 302.6020258348753,
+  "rmse_std": 227.62012015057329,
+  "validation_folds": 90,
+  "max_train_size": 8000,
+  "covariates_used": [
+    "t1",
+    "hum",
+    "wind_speed",
+    "solar_radiation_wm2",
+    "rainfall_mm",
+    "snowfall_cm",
+    "visibility_km",
+    "is_holiday",
+    "season"
+  ],
+  "time_features_used": [
+    "hour",
+    "dayofweek",
+    "month",
+    "is_weekend"
+  ]
+}
