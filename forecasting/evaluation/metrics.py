@@ -468,3 +468,55 @@ class MetricsCalculator:
         out = Path(output_dir) / f"comparative_metrics_{version}.csv"
         combined.to_csv(out, index=False)
         return combined
+    
+
+## NOT USED YET
+@staticmethod
+def compute_pairwise_win_rate_matrix(
+    results_df: pd.DataFrame,
+    error_column: str = "MASE_mean",
+    task_keys: tuple = ("horizon", "weather_scenario"),
+) -> pd.DataFrame:
+    """
+    Full pairwise win-rate matrix W where W[j, k] is the fraction of
+    tasks on which model j beats model k (half-credit for ties).
+
+    Diagonal is set to 0.5 (tie vs. self). Off-diagonal cells use only
+    tasks where both models j and k have a non-NaN error.
+
+    Parameters
+    ----------
+    results_df : pd.DataFrame
+        Aggregated results, one row per (model, *task_keys).
+    error_column : str
+        Column to use as the per-task error (default: 'MASE_mean').
+    task_keys : tuple of str
+        Columns that jointly identify a task.
+
+    Returns
+    -------
+    pd.DataFrame
+        Square DataFrame indexed and columned by model name, values in [0, 1].
+    """
+    pivot = results_df.pivot_table(
+        index=list(task_keys),
+        columns="model",
+        values=error_column,
+    )
+    models = pivot.columns.tolist()
+    mat = pd.DataFrame(np.nan, index=models, columns=models, dtype=float)
+
+    for j in models:
+        for k in models:
+            if j == k:
+                mat.loc[j, k] = 0.5
+                continue
+            ej = pivot[j]
+            ek = pivot[k]
+            valid = ej.notna() & ek.notna()
+            if valid.sum() < 1:
+                continue
+            mat.loc[j, k] = MetricsCalculator.win_rate(
+                ej[valid].values, ek[valid].values
+            )
+    return mat
