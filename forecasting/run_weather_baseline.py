@@ -167,7 +167,8 @@ def main(config=None, no_confirm=False):
             traceback.print_exc(file=f)
         raise
     finally:
-        experiment.finish()
+        if hasattr(experiment, "finish"):
+            experiment.finish()
 
 
 if __name__ == "__main__":

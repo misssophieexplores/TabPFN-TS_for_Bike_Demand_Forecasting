@@ -32,7 +32,7 @@ from features import add_time_features
 load_dotenv()
 
 # Name used as baseline for skill_score / win_rate comparisons
-BASELINE_MODEL = "SeasonalNaive"
+BASELINE_MODEL = "Seasonal_Naive"
 
 class ForecastingExperiment:
     """Manages and runs forecasting experiments with W&B logging"""
@@ -396,7 +396,11 @@ class ForecastingExperiment:
             print(f"Results appended to: {filename_agg}")
         return str(filename_agg)
 
-
+    def finish(self):
+        """Cleanly close the W&B run. Safe to call multiple times."""
+        if wandb.run is not None:
+            wandb.finish()
+            
 
 def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
     """

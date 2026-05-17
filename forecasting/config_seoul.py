@@ -46,9 +46,9 @@ def get_config() -> ForecastConfig:
     config.column_scale_factors = {"visibility": 0.001}
 
     # --- Model parameters ---
-    config.arima_params_file = "results/tuning/arima_best_params_20260314_190645.json"
-    config.sarimax_params_file = "results/tuning/sarimax_best_params_20260315_121310.json" 
-    config.xgb_params_file = "results/tuning/xgboost_best_params_20260315_150219.json"
-    config.prophet_params_file = "" #TODO
-    config.neuralprophet_params_file = "" #TODO
+    config.arima_params_file = "results/tuning/arima_best_params_seoul_clean_only_720_20260512_085009.json"
+    config.sarimax_params_file = "results/tuning/sarimax_best_params_seoul_clean_only_720_20260512_085510.json"
+    config.xgb_params_file = "results/tuning/xgboost_best_params_seoul_clean_only_720_20260516_013807.json"
+    config.prophet_params_file = "results/tuning/prophet_best_params_seoul_720_20260516_002239.json"
+    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_seoul_clean_only_720_20260515_161701.json" 
     return config

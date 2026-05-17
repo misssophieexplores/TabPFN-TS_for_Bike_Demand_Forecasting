@@ -42,10 +42,10 @@ def get_config() -> ForecastConfig:
     }
 
     # --- Model parameters ---
-    config.arima_params_file = "results/tuning/arima_best_params_20260314_190725.json"
-    config.sarimax_params_file = "results/tuning/sarimax_best_params_20260315_135209.json" 
-    config.xgb_params_file = "results/tuning/xgboost_best_params_20260309_081759.json" 
-    config.prophet_params_file = "" #TODO
-    config.neuralprophet_params_file = "" #TODO
+    config.arima_params_file = "results/tuning/arima_best_params_london_clean_only_720_20260516_003627.json"
+    config.sarimax_params_file = "results/tuning/sarimax_best_params_london_clean_only_720_20260515_233904.json"
+    config.xgb_params_file = "results/tuning/xgboost_best_params_london_clean_only_720_20260515_200549.json"
+    config.prophet_params_file = "results/tuning/prophet_best_params_london_720_20260516_001526.json"
+    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_london_clean_only_720_20260515_161655.json"
 
     return config

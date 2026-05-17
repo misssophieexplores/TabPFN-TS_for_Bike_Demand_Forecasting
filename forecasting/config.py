@@ -39,11 +39,13 @@ class ForecastConfig:
 
     # # --- Forecasting (shared) --- 
     horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168])
+    seasonal_period: int = 24
+    # # lookback window 4096
     # n_folds: int = 20 # for n_train_samples=4096 (circa 0.74 of the data)
     # n_train_samples: int = 4096
+    # lookback window 720
     n_folds: int = 35
     n_train_samples: int = 720 # 30 days (30*24=720)
-    seasonal_period: int = 24
 
 
 

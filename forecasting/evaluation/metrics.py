@@ -4,7 +4,8 @@ Forecasting evaluation metrics.
 import numpy as np
 import warnings
 from typing import Dict, Optional
-
+from pathlib import Path
+import pandas as pd
 
 class MetricsCalculator:
     """Calculate forecasting performance metrics"""
@@ -369,7 +370,7 @@ class MetricsCalculator:
     @staticmethod
     def compute_comparative_metrics(
         results_df,
-        baseline_model: str = "SeasonalNaive",
+        baseline_model: str = "Seasonal_Naive",
         seed: int = 42,
         error_log_path = None,
     ):
@@ -455,7 +456,7 @@ class MetricsCalculator:
         return pd.DataFrame(rows)
     
     @staticmethod
-    def compute_and_save_comparative_metrics(results_csv_path, output_dir, version, baseline_model="SeasonalNaive"):
+    def compute_and_save_comparative_metrics(results_csv_path, output_dir, version, baseline_model="Seasonal_Naive"):
         import pandas as pd
         df = pd.read_csv(results_csv_path)
         results = []
