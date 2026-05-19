@@ -65,15 +65,21 @@ def main(config=None, no_confirm=False):
     xgb_params = xgb_cfg["xgb_params"]
     n_lags = xgb_cfg["n_lags"]
 
+    with open(config.prophet_params_file) as f:
+        prophet_cfg = json.load(f)
+
+    with open(config.neuralprophet_params_file) as f:
+        np_cfg = json.load(f)
+
     # All models
     all_models = [
         SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
         ARIMAForecaster(order=tuple(arima_cfg["order"])),
         SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
-        ProphetForecaster(),
-        NeuralProphetForecaster(),
-        NeuralProphetForecaster_NoWeather(),
+        ProphetForecaster(**prophet_cfg["prophet_params"]),
+        NeuralProphetForecaster(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
+        NeuralProphetForecaster_NoWeather(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
         # TabPFNForecaster_Custom(),
         # TabPFNForecaster_NoWeather(),
         TabPFNPipelineForecaster(),
