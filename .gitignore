@@ -5,6 +5,7 @@ __pycache__
 forecasting/weather/EVIDENCE_MAPPING.md
 wandb/
 tabpfn-v2-regressor-2noar4o2.ckpt
+tabpfn-v3-regressor-v3_20260506_timeseries.ckpt
 .lr_find_*
 lightning_logs
 results/results_master_t*
@@ -13,3 +14,5 @@ checkpoint_seoul_t*
 checkpoint_london_t*
 checkpoint_washington_t*
 /results/tuning/aussortieren
+*.sh
+
