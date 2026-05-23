@@ -1,0 +1,5 @@
+Model,Clean_MASE,Degraded_MASE,Increase,Increase_%
+XGBoost,0.72,0.76,0.05,6.31
+TabPFN,0.62,0.79,0.17,27.23
+SARIMAX,1.43,2.21,0.77,54.14
+NeuralProphet,1.88,3.07,1.19,63.09

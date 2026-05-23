@@ -1,0 +1,23 @@
+\begin{table}[ht!]
+\centering
+\caption{MASE across all cities and forecast horizons (clean weather). MASE $< 1$ outperforms the seasonal-naive baseline.}
+\label{tab:mase_cross_city}
+{\small\setlength{\tabcolsep}{3pt}\scriptsize
+\begin{tabular}{lrrrrrrrrrrrr}
+\toprule
+ & \multicolumn{4}{c}{London} & \multicolumn{4}{c}{Seoul} & \multicolumn{4}{c}{Washington} \\
+ & 6 & 24 & 48 & 168 & 6 & 24 & 48 & 168 & 6 & 24 & 48 & 168 \\
+\midrule
+TabPFN & 0.470 & 0.610 & 0.637 & 0.593 & 0.533 & 0.695 & 0.772 & 0.813 & 0.481 & 0.601 & 0.658 & 0.599 \\
+XGBoost & 0.547 & 0.629 & 0.658 & 0.679 & 0.663 & 0.845 & 0.939 & 1.044 & 0.489 & 0.663 & 0.720 & 0.732 \\
+TabPFN_NoWeather & 0.514 & 0.708 & 0.760 & 0.779 & 0.648 & 0.956 & 1.103 & 1.104 & 0.524 & 0.695 & 0.753 & 0.709 \\
+Seasonal_Naive & 0.997 & 1.003 & 1.256 & 1.191 & 1.038 & 1.047 & 1.257 & 1.230 & 0.964 & 0.969 & 1.226 & 1.096 \\
+Prophet & 1.364 & 1.395 & 1.425 & 1.461 & 1.177 & 1.220 & 1.294 & 1.413 & 1.154 & 1.204 & 1.225 & 1.212 \\
+SARIMAX & 1.186 & 1.235 & 1.655 & 2.306 & 0.916 & 1.314 & 1.587 & 2.529 & 0.938 & 1.109 & 1.225 & 1.177 \\
+NeuralProphet_NoWeather & 3.291 & 1.674 & 1.908 & 1.520 & 2.420 & 1.353 & 1.560 & 1.439 & 2.926 & 1.428 & 1.685 & 1.250 \\
+NeuralProphet & 3.184 & 1.716 & 1.964 & 1.566 & 2.335 & 1.322 & 1.479 & 1.435 & 2.848 & 1.489 & 1.790 & 1.436 \\
+ARIMA & 2.952 & 2.585 & 2.582 & 2.640 & 1.515 & 1.828 & 1.899 & 1.941 & 1.562 & 1.855 & 1.999 & 2.015 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

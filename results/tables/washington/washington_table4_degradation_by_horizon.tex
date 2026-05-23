@@ -1,0 +1,15 @@
+\begin{table}[h]
+\centering
+\caption{Performance degradation by horizon — washington.}
+\label{tab:degradation_horizon_washington}
+\begin{tabular}{crrrr}
+\toprule
+Horizon & XGBoost \% & SARIMAX \% & TabPFN \% & NeuralProphet \% \\
+\midrule
+6 & 8.26 & 214.45 & 20.41 & 20.71 \\
+24 & 6.01 & 176.21 & 15.58 & 128.31 \\
+48 & 5.44 & 174.59 & 13.95 & 215.75 \\
+168 & 7.80 & 191.76 & 22.29 & 377.38 \\
+\bottomrule
+\end{tabular}
+\end{table}

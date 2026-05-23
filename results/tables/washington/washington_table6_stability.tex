@@ -1,0 +1,24 @@
+\begin{table}[h]
+\centering
+\caption{Model stability metrics — washington.}
+\label{tab:stability_washington}
+\begin{tabular}{llrrr}
+\toprule
+Model & Scenario & Mean MAE & Std MAE & CV \% \\
+\midrule
+ARIMA & clean\_only & 133.51 & 44.94 & 33.66 \\
+NeuralProphet & clean\_only & 220.97 & 86.21 & 39.02 \\
+NeuralProphet_NoWeather & clean\_only & 224.12 & 85.02 & 37.94 \\
+Prophet & clean\_only & 96.02 & 44.93 & 46.79 \\
+SARIMAX & clean\_only & 80.06 & 50.21 & 62.71 \\
+Seasonal_Naive & clean\_only & 80.77 & 74.26 & 91.93 \\
+TabPFN & clean\_only & 41.96 & 37.49 & 89.34 \\
+TabPFN_NoWeather & clean\_only & 45.78 & 41.49 & 90.64 \\
+XGBoost & clean\_only & 43.02 & 32.64 & 75.87 \\
+NeuralProphet & degraded & 306.46 & 261.87 & 85.45 \\
+SARIMAX & degraded & 274.95 & 555.81 & 202.15 \\
+TabPFN & degraded & 48.97 & 37.97 & 77.54 \\
+XGBoost & degraded & 46.09 & 34.79 & 75.49 \\
+\bottomrule
+\end{tabular}
+\end{table}

@@ -372,33 +372,8 @@ class MetricsCalculator:
         results_df,
         baseline_model: str = "Seasonal_Naive",
         seed: int = 42,
-        error_log_path = None,
+        error_log_path=None,
     ):
-        """
-        Compute win_rate and skill_score for each model vs. a baseline,
-        with bootstrapped 95% CIs. Operates on MASE_mean as the per-task error.
-
-        A "task" is a unique (horizon, weather_scenario) combination. Only tasks
-        where both the candidate model and the baseline have results are used.
-
-        Parameters:
-        -----------
-        results_df : pd.DataFrame
-            Aggregated results with one row per (model, horizon, weather_scenario),
-            as produced by ForecastingExperiment.run_all_experiments().
-        baseline_model : str
-            Model name to use as reference (default: 'SeasonalNaive').
-        seed : int
-            Random seed for bootstrap reproducibility (default: 42).
-
-        Returns:
-        --------
-        pd.DataFrame
-            One row per non-baseline model with columns:
-            model, baseline, n_tasks,
-            win_rate, win_rate_ci_lower, win_rate_ci_upper,
-            skill_score, skill_score_ci_lower, skill_score_ci_upper.
-        """
         import pandas as pd
 
         if baseline_model not in results_df['model'].values:
@@ -407,12 +382,19 @@ class MetricsCalculator:
                 f"Available models: {sorted(results_df['model'].unique().tolist())}"
             )
 
-        # Pivot to (horizon, weather_scenario) x model matrix of MASE_mean values
+        # Get all unique (horizon, fold) combinations as the unit of resampling
+        task_cols = ['horizon', 'fold']
+
+        # Pivot to (horizon, fold) x model matrix of per-fold MASE values
         pivot = results_df.pivot_table(
-            index=['horizon', 'weather_scenario'],
+            index=task_cols,
             columns='model',
-            values='MASE_mean',
+            values='MASE',
+            aggfunc='mean',
         )
+
+        if baseline_model not in pivot.columns:
+            raise ValueError(f"Baseline '{baseline_model}' missing after pivot.")
 
         baseline_errors = pivot[baseline_model].values
         rows = []
@@ -422,13 +404,12 @@ class MetricsCalculator:
                 continue
 
             model_errors = pivot[model_name].values
-
-            # Only compare on tasks where both model and baseline have a result
             valid = ~(np.isnan(model_errors) | np.isnan(baseline_errors))
+
             if valid.sum() < 2:
                 msg = (
                     f"[WARN] Skipping {model_name} vs {baseline_model}: "
-                    f"only {valid.sum()} shared tasks, need at least 2."
+                    f"only {valid.sum()} shared observations, need at least 2."
                 )
                 if error_log_path is not None:
                     with open(error_log_path, "a") as f:
@@ -444,7 +425,7 @@ class MetricsCalculator:
             rows.append({
                 'model': model_name,
                 'baseline': baseline_model,
-                'n_tasks': int(valid.sum()),
+                'n_obs': int(valid.sum()),
                 'win_rate': wr['win_rate'],
                 'win_rate_ci_lower': wr['ci_lower'],
                 'win_rate_ci_upper': wr['ci_upper'],
@@ -454,11 +435,14 @@ class MetricsCalculator:
             })
 
         return pd.DataFrame(rows)
-    
+
     @staticmethod
     def compute_and_save_comparative_metrics(results_csv_path, output_dir, version, baseline_model="Seasonal_Naive"):
         import pandas as pd
-        df = pd.read_csv(results_csv_path)
+        if isinstance(results_csv_path, pd.DataFrame):
+            df = results_csv_path
+        else:
+            df = pd.read_csv(results_csv_path)
         results = []
         for dataset, group in df.groupby('dataset'):
             comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
@@ -467,8 +451,7 @@ class MetricsCalculator:
         combined = pd.concat(results, ignore_index=True)
         out = Path(output_dir) / f"comparative_metrics_{version}.csv"
         combined.to_csv(out, index=False)
-        return combined
-    
+        return combined    
 
 ## NOT USED YET
 @staticmethod

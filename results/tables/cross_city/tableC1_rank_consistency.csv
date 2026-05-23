@@ -1,0 +1,10 @@
+,London,Seoul,Washington
+TabPFN,1.0,1.0,1.0
+XGBoost,2.2,2.2,2.2
+TabPFN_NoWeather,2.8,2.8,2.8
+Seasonal_Naive,4.0,4.2,4.8
+Prophet,5.5,5.2,5.5
+SARIMAX,6.0,6.8,4.8
+NeuralProphet_NoWeather,7.2,7.8,7.5
+NeuralProphet,7.8,6.8,8.0
+ARIMA,8.5,8.2,8.5

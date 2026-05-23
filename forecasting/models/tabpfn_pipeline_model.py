@@ -78,7 +78,9 @@ class TabPFNPipelineForecaster(BaseForecaster):
 
         self.context_df = context_df
         self.last_timestamp = X_train.index[-1]
-        self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode)
+        self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode,
+        tabpfn_model_config={"model_path": "tabpfn-v2-regressor-2noar4o2.ckpt"},
+        )
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
@@ -160,7 +162,9 @@ class TabPFNPipelineForecaster_NoWeather(BaseForecaster):
         })
 
         self.last_timestamp = X_train.index[-1]
-        self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode)
+        self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode,
+        tabpfn_model_config={"model_path": "tabpfn-v2-regressor-2noar4o2.ckpt"},
+        )
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:

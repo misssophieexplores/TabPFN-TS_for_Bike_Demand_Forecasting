@@ -119,7 +119,7 @@ class ProphetForecaster(BaseForecaster):
         seasonality_prior_scale: float = 10.0,
         holidays_prior_scale: float = 10.0,
     ):
-        super().__init__("Prophet_Tuned", use_covariates=False, use_time_features=False)
+        super().__init__("Prophet", use_covariates=False, use_time_features=False)
         self.yearly_seasonality = yearly_seasonality
         self.weekly_seasonality = weekly_seasonality
         self.daily_seasonality = daily_seasonality
@@ -199,7 +199,7 @@ class NeuralProphetForecaster(BaseForecaster):
         weekly_seasonality: bool = True,
         daily_seasonality: bool = True,
     ):
-        super().__init__("NeuralProphet_Tuned", use_covariates=True, use_time_features=False)
+        super().__init__("NeuralProphet", use_covariates=True, use_time_features=False)
         self.n_lags = n_lags
         self.learning_rate = learning_rate
         self.epochs = epochs
@@ -323,7 +323,7 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
         weekly_seasonality: bool = True,
         daily_seasonality: bool = True,
     ):
-        super().__init__("NeuralProphet_NoWeather_Tuned", use_covariates=False, use_time_features=False)
+        super().__init__("NeuralProphet_NoWeather", use_covariates=False, use_time_features=False)
         self.n_lags = n_lags
         self.learning_rate = learning_rate
         self.epochs = epochs

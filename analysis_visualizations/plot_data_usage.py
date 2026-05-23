@@ -1,11 +1,16 @@
+# analysis_visualizations/plot_data_usage.py
 """
-Visualise training / test data usage for each city dataset.
+Visualise training / tuning / test data usage for each city dataset.
 
 Regions (based on h=168, the longest horizon):
-  - Never used      : data_start → earliest_train_start
-  - Training only   : earliest_train_start → first_fold_date
-  - Train & test    : first_fold_date → latest_train_end   (rolling window overlap)
-  - Test only       : latest_train_end → data_end
+  - Never used        : data_start → earliest_tune_train_start
+  - Burn-in           : earliest_tune_train_start → tune_cutoff
+                        (training lookback for tuning fold 0 only; never a test row)
+  - Tuning test       : tune_cutoff → cv_cutoff
+                        (also serves as training lookback for early CV folds)
+  - CV train & test   : cv_cutoff → latest_cv_train_end
+                        (rolling window overlap within CV eval zone)
+  - CV test only      : latest_cv_train_end → data_end
 """
 
 import sys
@@ -50,14 +55,14 @@ SERIES_COLORS = {
 # region colour, alpha, label
 REGIONS = [
     ('#aaaaaa', 0.35, 'Never used'),
-    ('#4a90d9', 0.30, 'Training only'),
-    ('#9b59b6', 0.30, 'Training & test (overlap)'),
-    ('#e67e22', 0.35, 'Test only'),
+    ("#545353ff", 0.35, 'Burn-in (training)'),
+    ('#2ca02c', 0.30, 'Tuning test'),
+    ("#f080c5", 0.40, 'CV test'),
 ]
 
 datasets = [
-    ('London',     config_london,     PROJECT_ROOT / 'data' / 'LondonBikeData.csv'),
     ('Seoul',      config_seoul,      PROJECT_ROOT / 'data' / 'SeoulBikeData.csv'),
+    ('London',     config_london,     PROJECT_ROOT / 'data' / 'LondonBikeData.csv'),
     ('Washington', config_washington, PROJECT_ROOT / 'data' / 'WashingtonBikeData.csv'),
 ]
 
@@ -76,10 +81,11 @@ for ax, (city, cfg_mod, filepath) in zip(axes, datasets):
     if fday and fday in df.columns:
         df = df[df[fday].str.strip() == 'Yes']
 
-    # Weekly aggregation (drop first/last partial week)
+    # # Weekly aggregation (drop first/last partial week)
+    # Test daily aggregation 
     series = (
         df.set_index(config.date_col)[config.target_col]
-        .resample('W').sum()
+        .resample('d').sum()
         .iloc[1:-1]
     )
 
@@ -88,31 +94,43 @@ for ax, (city, cfg_mod, filepath) in zip(axes, datasets):
     data_end   = df[config.date_col].max()
     max_h      = max(config.horizons)
 
-    first_fold_date      = data_end  - pd.Timedelta(hours=config.n_folds * max_h)
-    earliest_train_start = first_fold_date - pd.Timedelta(hours=config.n_train_samples)
-    latest_train_end     = data_end  - pd.Timedelta(hours=max_h)
+    # CV cutoff: mirrors TimeSeriesCV.get_cutoff_date()
+    cv_cutoff           = data_end - pd.Timedelta(hours=config.n_folds * max_h)
+    # Tuning cutoff: same formula applied to data before cv_cutoff
+    tune_cutoff         = cv_cutoff - pd.Timedelta(hours=config.tune_folds * config.tune_horizon)
+    # Earliest point ever used as training data (tuning fold 0 lookback)
+    earliest_tune_train = tune_cutoff - pd.Timedelta(hours=config.n_train_samples)
 
     boundaries = [
         data_start,
-        earliest_train_start,
-        first_fold_date,
-        latest_train_end,
+        earliest_tune_train,   # never used → burn-in
+        tune_cutoff,           # burn-in → tuning test
+        cv_cutoff,             # tuning test → CV test
         data_end,
     ]
-    # ── Print key dates
-    # ──────────────────────────────────────────────────────────────
+
+    # ── Print key dates ────────────────────────────────────────────────────────
     print(f"\n{city}:")
-    print(f"  Data range:           {data_start} → {data_end}")
-    print(f"  Earliest train start: {earliest_train_start} (unused: {earliest_train_start - data_start})")
-    print(f"  First fold date:     {first_fold_date} (train only: {first_fold_date - earliest_train_start})")   
+    print(f"CUTOFF DATE: {cv_cutoff}\n\n")
+    print(f"  data_start          : {data_start}")
+    print(f"  earliest_tune_train : {earliest_tune_train}  "
+          f"(never used: {max(earliest_tune_train - data_start, pd.Timedelta(0))})")
+    print(f"  tune_cutoff         : {tune_cutoff}  "
+          f"(burn-in: {tune_cutoff - max(earliest_tune_train, data_start)})")
+    print(f"  cv_cutoff           : {cv_cutoff}  "
+          f"(tuning test: {cv_cutoff - tune_cutoff})")
+    print(f"  data_end            : {data_end}  "
+          f"(CV test: {data_end - cv_cutoff})")
 
     # ── Shade regions ──────────────────────────────────────────────────────────
     for (color, alpha, _), start, end in zip(REGIONS, boundaries[:-1], boundaries[1:]):
-        ax.axvspan(start, end, alpha=alpha, color=color, zorder=0, linewidth=0)
+        if end > start:  # skip zero-width spans (e.g. if never-used is absent)
+            ax.axvspan(start, end, alpha=alpha, color=color, zorder=0, linewidth=0)
 
     # ── Boundary lines ─────────────────────────────────────────────────────────
     for date in boundaries[1:-1]:
-        ax.axvline(date, color='#444444', linewidth=0.9, linestyle=':', zorder=3)
+        if data_start < date < data_end:
+            ax.axvline(date, color='#444444', linewidth=0.9, linestyle=':', zorder=3)
 
     # ── Series ─────────────────────────────────────────────────────────────────
     ax.plot(series.index, series.values,
@@ -121,25 +139,27 @@ for ax, (city, cfg_mod, filepath) in zip(axes, datasets):
     # ── Annotations ────────────────────────────────────────────────────────────
     ymax = series.max()
     ax.set_ylim(bottom=0, top=ymax * 1.18)
-
     label_y = ymax * 1.08
-    midpoints = [
-        (data_start,            earliest_train_start, 'unused'),
-        (earliest_train_start,  first_fold_date,      f'train\n(n={config.n_train_samples:,})'),
-        (first_fold_date,       latest_train_end,     'train\n& test'),
-        (latest_train_end,      data_end,             f'test\nh={max_h}h'),
-    ]
-    for s, e, lbl in midpoints:
-        mid = s + (e - s) / 2
-        ax.text(mid, label_y, lbl, ha='center', va='bottom',
-                fontsize=7.5, color='#333333', linespacing=1.3)
+
+    # midpoints = [
+    #     (data_start,          earliest_tune_train,  'unused'),
+    #     (earliest_tune_train, tune_cutoff,           f'burn-in'),
+    #     (tune_cutoff,         cv_cutoff,             f'tuning test'),
+    #     (cv_cutoff,           data_end,              f'CV test'),
+    # ]
+    # for s, e, lbl in midpoints:
+    #     s_clipped = max(s, data_start)
+    #     if e > s_clipped:
+    #         mid = s_clipped + (e - s_clipped) / 2
+    #         ax.text(mid, label_y, lbl, ha='center', va='bottom',
+    #                 fontsize=7.5, color='#333333', linespacing=1.3)
 
     # ── Axes formatting ────────────────────────────────────────────────────────
     ax.set_title(f'{city}  '
                  f'({df[config.date_col].min().strftime("%b %Y")}–'
                  f'{df[config.date_col].max().strftime("%b %Y")})',
                  fontweight='bold', loc='left', fontsize=11)
-    ax.set_ylabel('Weekly rentals', labelpad=6)
+    ax.set_ylabel('Daily rentals', labelpad=6)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'{int(x):,}'))
     ax.xaxis.set_major_locator(mdates.MonthLocator(bymonth=[1, 4, 7, 10]))
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))

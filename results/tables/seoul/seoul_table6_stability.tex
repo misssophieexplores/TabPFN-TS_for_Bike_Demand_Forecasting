@@ -1,0 +1,24 @@
+\begin{table}[h]
+\centering
+\caption{Model stability metrics — seoul.}
+\label{tab:stability_seoul}
+\begin{tabular}{llrrr}
+\toprule
+Model & Scenario & Mean MAE & Std MAE & CV \% \\
+\midrule
+ARIMA & clean\_only & 444.65 & 198.10 & 44.55 \\
+NeuralProphet & clean\_only & 635.96 & 311.68 & 49.01 \\
+NeuralProphet_NoWeather & clean\_only & 656.87 & 299.41 & 45.58 \\
+Prophet & clean\_only & 338.60 & 232.98 & 68.81 \\
+SARIMAX & clean\_only & 285.43 & 182.75 & 64.02 \\
+Seasonal_Naive & clean\_only & 293.09 & 311.22 & 106.18 \\
+TabPFN & clean\_only & 157.55 & 133.26 & 84.58 \\
+TabPFN_NoWeather & clean\_only & 197.64 & 177.00 & 89.56 \\
+XGBoost & clean\_only & 192.70 & 150.34 & 78.02 \\
+NeuralProphet & degraded & 641.50 & 320.60 & 49.98 \\
+SARIMAX & degraded & 295.15 & 177.69 & 60.20 \\
+TabPFN & degraded & 250.00 & 206.45 & 82.58 \\
+XGBoost & degraded & 209.53 & 162.13 & 77.38 \\
+\bottomrule
+\end{tabular}
+\end{table}

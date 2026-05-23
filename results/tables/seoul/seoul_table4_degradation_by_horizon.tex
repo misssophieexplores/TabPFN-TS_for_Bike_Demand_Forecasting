@@ -1,0 +1,15 @@
+\begin{table}[h]
+\centering
+\caption{Performance degradation by horizon — seoul.}
+\label{tab:degradation_horizon_seoul}
+\begin{tabular}{crrrr}
+\toprule
+Horizon & XGBoost \% & SARIMAX \% & TabPFN \% & NeuralProphet \% \\
+\midrule
+6 & 7.74 & 3.52 & 61.43 & 0.22 \\
+24 & 8.70 & 3.15 & 45.88 & 5.32 \\
+48 & 7.70 & 2.61 & 45.69 & 10.85 \\
+168 & 9.98 & 2.71 & 52.58 & 16.48 \\
+\bottomrule
+\end{tabular}
+\end{table}

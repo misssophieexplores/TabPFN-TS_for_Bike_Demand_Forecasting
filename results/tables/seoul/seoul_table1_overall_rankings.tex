@@ -1,0 +1,24 @@
+\begin{table}[ht!]
+\centering
+\caption{Overall model rankings — seoul (clean weather, mean across all horizons).}
+\label{tab:overall_rankings_seoul}
+{\small
+\setlength{\tabcolsep}{3pt}
+\scriptsize
+\begin{tabular}{clrlrlrlrl}
+\toprule
+Rank & Model & MAE & ~~\(\Delta\) & RMSE & ~~\(\Delta\) & MASE & ~~\(\Delta\) & sMAPE & ~~\(\Delta\) \\
+\midrule
+1 & TabPFN & 196.09 &  & 274.49 &  & 0.70 &  & 29.04 &  \\
+2 & XGBoost & 243.05 & +46.96 & 332.46 & +57.97 & 0.87 & +0.17 & 32.93 & +3.89 \\
+3 & TabPFN_NoWeather & 271.89 & +75.80 & 373.16 & +98.67 & 0.95 & +0.25 & 35.53 & +6.49 \\
+4 & Seasonal_Naive & 324.50 & +128.41 & 438.66 & +164.17 & 1.14 & +0.44 & 44.54 & +15.50 \\
+5 & Prophet & 365.23 & +169.14 & 454.92 & +180.43 & 1.28 & +0.58 & 51.14 & +22.10 \\
+6 & SARIMAX & 455.18 & +259.09 & 542.89 & +268.40 & 1.59 & +0.89 & 58.41 & +29.37 \\
+7 & NeuralProphet & 464.73 & +268.64 & 582.59 & +308.10 & 1.64 & +0.94 & 60.71 & +31.67 \\
+8 & NeuralProphet_NoWeather & 482.87 & +286.78 & 604.68 & +330.19 & 1.69 & +0.99 & 62.61 & +33.57 \\
+9 & ARIMA & 513.50 & +317.41 & 617.76 & +343.27 & 1.80 & +1.10 & 62.06 & +33.02 \\
+\bottomrule
+\end{tabular}
+}
+\end{table}

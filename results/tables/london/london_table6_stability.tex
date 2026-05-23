@@ -1,0 +1,24 @@
+\begin{table}[h]
+\centering
+\caption{Model stability metrics — london.}
+\label{tab:stability_london}
+\begin{tabular}{llrrr}
+\toprule
+Model & Scenario & Mean MAE & Std MAE & CV \% \\
+\midrule
+ARIMA & clean\_only & 1095.84 & 735.03 & 67.07 \\
+NeuralProphet & clean\_only & 1120.15 & 482.85 & 43.11 \\
+NeuralProphet_NoWeather & clean\_only & 1148.98 & 498.76 & 43.41 \\
+Prophet & clean\_only & 510.35 & 246.09 & 48.22 \\
+SARIMAX & clean\_only & 457.63 & 351.60 & 76.83 \\
+Seasonal_Naive & clean\_only & 372.34 & 398.69 & 107.08 \\
+TabPFN & clean\_only & 177.37 & 184.94 & 104.27 \\
+TabPFN_NoWeather & clean\_only & 196.74 & 206.36 & 104.89 \\
+XGBoost & clean\_only & 199.72 & 205.40 & 102.84 \\
+NeuralProphet & degraded & 1148.47 & 472.05 & 41.10 \\
+SARIMAX & degraded & 487.08 & 344.16 & 70.66 \\
+TabPFN & degraded & 209.69 & 191.42 & 91.29 \\
+XGBoost & degraded & 208.71 & 206.86 & 99.11 \\
+\bottomrule
+\end{tabular}
+\end{table}
