@@ -27,6 +27,7 @@ from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
 from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
 from run_experiments import ForecastingExperiment, load_and_prepare_data, compute_and_log_comparative_metrics
+from models.timesfm_model import TimesFMForecaster_NoWeather
 
 
 def main(config=None, no_confirm=False):
@@ -77,13 +78,14 @@ def main(config=None, no_confirm=False):
         ARIMAForecaster(order=tuple(arima_cfg["order"])),
         SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
-        ProphetForecaster(**prophet_cfg["prophet_params"]),
-        NeuralProphetForecaster(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
-        NeuralProphetForecaster_NoWeather(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
+        # ProphetForecaster(**prophet_cfg["prophet_params"]), #TODO: reactivate
+        # NeuralProphetForecaster(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
+        # NeuralProphetForecaster_NoWeather(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
         # TabPFNForecaster_Custom(),
         # TabPFNForecaster_NoWeather(),
         TabPFNPipelineForecaster(),
-        TabPFNPipelineForecaster_NoWeather()
+        TabPFNPipelineForecaster_NoWeather(),
+        TimesFMForecaster_NoWeather(),
     ]
 
     # Scenarios to run
