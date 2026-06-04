@@ -481,26 +481,30 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
     return df, dataset_name
 
 
+def compute_and_log_comparative_metrics(config, log_wandb=True):
+    """Compute + save comparative metrics from the AGGREGATED results file.
 
-def compute_and_log_comparative_metrics(config):
-    """Compute, save, and log comparative metrics to W&B."""
-    filename_detailed = Path(config.output_dir) / f"detailed_results_master_{config.results_version}.csv"
+    Tasks are (dataset, horizon, weather_scenario), pooled across all
+    datasets. Run this ONCE after all cities have finished.
+    """
+    filename_agg = Path(config.output_dir) / f"results_master_{config.results_version}.csv"
     comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
-    filename_detailed, config.output_dir, config.results_version
-)
-    wandb.log({"comparative_metrics": wandb.Table(dataframe=comparative_df)})
-    for _, row in comparative_df.iterrows():
-        wandb.log({
-            f"{row['model']}_vs_{row['baseline']}_win_rate": row['win_rate'],
-            f"{row['model']}_vs_{row['baseline']}_win_rate_ci_lower": row['win_rate_ci_lower'],
-            f"{row['model']}_vs_{row['baseline']}_win_rate_ci_upper": row['win_rate_ci_upper'],
-            f"{row['model']}_vs_{row['baseline']}_skill_score": row['skill_score'],
-            f"{row['model']}_vs_{row['baseline']}_skill_score_ci_lower": row['skill_score_ci_lower'],
-            f"{row['model']}_vs_{row['baseline']}_skill_score_ci_upper": row['skill_score_ci_upper'],
-        })
+        filename_agg, config.output_dir, config.results_version
+    )
+    if log_wandb and wandb.run is not None:
+        wandb.log({"comparative_metrics": wandb.Table(dataframe=comparative_df)})
+        for _, row in comparative_df.iterrows():
+            wandb.log({
+                f"{row['model']}_vs_{row['baseline']}_win_rate": row['win_rate'],
+                f"{row['model']}_vs_{row['baseline']}_win_rate_ci_lower": row['win_rate_ci_lower'],
+                f"{row['model']}_vs_{row['baseline']}_win_rate_ci_upper": row['win_rate_ci_upper'],
+                f"{row['model']}_vs_{row['baseline']}_skill_score": row['skill_score'],
+                f"{row['model']}_vs_{row['baseline']}_skill_score_ci_lower": row['skill_score_ci_lower'],
+                f"{row['model']}_vs_{row['baseline']}_skill_score_ci_upper": row['skill_score_ci_upper'],
+            })
     if config.verbose:
         print("\nComparative metrics vs", BASELINE_MODEL)
-        print(comparative_df[['model', 'dataset', 'n_tasks', 'win_rate', 'skill_score']].to_string(index=False))
+        print(comparative_df[['model', 'n_tasks', 'win_rate', 'skill_score']].to_string(index=False))
     return comparative_df
 
 
@@ -567,7 +571,6 @@ def main():
         print(results_df.groupby('horizon')[['MAE_mean', 'RMSE_mean', 'MASE_mean']].mean().round(2))
 
         experiment.save_results(results_df)
-        # compute_and_log_comparative_metrics(config)
         
     except KeyboardInterrupt:
         print("\n\nInterrupted - Progress saved to checkpoint")

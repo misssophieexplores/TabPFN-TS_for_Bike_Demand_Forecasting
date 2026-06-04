@@ -197,12 +197,18 @@ class MetricsCalculator:
                 f"errors_j and errors_baseline must have the same shape, "
                 f"got {errors_j.shape} vs {errors_baseline.shape}"
             )
-        if np.any(errors_baseline == 0):
-            raise ValueError(
-                "errors_baseline contains zeros; cannot compute relative error."
-            )
 
-        relative_errors = errors_j / errors_baseline
+        # Zero baseline errors are real (e.g. Seasonal Naive predicts a
+        # zero-demand task perfectly). Rather than dropping these tasks
+        # (which would bias the score by removing the baseline's strongest
+        # cases), handle them at the limits the clip bounds already encode:
+        #   baseline == 0, model  > 0  -> ratio +inf -> clip_upper (model maximally worse)
+        #   baseline == 0, model == 0  -> ratio 1.0 (both perfect -> parity)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            relative_errors = errors_j / errors_baseline
+        relative_errors = np.where(
+            (errors_baseline == 0) & (errors_j == 0), 1.0, relative_errors
+        )
         clipped = np.clip(relative_errors, clip_lower, clip_upper)
         geom_mean = float(np.exp(np.mean(np.log(clipped))))
         return float(1.0 - geom_mean)
@@ -371,10 +377,14 @@ class MetricsCalculator:
     def compute_comparative_metrics(
         results_df,
         baseline_model: str = "Seasonal_Naive",
+        error_column: str = "MASE_mean",
+        task_cols=("dataset", "horizon", "weather_scenario"),
         seed: int = 42,
         error_log_path=None,
     ):
         import pandas as pd
+
+        task_cols = list(task_cols)
 
         if baseline_model not in results_df['model'].values:
             raise ValueError(
@@ -382,19 +392,43 @@ class MetricsCalculator:
                 f"Available models: {sorted(results_df['model'].unique().tolist())}"
             )
 
-        # Get all unique (horizon, fold) combinations as the unit of resampling
-        task_cols = ['horizon', 'fold']
-
-        # Pivot to (horizon, fold) x model matrix of per-fold MASE values
+        # One error per (task, model). A task is (dataset, horizon,
+        # weather_scenario): the aggregated grain, with folds already
+        # summarized into MASE_mean. Bootstrap resamples these tasks.
+        # The aggregated file has exactly one row per (task, model), so
+        # aggfunc='mean' is just a guard and never pools across scenarios.
         pivot = results_df.pivot_table(
             index=task_cols,
             columns='model',
-            values='MASE',
+            values=error_column,
             aggfunc='mean',
         )
 
         if baseline_model not in pivot.columns:
             raise ValueError(f"Baseline '{baseline_model}' missing after pivot.")
+
+        # Fail loudly if the baseline is missing any cell within the
+        # scenario(s) it was actually run in. (It is legitimately NaN in
+        # scenarios it never ran, e.g. 'degraded', so restrict the check to
+        # the scenarios where the baseline has at least one result.)
+        if "weather_scenario" in task_cols:
+            scen_level = task_cols.index("weather_scenario")
+            baseline_col = pivot[baseline_model]
+            baseline_scenarios = {
+                idx[scen_level]
+                for idx in baseline_col.dropna().index
+            }
+            in_baseline_scen = baseline_col.index.get_level_values(
+                scen_level
+            ).isin(baseline_scenarios)
+            missing = baseline_col[in_baseline_scen & baseline_col.isna()]
+            if len(missing) > 0:
+                raise ValueError(
+                    f"Baseline '{baseline_model}' is missing "
+                    f"{len(missing)} cell(s) within its own scenario(s) "
+                    f"{sorted(baseline_scenarios)}. These comparisons would "
+                    f"silently drop. Missing tasks:\n{missing.index.tolist()}"
+                )
 
         baseline_errors = pivot[baseline_model].values
         rows = []
@@ -404,12 +438,15 @@ class MetricsCalculator:
                 continue
 
             model_errors = pivot[model_name].values
+            # Both non-NaN -> compared only on shared tasks. Because the
+            # baseline ran clean_only, its column is NaN on degraded tasks,
+            # so every baseline comparison is automatically clean-weather only.
             valid = ~(np.isnan(model_errors) | np.isnan(baseline_errors))
 
             if valid.sum() < 2:
                 msg = (
                     f"[WARN] Skipping {model_name} vs {baseline_model}: "
-                    f"only {valid.sum()} shared observations, need at least 2."
+                    f"only {valid.sum()} shared tasks, need at least 2."
                 )
                 if error_log_path is not None:
                     with open(error_log_path, "a") as f:
@@ -425,7 +462,7 @@ class MetricsCalculator:
             rows.append({
                 'model': model_name,
                 'baseline': baseline_model,
-                'n_obs': int(valid.sum()),
+                'n_tasks': int(valid.sum()),
                 'win_rate': wr['win_rate'],
                 'win_rate_ci_lower': wr['ci_lower'],
                 'win_rate_ci_upper': wr['ci_upper'],
@@ -437,21 +474,27 @@ class MetricsCalculator:
         return pd.DataFrame(rows)
 
     @staticmethod
-    def compute_and_save_comparative_metrics(results_csv_path, output_dir, version, baseline_model="Seasonal_Naive"):
+    def compute_and_save_comparative_metrics(
+        results_csv_path,
+        output_dir,
+        version,
+        baseline_model="Seasonal_Naive",
+        error_column="MASE_mean",
+    ):
         import pandas as pd
         if isinstance(results_csv_path, pd.DataFrame):
             df = results_csv_path
         else:
             df = pd.read_csv(results_csv_path)
-        results = []
-        for dataset, group in df.groupby('dataset'):
-            comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
-            comp['dataset'] = dataset
-            results.append(comp)
-        combined = pd.concat(results, ignore_index=True)
+        # Do NOT group by dataset: that would shrink each comparison to
+        # (horizon x scenario) tasks per dataset. Dataset is a task key,
+        # so all datasets are pooled into one comparison.
+        combined = MetricsCalculator.compute_comparative_metrics(
+            df, baseline_model=baseline_model, error_column=error_column
+        )
         out = Path(output_dir) / f"comparative_metrics_{version}.csv"
         combined.to_csv(out, index=False)
-        return combined    
+        return combined
 
 ## NOT USED YET
 @staticmethod

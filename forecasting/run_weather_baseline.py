@@ -154,7 +154,6 @@ def main(config=None, no_confirm=False):
         
         # Save results
         output_file = experiment.save_results(results_df)
-        compute_and_log_comparative_metrics(config)
         print(f"\nResults saved to: {output_file}")
         detailed = f"{config.output_dir}/detailed_results_master_{config.results_version}.csv"
         print(f"Detailed results saved to: {detailed}")
