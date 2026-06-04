@@ -544,9 +544,9 @@ def main():
         ARIMAForecaster(order=tuple(arima_cfg["order"])),
         SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
-        # ProphetForecaster(**prophet_params), #TODO: reactivate
-        # NeuralProphetForecaster(n_lags=np_lags, **np_params),
-        # NeuralProphetForecaster_NoWeather(n_lags=np_lags, **np_params),
+        ProphetForecaster(**prophet_params),
+        NeuralProphetForecaster(n_lags=np_lags, **np_params),
+        NeuralProphetForecaster_NoWeather(n_lags=np_lags, **np_params),
         TabPFNPipelineForecaster(),
         TabPFNPipelineForecaster_NoWeather(),
         TimesFMForecaster_NoWeather(),
