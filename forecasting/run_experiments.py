@@ -567,7 +567,7 @@ def main():
         print(results_df.groupby('horizon')[['MAE_mean', 'RMSE_mean', 'MASE_mean']].mean().round(2))
 
         experiment.save_results(results_df)
-        compute_and_log_comparative_metrics(config)
+        # compute_and_log_comparative_metrics(config)
         
     except KeyboardInterrupt:
         print("\n\nInterrupted - Progress saved to checkpoint")
