@@ -407,69 +407,105 @@ class MetricsCalculator:
         if baseline_model not in pivot.columns:
             raise ValueError(f"Baseline '{baseline_model}' missing after pivot.")
 
-        # Fail loudly if the baseline is missing any cell within the
-        # scenario(s) it was actually run in. (It is legitimately NaN in
-        # scenarios it never ran, e.g. 'degraded', so restrict the check to
-        # the scenarios where the baseline has at least one result.)
-        if "weather_scenario" in task_cols:
-            scen_level = task_cols.index("weather_scenario")
-            baseline_col = pivot[baseline_model]
-            baseline_scenarios = {
-                idx[scen_level]
-                for idx in baseline_col.dropna().index
-            }
-            in_baseline_scen = baseline_col.index.get_level_values(
-                scen_level
-            ).isin(baseline_scenarios)
-            missing = baseline_col[in_baseline_scen & baseline_col.isna()]
-            if len(missing) > 0:
-                raise ValueError(
-                    f"Baseline '{baseline_model}' is missing "
-                    f"{len(missing)} cell(s) within its own scenario(s) "
-                    f"{sorted(baseline_scenarios)}. These comparisons would "
-                    f"silently drop. Missing tasks:\n{missing.index.tolist()}"
-                )
+        # The baseline (Seasonal Naive) is weather-agnostic: it ran in
+        # clean_only only, but its error is the SAME for clean and degraded
+        # (it ignores covariates). So broadcast the baseline error across
+        # scenarios — look it up by (dataset, horizon), dropping the scenario
+        # level — so every model task (clean OR degraded) is compared against
+        # the same Seasonal Naive error. A degraded covariate model thus
+        # measures "actual weather forecast vs previous-24h naive".
+        match_cols = [c for c in task_cols if c != "weather_scenario"]
+        if not match_cols:
+            match_cols = task_cols  # no scenario dim; match on full key
 
-        baseline_errors = pivot[baseline_model].values
+        # baseline error per (dataset, horizon), taken from the rows where the
+        # baseline actually ran (any scenario; collapse if it ran in several).
+        baseline_lookup = (
+            results_df[results_df['model'] == baseline_model]
+            .groupby(match_cols)[error_column]
+            .mean()
+        )
+
+        # Fail loudly if the baseline is missing any (dataset, horizon) that a
+        # model was evaluated on — those comparisons would silently drop.
+        needed = (
+            results_df[results_df['model'] != baseline_model]
+            .groupby(match_cols).size().index
+        )
+        missing = [k for k in needed if k not in baseline_lookup.index]
+        if missing:
+            raise ValueError(
+                f"Baseline '{baseline_model}' is missing {len(missing)} "
+                f"{tuple(match_cols)} cell(s) that other models were run on. "
+                f"These comparisons would silently drop. Missing: {missing}"
+            )
+
+        # Align the broadcast baseline to every task row in the pivot index.
+        match_pos = [task_cols.index(c) for c in match_cols]
+        def _baseline_for(task_key):
+            if not isinstance(task_key, tuple):
+                task_key = (task_key,)
+            key = tuple(task_key[p] for p in match_pos)
+            key = key[0] if len(key) == 1 else key
+            return baseline_lookup.get(key, np.nan)
+
+        baseline_errors = np.array([_baseline_for(idx) for idx in pivot.index])
         rows = []
+
+        # Scenario for each pivot row, used to split comparisons by scenario
+        # so each (model, scenario) is its own vs-baseline comparison.
+        if "weather_scenario" in task_cols:
+            scen_pos = task_cols.index("weather_scenario")
+            scen_of_row = np.array([
+                (idx[scen_pos] if isinstance(idx, tuple) else idx)
+                for idx in pivot.index
+            ])
+        else:
+            scen_of_row = np.array([None] * len(pivot.index))
+        scenarios = list(dict.fromkeys(scen_of_row.tolist()))
 
         for model_name in pivot.columns:
             if model_name == baseline_model:
                 continue
 
             model_errors = pivot[model_name].values
-            # Both non-NaN -> compared only on shared tasks. Because the
-            # baseline ran clean_only, its column is NaN on degraded tasks,
-            # so every baseline comparison is automatically clean-weather only.
-            valid = ~(np.isnan(model_errors) | np.isnan(baseline_errors))
 
-            if valid.sum() < 2:
-                msg = (
-                    f"[WARN] Skipping {model_name} vs {baseline_model}: "
-                    f"only {valid.sum()} shared tasks, need at least 2."
-                )
-                if error_log_path is not None:
-                    with open(error_log_path, "a") as f:
-                        f.write(f"\n{msg}\n")
-                continue
+            for scenario in scenarios:
+                in_scen = scen_of_row == scenario
+                # Both non-NaN AND in this scenario. Baseline is broadcast by
+                # (dataset, horizon), so a degraded covariate model compares
+                # against the same clean Seasonal Naive error.
+                valid = in_scen & ~(np.isnan(model_errors) | np.isnan(baseline_errors))
 
-            errs_j = model_errors[valid]
-            errs_b = baseline_errors[valid]
+                if valid.sum() < 2:
+                    msg = (
+                        f"[WARN] Skipping {model_name} ({scenario}) vs "
+                        f"{baseline_model}: only {valid.sum()} shared tasks, "
+                        f"need at least 2."
+                    )
+                    if error_log_path is not None:
+                        with open(error_log_path, "a") as f:
+                            f.write(f"\n{msg}\n")
+                    continue
 
-            wr = MetricsCalculator.win_rate_with_ci(errs_j, errs_b, seed=seed)
-            ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+                errs_j = model_errors[valid]
+                errs_b = baseline_errors[valid]
 
-            rows.append({
-                'model': model_name,
-                'baseline': baseline_model,
-                'n_tasks': int(valid.sum()),
-                'win_rate': wr['win_rate'],
-                'win_rate_ci_lower': wr['ci_lower'],
-                'win_rate_ci_upper': wr['ci_upper'],
-                'skill_score': ss['skill_score'],
-                'skill_score_ci_lower': ss['ci_lower'],
-                'skill_score_ci_upper': ss['ci_upper'],
-            })
+                wr = MetricsCalculator.win_rate_with_ci(errs_j, errs_b, seed=seed)
+                ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+
+                rows.append({
+                    'model': model_name,
+                    'weather_scenario': scenario,
+                    'baseline': baseline_model,
+                    'n_tasks': int(valid.sum()),
+                    'win_rate': wr['win_rate'],
+                    'win_rate_ci_lower': wr['ci_lower'],
+                    'win_rate_ci_upper': wr['ci_upper'],
+                    'skill_score': ss['skill_score'],
+                    'skill_score_ci_lower': ss['ci_lower'],
+                    'skill_score_ci_upper': ss['ci_upper'],
+                })
 
         return pd.DataFrame(rows)
 
