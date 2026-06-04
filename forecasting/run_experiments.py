@@ -484,10 +484,10 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
 
 def compute_and_log_comparative_metrics(config):
     """Compute, save, and log comparative metrics to W&B."""
-    filename_agg = Path(config.output_dir) / f"results_master_{config.results_version}.csv"
+    filename_detailed = Path(config.output_dir) / f"detailed_results_master_{config.results_version}.csv"
     comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
-        filename_agg, config.output_dir, config.results_version
-    )
+    filename_detailed, config.output_dir, config.results_version
+)
     wandb.log({"comparative_metrics": wandb.Table(dataframe=comparative_df)})
     for _, row in comparative_df.iterrows():
         wandb.log({
