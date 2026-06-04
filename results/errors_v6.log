@@ -3036,3 +3036,435 @@ To authenticate in a non-interactive environment:
   3. Copy your API Key from https://ux.priorlabs.ai/account
   4. Set the environment variable: export TABPFN_TOKEN="<your-api-key>"
      or in Python (before calling .fit()): import os; os.environ["TABPFN_TOKEN"] = "<your-api-key>"
+
+================================================================================
+[2026-06-04 18:37:52] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 389, in compute_comparative_metrics
+    pivot = results_df.pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/frame.py", line 9536, in pivot_table
+    return pivot_table(
+           ^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 102, in pivot_table
+    table = __internal_pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 148, in __internal_pivot_table
+    raise KeyError(i)
+KeyError: 'MASE'
+
+================================================================================
+[2026-06-04 18:37:54] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 389, in compute_comparative_metrics
+    pivot = results_df.pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/frame.py", line 9536, in pivot_table
+    return pivot_table(
+           ^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 102, in pivot_table
+    table = __internal_pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 148, in __internal_pivot_table
+    raise KeyError(i)
+KeyError: 'MASE'
+
+================================================================================
+[2026-06-04 18:43:53] FAILED: london
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 389, in compute_comparative_metrics
+    pivot = results_df.pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/frame.py", line 9536, in pivot_table
+    return pivot_table(
+           ^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 102, in pivot_table
+    table = __internal_pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 148, in __internal_pivot_table
+    raise KeyError(i)
+KeyError: 'MASE'
+
+================================================================================
+[2026-06-04 18:43:56] FAILED: london
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 389, in compute_comparative_metrics
+    pivot = results_df.pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/frame.py", line 9536, in pivot_table
+    return pivot_table(
+           ^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 102, in pivot_table
+    table = __internal_pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 148, in __internal_pivot_table
+    raise KeyError(i)
+KeyError: 'MASE'
+
+================================================================================
+[2026-06-04 18:59:41] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 389, in compute_comparative_metrics
+    pivot = results_df.pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/frame.py", line 9536, in pivot_table
+    return pivot_table(
+           ^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 102, in pivot_table
+    table = __internal_pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 148, in __internal_pivot_table
+    raise KeyError(i)
+KeyError: 'MASE'
+
+================================================================================
+[2026-06-04 18:59:46] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 389, in compute_comparative_metrics
+    pivot = results_df.pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/frame.py", line 9536, in pivot_table
+    return pivot_table(
+           ^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 102, in pivot_table
+    table = __internal_pivot_table(
+            ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/.venv/lib/python3.11/site-packages/pandas/core/reshape/pivot.py", line 148, in __internal_pivot_table
+    raise KeyError(i)
+KeyError: 'MASE'
+
+================================================================================
+[2026-06-04 19:27:31] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:27:34] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:33:14] FAILED: washington
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:33:18] FAILED: washington
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:42:54] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:42:58] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:48:37] FAILED: washington
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:48:40] FAILED: washington
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:54:23] FAILED: london
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 19:54:26] FAILED: london
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 20:06:26] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
+
+================================================================================
+[2026-06-04 20:06:28] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 157, in main
+    compute_and_log_comparative_metrics(config)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_experiments.py", line 488, in compute_and_log_comparative_metrics
+    comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 448, in compute_and_save_comparative_metrics
+    comp = MetricsCalculator.compute_comparative_metrics(group, baseline_model=baseline_model)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 423, in compute_comparative_metrics
+    ss = MetricsCalculator.skill_score_with_ci(errs_j, errs_b, seed=seed)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 312, in skill_score_with_ci
+    point_estimate = MetricsCalculator.skill_score(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/evaluation/metrics.py", line 201, in skill_score
+    raise ValueError(
+ValueError: errors_baseline contains zeros; cannot compute relative error.
