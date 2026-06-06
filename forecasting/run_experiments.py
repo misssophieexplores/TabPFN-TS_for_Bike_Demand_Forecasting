@@ -27,7 +27,7 @@ from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from weather.weather_processor import WeatherProcessor
 from features import add_time_features
-from models.timesfm_model import TimesFMForecaster_NoWeather
+from models.timesfm_model import TimesFMForecaster, TimesFMForecaster_NoWeather
 
 
 # Load environment variables
@@ -549,6 +549,7 @@ def main():
         NeuralProphetForecaster_NoWeather(n_lags=np_lags, **np_params),
         TabPFNPipelineForecaster(),
         TabPFNPipelineForecaster_NoWeather(),
+        TimesFMForecaster(),
         TimesFMForecaster_NoWeather(),
         
     ]

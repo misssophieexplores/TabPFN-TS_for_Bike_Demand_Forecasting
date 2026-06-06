@@ -27,7 +27,7 @@ from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
 from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
 from run_experiments import ForecastingExperiment, load_and_prepare_data, compute_and_log_comparative_metrics
-from models.timesfm_model import TimesFMForecaster_NoWeather
+from models.timesfm_model import TimesFMForecaster, TimesFMForecaster_NoWeather
 
 
 def main(config=None, no_confirm=False):
@@ -83,6 +83,7 @@ def main(config=None, no_confirm=False):
         NeuralProphetForecaster_NoWeather(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
         TabPFNPipelineForecaster(),
         TabPFNPipelineForecaster_NoWeather(),
+        TimesFMForecaster(),
         TimesFMForecaster_NoWeather(),
     ]
 
