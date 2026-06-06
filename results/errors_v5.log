@@ -7190,3 +7190,58 @@ Traceback (most recent call last):
     __import__("pkg_resources").declare_namespace(__name__)
     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ModuleNotFoundError: No module named 'pkg_resources'
+
+================================================================================
+[2026-04-09 22:00:28] FAILED: washington
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 57, in main
+    with open(config.arima_params_file) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'results/tuning/arima_best_params_20260314_190758.json'
+
+================================================================================
+[2026-04-09 22:00:45] FAILED: seoul
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 57, in main
+    with open(config.arima_params_file) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'results/tuning/arima_best_params_20260314_190645.json'
+
+================================================================================
+[2026-04-09 22:00:45] FAILED: washington
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 57, in main
+    with open(config.arima_params_file) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'results/tuning/arima_best_params_20260314_190758.json'
+
+================================================================================
+[2026-04-09 22:00:45] FAILED: london
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 57, in main
+    with open(config.arima_params_file) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'results/tuning/arima_best_params_20260314_190725.json'
+
+================================================================================
+[2026-04-09 22:09:35] FAILED: london
+================================================================================
+Traceback (most recent call last):
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/main.py", line 76, in main
+    run_baseline(config=config, no_confirm=True)
+  File "/Users/mayte/GitHub/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/run_weather_baseline.py", line 63, in main
+    with open(config.xgb_params_file) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'results/tuning/xgboost_best_params_20260309_081759.json'
