@@ -2,14 +2,14 @@
 \centering
 \caption{MAE by forecast horizon — london (clean weather).}
 \label{tab:mae_by_horizon_london}
-\begin{tabular}{rrrrrrrrrrr}
+\begin{tabular}{rrrrrrrrrrrr}
 \toprule
-Horizon & TabPFN & TimesFM_NoWeather & XGBoost & TabPFN_NoWeather & Seasonal_Naive & Prophet & SARIMAX & NeuralProphet_NoWeather & NeuralProphet & ARIMA \\
+Horizon & TabPFN & TimesFM_NoWeather & XGBoost & TabPFN_NoWeather & TimesFM & Seasonal_Naive & Prophet & SARIMAX & NeuralProphet_NoWeather & NeuralProphet & ARIMA \\
 \midrule
-6 & 176.61 & 166.91 & 204.60 & 193.43 & 375.50 & 512.18 & 448.94 & 1247.18 & 1204.28 & 1123.61 \\
-24 & 227.11 & 209.90 & 233.78 & 266.21 & 375.50 & 523.27 & 464.59 & 630.45 & 644.11 & 983.39 \\
-48 & 237.55 & 221.54 & 245.12 & 284.51 & 471.17 & 534.45 & 626.60 & 722.51 & 741.83 & 984.48 \\
-168 & 217.89 & 228.54 & 249.54 & 292.41 & 446.88 & 542.93 & 879.28 & 566.07 & 581.32 & 999.58 \\
+6 & 176.61 & 166.91 & 204.60 & 193.43 & 249.06 & 375.50 & 512.28 & 448.94 & 1247.18 & 1204.28 & 1123.61 \\
+24 & 227.11 & 209.90 & 233.78 & 266.21 & 286.30 & 375.50 & 523.46 & 464.59 & 630.45 & 644.11 & 983.39 \\
+48 & 237.55 & 221.54 & 245.12 & 284.51 & 309.10 & 471.17 & 534.46 & 626.60 & 722.51 & 741.83 & 984.48 \\
+168 & 217.89 & 228.54 & 249.54 & 292.41 & 327.38 & 446.88 & 542.90 & 879.28 & 566.07 & 581.32 & 999.58 \\
 \bottomrule
 \end{tabular}
 \end{table}

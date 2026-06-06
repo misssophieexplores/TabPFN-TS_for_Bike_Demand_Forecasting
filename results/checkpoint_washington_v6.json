@@ -2,122 +2,32 @@
   "completed": [
     [
       "washington",
-      "NeuralProphet_NoWeather",
-      6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN_NoWeather",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN_NoWeather",
-      24,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "XGBoost",
-      24,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "SARIMAX",
-      24,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "Prophet_Untuned",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN_v3",
-      6,
-      "degraded"
-    ],
-    [
-      "washington",
-      "TabPFN_NoWeather_v3",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "Prophet_Untuned",
-      24,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "Prophet_Untuned",
-      6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "XGBoost",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
       "SARIMAX",
       24,
       "degraded"
     ],
     [
       "washington",
-      "NeuralProphet_Untuned",
-      24,
-      "degraded"
-    ],
-    [
-      "washington",
-      "TabPFN",
-      168,
-      "degraded"
-    ],
-    [
-      "washington",
-      "XGBoost",
+      "NeuralProphet_NoWeather_Untuned",
       6,
       "clean_only"
     ],
     [
       "washington",
-      "TimesFM_NoWeather",
-      24,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TimesFM_NoWeather",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "NeuralProphet_Untuned",
-      48,
-      "degraded"
-    ],
-    [
-      "washington",
-      "TabPFN_v3",
-      168,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TimesFM_NoWeather",
+      "Prophet_Untuned",
       6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN_NoWeather",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "SARIMAX",
+      168,
       "clean_only"
     ],
     [
@@ -128,9 +38,135 @@
     ],
     [
       "washington",
+      "XGBoost",
+      48,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TabPFN",
+      168,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TimesFM",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "XGBoost",
+      6,
+      "degraded"
+    ],
+    [
+      "washington",
+      "ARIMA",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TimesFM",
+      24,
+      "degraded"
+    ],
+    [
+      "washington",
+      "NeuralProphet_Untuned",
+      48,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TimesFM",
+      168,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TimesFM",
+      48,
+      "degraded"
+    ],
+    [
+      "washington",
       "NeuralProphet_Untuned",
       6,
       "degraded"
+    ],
+    [
+      "washington",
+      "Prophet_Untuned",
+      24,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TimesFM_NoWeather",
+      168,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "NeuralProphet_NoWeather",
+      168,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "NeuralProphet_Untuned",
+      168,
+      "degraded"
+    ],
+    [
+      "washington",
+      "SARIMAX",
+      48,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TabPFN_v3",
+      24,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "NeuralProphet_Untuned",
+      24,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TimesFM_NoWeather",
+      24,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN_NoWeather_v3",
+      24,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "Seasonal_Naive",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN",
+      6,
+      "degraded"
+    ],
+    [
+      "washington",
+      "NeuralProphet_NoWeather",
+      24,
+      "clean_only"
     ],
     [
       "washington",
@@ -140,80 +176,8 @@
     ],
     [
       "washington",
-      "TabPFN_NoWeather",
-      6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "SARIMAX",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "XGBoost",
-      24,
-      "degraded"
-    ],
-    [
-      "washington",
-      "ARIMA",
-      24,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "SARIMAX",
-      6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "NeuralProphet_NoWeather",
-      168,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "XGBoost",
-      48,
-      "degraded"
-    ],
-    [
-      "washington",
-      "TabPFN_NoWeather_v3",
-      6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "ARIMA",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "XGBoost",
-      6,
-      "degraded"
-    ],
-    [
-      "washington",
       "ARIMA",
       6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "Seasonal_Naive",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "XGBoost",
-      168,
       "clean_only"
     ],
     [
@@ -221,54 +185,6 @@
       "TabPFN",
       24,
       "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN_v3",
-      168,
-      "degraded"
-    ],
-    [
-      "washington",
-      "Seasonal_Naive",
-      6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "SARIMAX",
-      48,
-      "degraded"
-    ],
-    [
-      "washington",
-      "NeuralProphet_Untuned",
-      168,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "NeuralProphet_NoWeather",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN",
-      6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "SARIMAX",
-      6,
-      "degraded"
     ],
     [
       "washington",
@@ -278,14 +194,110 @@
     ],
     [
       "washington",
-      "SARIMAX",
+      "TimesFM",
+      6,
+      "degraded"
+    ],
+    [
+      "washington",
+      "XGBoost",
       168,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TabPFN",
+      48,
       "clean_only"
     ],
     [
       "washington",
       "Prophet_Untuned",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "XGBoost",
+      24,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TabPFN_NoWeather",
+      24,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN_v3",
       168,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TabPFN_v3",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "NeuralProphet_Untuned",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TimesFM_NoWeather",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN_NoWeather_v3",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "Seasonal_Naive",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "SARIMAX",
+      6,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TabPFN_v3",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN_v3",
+      24,
+      "degraded"
+    ],
+    [
+      "washington",
+      "SARIMAX",
+      168,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TabPFN",
+      168,
+      "degraded"
+    ],
+    [
+      "washington",
+      "SARIMAX",
+      24,
       "clean_only"
     ],
     [
@@ -293,48 +305,6 @@
       "TabPFN_NoWeather_v3",
       168,
       "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN",
-      24,
-      "degraded"
-    ],
-    [
-      "washington",
-      "XGBoost",
-      168,
-      "degraded"
-    ],
-    [
-      "washington",
-      "NeuralProphet_Untuned",
-      168,
-      "degraded"
-    ],
-    [
-      "washington",
-      "TabPFN",
-      48,
-      "degraded"
-    ],
-    [
-      "washington",
-      "TimesFM_NoWeather",
-      168,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN_v3",
-      24,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "TabPFN",
-      6,
-      "degraded"
     ],
     [
       "washington",
@@ -350,26 +320,32 @@
     ],
     [
       "washington",
-      "TabPFN_v3",
+      "XGBoost",
       48,
       "clean_only"
     ],
     [
       "washington",
-      "NeuralProphet_NoWeather_Untuned",
-      48,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "NeuralProphet_NoWeather",
+      "TabPFN",
       24,
+      "degraded"
+    ],
+    [
+      "washington",
+      "XGBoost",
+      6,
       "clean_only"
     ],
     [
       "washington",
-      "SARIMAX",
+      "TimesFM",
       168,
+      "degraded"
+    ],
+    [
+      "washington",
+      "TabPFN",
+      48,
       "degraded"
     ],
     [
@@ -380,25 +356,49 @@
     ],
     [
       "washington",
-      "TabPFN",
+      "TabPFN_NoWeather",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TimesFM",
+      24,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TimesFM_NoWeather",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN_NoWeather_v3",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "XGBoost",
       168,
       "clean_only"
     ],
     [
       "washington",
-      "TabPFN_v3",
-      24,
-      "degraded"
-    ],
-    [
-      "washington",
-      "TabPFN_v3",
-      6,
+      "TimesFM",
+      48,
       "clean_only"
     ],
     [
       "washington",
       "NeuralProphet_Untuned",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "ARIMA",
       24,
       "clean_only"
     ],
@@ -410,28 +410,76 @@
     ],
     [
       "washington",
-      "TabPFN_NoWeather_v3",
+      "NeuralProphet_NoWeather",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "NeuralProphet_Untuned",
       24,
+      "degraded"
+    ],
+    [
+      "washington",
+      "Prophet_Untuned",
+      168,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "XGBoost",
+      24,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN_v3",
+      6,
+      "degraded"
+    ],
+    [
+      "washington",
+      "NeuralProphet_NoWeather",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "NeuralProphet_Untuned",
+      168,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "SARIMAX",
+      48,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN_v3",
+      168,
       "clean_only"
     ],
     [
       "washington",
       "NeuralProphet_NoWeather_Untuned",
-      6,
-      "clean_only"
-    ],
-    [
-      "washington",
-      "NeuralProphet_Untuned",
       48,
       "clean_only"
     ],
     [
       "washington",
-      "NeuralProphet_Untuned",
+      "SARIMAX",
+      6,
+      "clean_only"
+    ],
+    [
+      "washington",
+      "TabPFN",
       6,
       "clean_only"
     ]
   ],
-  "last_updated": "2026-06-04T20:42:28.140306"
+  "last_updated": "2026-06-06T17:26:50.804347"
 }

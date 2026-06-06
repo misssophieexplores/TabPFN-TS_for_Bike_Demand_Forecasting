@@ -2,27 +2,15 @@
   "completed": [
     [
       "seoul",
-      "NeuralProphet_NoWeather_Untuned",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
       "TabPFN",
       6,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "SARIMAX",
-      24,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "ARIMA",
-      24,
       "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN_v3",
+      6,
+      "degraded"
     ],
     [
       "seoul",
@@ -32,15 +20,39 @@
     ],
     [
       "seoul",
-      "SARIMAX",
-      48,
-      "degraded"
+      "TabPFN_NoWeather_v3",
+      6,
+      "clean_only"
     ],
     [
       "seoul",
-      "TabPFN_v3",
+      "TimesFM_NoWeather",
       168,
       "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "XGBoost",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "Prophet_Untuned",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM",
+      24,
+      "degraded"
     ],
     [
       "seoul",
@@ -50,9 +62,51 @@
     ],
     [
       "seoul",
-      "NeuralProphet_NoWeather",
-      24,
+      "TabPFN_v3",
+      168,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_Untuned",
+      48,
       "clean_only"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_NoWeather",
+      6,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN_v3",
+      24,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "SARIMAX",
+      6,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN_NoWeather",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_NoWeather",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "SARIMAX",
+      24,
+      "degraded"
     ],
     [
       "seoul",
@@ -62,14 +116,284 @@
     ],
     [
       "seoul",
+      "NeuralProphet_NoWeather_Untuned",
+      6,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM",
+      6,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "XGBoost",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "SARIMAX",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "Seasonal_Naive",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "Seasonal_Naive",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN",
+      48,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_NoWeather",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_NoWeather_Untuned",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "Prophet_Untuned",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM",
+      48,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "XGBoost",
+      24,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_Untuned",
+      168,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "TabPFN",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN_v3",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "XGBoost",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM_NoWeather",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM_NoWeather",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_Untuned",
+      24,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "TabPFN_NoWeather_v3",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN_v3",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "SARIMAX",
+      48,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "XGBoost",
+      6,
+      "clean_only"
+    ],
+    [
+      "seoul",
       "SARIMAX",
       6,
       "degraded"
     ],
     [
       "seoul",
+      "TabPFN",
+      6,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "TabPFN_NoWeather",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "Prophet_Untuned",
+      6,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM",
+      6,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "XGBoost",
+      48,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "SARIMAX",
+      168,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "TabPFN_NoWeather",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN",
+      168,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "ARIMA",
+      6,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN_v3",
+      6,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "SARIMAX",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "Prophet_Untuned",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "Seasonal_Naive",
+      168,
+      "clean_only"
+    ],
+    [
+      "seoul",
       "TimesFM_NoWeather",
       6,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_Untuned",
+      48,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "TabPFN",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN",
+      24,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "TabPFN_v3",
+      48,
+      "degraded"
+    ],
+    [
+      "seoul",
+      "TabPFN_NoWeather_v3",
+      48,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "ARIMA",
+      168,
       "clean_only"
     ],
     [
@@ -86,20 +410,20 @@
     ],
     [
       "seoul",
-      "TabPFN_NoWeather_v3",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
       "ARIMA",
-      6,
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "TabPFN_v3",
+      24,
+      "clean_only"
+    ],
+    [
+      "seoul",
+      "NeuralProphet_Untuned",
+      24,
       "clean_only"
     ],
     [
@@ -110,87 +434,39 @@
     ],
     [
       "seoul",
-      "NeuralProphet_NoWeather",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_v3",
-      168,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "XGBoost",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "Prophet_Untuned",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "XGBoost",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "Prophet_Untuned",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TimesFM_NoWeather",
+      "TabPFN_NoWeather_v3",
       168,
       "clean_only"
-    ],
-    [
-      "seoul",
-      "NeuralProphet_Untuned",
-      168,
-      "degraded"
     ],
     [
       "seoul",
       "XGBoost",
       6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN",
-      168,
       "degraded"
     ],
     [
       "seoul",
       "TabPFN_NoWeather",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "NeuralProphet_NoWeather_Untuned",
-      24,
+      6,
       "clean_only"
     ],
     [
       "seoul",
       "SARIMAX",
-      168,
+      48,
       "clean_only"
     ],
     [
       "seoul",
-      "TabPFN_NoWeather",
-      48,
+      "NeuralProphet_Untuned",
+      6,
       "clean_only"
+    ],
+    [
+      "seoul",
+      "TimesFM",
+      168,
+      "degraded"
     ],
     [
       "seoul",
@@ -200,238 +476,10 @@
     ],
     [
       "seoul",
-      "TabPFN_NoWeather_v3",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_NoWeather",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "XGBoost",
-      48,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "XGBoost",
-      24,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "TabPFN_v3",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "Prophet_Untuned",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "ARIMA",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "Seasonal_Naive",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_NoWeather_v3",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "Seasonal_Naive",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_v3",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "XGBoost",
-      6,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "NeuralProphet_Untuned",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_v3",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
       "NeuralProphet_NoWeather_Untuned",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN",
       24,
       "clean_only"
-    ],
-    [
-      "seoul",
-      "NeuralProphet_Untuned",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "SARIMAX",
-      168,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "TabPFN",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_v3",
-      24,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "NeuralProphet_NoWeather",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TimesFM_NoWeather",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_NoWeather",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_v3",
-      48,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "XGBoost",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "SARIMAX",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "SARIMAX",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN_v3",
-      6,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "SARIMAX",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "NeuralProphet_Untuned",
-      6,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "NeuralProphet_Untuned",
-      48,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "Prophet_Untuned",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "NeuralProphet_Untuned",
-      24,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "TabPFN_NoWeather_v3",
-      168,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TimesFM_NoWeather",
-      24,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN",
-      24,
-      "degraded"
-    ],
-    [
-      "seoul",
-      "Seasonal_Naive",
-      48,
-      "clean_only"
-    ],
-    [
-      "seoul",
-      "TabPFN",
-      48,
-      "degraded"
     ]
   ],
-  "last_updated": "2026-06-04T20:36:55.946812"
+  "last_updated": "2026-06-06T17:12:22.385741"
 }

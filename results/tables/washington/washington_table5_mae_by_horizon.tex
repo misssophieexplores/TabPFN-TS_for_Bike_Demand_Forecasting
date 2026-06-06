@@ -2,14 +2,14 @@
 \centering
 \caption{MAE by forecast horizon — washington (clean weather).}
 \label{tab:mae_by_horizon_washington}
-\begin{tabular}{rrrrrrrrrrr}
+\begin{tabular}{rrrrrrrrrrrr}
 \toprule
-Horizon & TabPFN & TimesFM_NoWeather & XGBoost & TabPFN_NoWeather & Seasonal_Naive & Prophet & SARIMAX & NeuralProphet_NoWeather & NeuralProphet & ARIMA \\
+Horizon & TabPFN & TimesFM_NoWeather & XGBoost & TabPFN_NoWeather & TimesFM & Seasonal_Naive & Prophet & SARIMAX & NeuralProphet_NoWeather & NeuralProphet & ARIMA \\
 \midrule
-6 & 39.67 & 37.68 & 40.08 & 43.27 & 79.83 & 95.02 & 77.64 & 243.10 & 236.36 & 128.77 \\
-24 & 49.38 & 44.66 & 53.93 & 57.08 & 79.83 & 99.18 & 91.62 & 118.09 & 123.06 & 153.13 \\
-48 & 53.66 & 46.28 & 58.64 & 61.58 & 101.12 & 100.97 & 100.97 & 139.69 & 148.21 & 165.11 \\
-168 & 50.56 & 47.69 & 61.68 & 59.90 & 93.51 & 103.07 & 99.98 & 106.01 & 121.95 & 171.87 \\
+6 & 39.67 & 37.68 & 40.08 & 43.27 & 60.72 & 79.83 & 95.02 & 77.64 & 243.10 & 236.36 & 128.77 \\
+24 & 49.38 & 44.66 & 53.93 & 57.08 & 72.37 & 79.83 & 99.18 & 91.62 & 118.09 & 123.06 & 153.13 \\
+48 & 53.66 & 46.28 & 58.64 & 61.58 & 77.86 & 101.12 & 100.97 & 100.97 & 139.69 & 148.21 & 165.11 \\
+168 & 50.56 & 47.69 & 61.68 & 59.90 & 86.27 & 93.51 & 103.07 & 99.98 & 106.01 & 121.95 & 171.87 \\
 \bottomrule
 \end{tabular}
 \end{table}

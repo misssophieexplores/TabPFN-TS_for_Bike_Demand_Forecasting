@@ -7,9 +7,11 @@ SARIMAX,clean_only,285.43,182.75,64.02
 Seasonal_Naive,clean_only,293.09,311.22,106.18
 TabPFN,clean_only,157.55,133.26,84.58
 TabPFN_NoWeather,clean_only,197.64,177.0,89.56
+TimesFM,clean_only,228.78,138.32,60.46
 TimesFM_NoWeather,clean_only,172.93,160.11,92.59
 XGBoost,clean_only,192.7,150.34,78.02
 NeuralProphet,degraded,641.5,320.6,49.98
 SARIMAX,degraded,295.15,177.69,60.2
 TabPFN,degraded,250.0,206.45,82.58
+TimesFM,degraded,341.5,135.19,39.59
 XGBoost,degraded,209.53,162.13,77.38

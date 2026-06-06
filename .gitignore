@@ -16,3 +16,4 @@ checkpoint_washington_t*
 /results/tuning/aussortieren
 *.sh
 
+/.timesfm_venv
