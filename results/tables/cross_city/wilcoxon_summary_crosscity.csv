@@ -1,0 +1,6 @@
+comparison,significant,total,tested,favor_TabPFN,favor_TabPFN_NoWeather,family,favor_XGBoost,favor_TabPFN_clean,favor_TabPFN_degraded,favor_XGBoost_clean,favor_XGBoost_degraded
+TabPFN vs TabPFN_NoWeather,12,12,12,12.0,0.0,a_tabpfn_vs_nw_clean,,,,,
+TabPFN vs XGBoost,9,12,12,9.0,,b_tabpfn_vs_xgb_clean,0.0,,,,
+TabPFN vs XGBoost,2,12,12,0.0,,c_tabpfn_vs_xgb_degraded,2.0,,,,
+TabPFN_clean vs TabPFN_degraded,12,12,12,,,d_tabpfn_clean_vs_degraded,,12.0,0.0,,
+XGBoost_clean vs XGBoost_degraded,12,12,12,,,e_xgb_clean_vs_degraded,,,,12.0,0.0

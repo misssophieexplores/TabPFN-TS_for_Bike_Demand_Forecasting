@@ -1,0 +1,6 @@
+Horizon,SARIMAX_Clean,SARIMAX_Degraded,SARIMAX_Degraded_%,NeuralProphet_Clean,NeuralProphet_Degraded,NeuralProphet_Degraded_%
+6,1.013,1.751,78.087,2.789,3.012,7.784
+24,1.219,1.944,64.87,1.509,2.286,51.641
+48,1.489,2.276,63.434,1.744,3.267,85.047
+168,2.004,2.854,69.969,1.479,3.702,153.301
+Mean,1.431,2.206,69.09,1.88,3.067,74.443
