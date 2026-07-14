@@ -1,0 +1,24 @@
+{
+  "city": "washington",
+  "n_train_samples": 720,
+  "prophet_params": {
+    "changepoint_prior_scale": 0.002935407097292146,
+    "seasonality_prior_scale": 0.2908271604938314,
+    "holidays_prior_scale": 0.04591096023583611,
+    "seasonality_mode": "additive"
+  },
+  "tuning": {
+    "search_type": "random_search",
+    "trials": 50,
+    "tune_folds": 90,
+    "seed": 202,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 86.52565778571419,
+    "best_tune_rmse_mean": 114.0833086187434
+  },
+  "mae_mean": 86.52565778571419,
+  "mae_std": 29.792157848045516,
+  "rmse_mean": 114.0833086187434,
+  "rmse_std": 35.63712034319093,
+  "validation_folds": 90
+}
