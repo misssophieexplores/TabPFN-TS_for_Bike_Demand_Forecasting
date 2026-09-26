@@ -15,7 +15,7 @@ def get_config() -> ForecastConfig:
     config.dataset_name = "london"
     config.date_col = "timestamp"
     config.target_col = "cnt"
-    config.functioning_day_col = None
+    config.functioning_day_col = "Functioning Day"
     config.holiday_col = "is_holiday"
     config.season_col = "season"
     config.season_mapping = {0: 0, 1: 1, 2: 2, 3: 3}  # already 0-based
@@ -40,6 +40,8 @@ def get_config() -> ForecastConfig:
         "snowfall_cm": "precipitation",
         "visibility_km": "visibility"
     }
+    config.rain_col = "rainfall_mm"
+    config.snow_col = "snowfall_cm"
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_london_clean_only_720_20260516_003627.json"

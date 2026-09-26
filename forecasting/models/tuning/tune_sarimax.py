@@ -53,6 +53,18 @@ def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -
         return covariates
 
 
+def drop_constant_covariates(X_train: np.ndarray, X_test: np.ndarray = None):
+    """
+    Drop covariates that are constant in the training window (same rule as
+    SARIMAXForecaster): their effect cannot be estimated and a constant column
+    duplicates the intercept. Returns (X_train, X_test), None if nothing is left.
+    """
+    keep = np.array([len(np.unique(X_train[:, j])) > 1 for j in range(X_train.shape[1])], dtype=bool)
+    if not keep.any():
+        return None, None
+    return X_train[:, keep], (X_test[:, keep] if X_test is not None else None)
+
+
 def tune_sarimax(
     df: pd.DataFrame,
     config: ForecastConfig,
@@ -85,7 +97,7 @@ def tune_sarimax(
     splits = cv.split(tune_df, config.tune_horizon)
     train_df, test_df = splits[0]
     y_train = train_df[config.target_col].values
-    X_train = train_df[covariates].values
+    X_train, _ = drop_constant_covariates(train_df[covariates].values)
 
     if verbose:
         print(f"\nSearching optimal parameters on {len(y_train)} observations...")
@@ -139,8 +151,9 @@ def tune_sarimax(
         train_df, test_df = splits[fold_idx]
         y_train_fold = train_df[config.target_col].values
         y_test_fold = test_df[config.target_col].values
-        X_train_fold = train_df[covariates].values
-        X_test_fold = test_df[covariates].values
+        X_train_fold, X_test_fold = drop_constant_covariates(
+            train_df[covariates].values, test_df[covariates].values
+        )
 
         try:
             model_fold = auto_arima(

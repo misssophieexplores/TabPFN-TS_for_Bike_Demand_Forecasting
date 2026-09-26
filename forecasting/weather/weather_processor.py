@@ -167,7 +167,15 @@ class WeatherProcessor:
         
         # Extract weather data
         weather_df = df[weather_cols].copy()
-        
+
+        # Degradation parameters (solar cap) come from the clean training fold,
+        # which is always prepared before the test fold.
+        if scenario == "degraded" and split == "train":
+            self.degradation_params = prepare_degradation_parameters(
+                weather_df,
+                self.config.weather_degradation_mapping
+            )
+
         # Apply degradation only to test split in the 'degraded' scenario.
         # Training data always uses clean (observed) weather so that the
         # experiment measures degradation at inference time, not during fitting.
@@ -224,21 +232,32 @@ class WeatherProcessor:
         # Per-row lead times: step 0 → 1 h, step 1 → 2 h, …, step h-1 → h
         lead_times = np.arange(1, len(df) + 1)
         
-        # Compute degradation parameters from data
-        # (cheap operation, just percentile calculations)
-        degradation_params = prepare_degradation_parameters(
-            df, 
-            self.config.weather_degradation_mapping
-        )
-        
+        # Degradation parameters computed from the training fold
+        if self.degradation_params is None:
+            raise RuntimeError(
+                "degradation_params not set: prepare the train split of this fold "
+                "(scenario='degraded') before the test split"
+            )
+
+        # Columns for the rain/snow phase correction
+        temp_cols = [c for c, t in self.config.weather_degradation_mapping.items() if t == "temperature"]
+        if len(temp_cols) != 1 or not self.config.rain_col or not self.config.snow_col:
+            raise ValueError(
+                "Rain/snow correction needs exactly one 'temperature' column in "
+                "weather_degradation_mapping and config.rain_col / config.snow_col set"
+            )
+
         # Apply degradation with per-row lead times
         df_degraded = degrade_weather_dataset(
             df=df,
             horizon_hours=horizon,      # fallback scalar (unused when lead_times given)
-            degradation_params=degradation_params,
+            degradation_params=self.degradation_params,
             column_mapping=self.config.weather_degradation_mapping,
             seed=horizon_seed,
-            lead_times=lead_times
+            lead_times=lead_times,
+            temp_col=temp_cols[0],
+            rain_col=self.config.rain_col,
+            snow_col=self.config.snow_col
         )
         
         return df_degraded

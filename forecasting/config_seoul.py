@@ -43,7 +43,9 @@ def get_config() -> ForecastConfig:
         "Snowfall": "precipitation",
         "Visibility": "visibility"
     }
-    config.column_scale_factors = {"visibility": 0.001}
+    config.rain_col = "Rainfall"
+    config.snow_col = "Snowfall"
+    config.column_scale_factors = {"Visibility": 0.01}  # raw unit is 10 m -> km (as London/Washington)
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_seoul_clean_only_720_20260512_085009.json"

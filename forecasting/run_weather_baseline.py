@@ -11,7 +11,7 @@ Optimizations:
 - Full reproducibility with seed=42
 
 Usage:
-  python forecasting/run_weather_baseline.py
+  python forecasting/run_weather_baseline.py --city {seoul,washington,london}
 """
 import pandas as pd
 import sys

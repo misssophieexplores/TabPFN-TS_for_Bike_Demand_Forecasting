@@ -1,5 +1,5 @@
 """
-London dataset configuration.
+Washington dataset configuration.
 Only dataset-specific fields are set here.
 All shared settings (wandb_project, results_version, horizons, etc.)
 are inherited from config.py and only need changing there.
@@ -25,7 +25,7 @@ def get_config() -> ForecastConfig:
         4.0: 2  # autumn
         }
       
-#timestamp,season,holiday,casual,registered,cnt,temperature_c,humidity_percent,dew_point_c,rainfall_mm,snowfall_cm,wind_speed_ms,solar_radiation_wm2,solar_radiation_mjm2,Functioning Day
+    # CSV columns: timestamp,season,holiday,casual,registered,cnt,temperature_c,humidity_percent,dew_point_c,rainfall_mm,snowfall_cm,wind_speed_ms,solar_radiation_wm2,solar_radiation_mjm2,Functioning Day,visibility_km
     # --- Weather ---
     config.weather_covariates = [
         "temperature_c",
@@ -46,6 +46,8 @@ def get_config() -> ForecastConfig:
         "snowfall_cm": "precipitation",
         "visibility_km": "visibility"
     }
+    config.rain_col = "rainfall_mm"
+    config.snow_col = "snowfall_cm"
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_washington_clean_only_720_20260516_003716.json"

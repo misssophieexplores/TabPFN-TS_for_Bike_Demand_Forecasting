@@ -349,8 +349,9 @@ def fix_precipitation_type(df_degraded, temp_col='Temperature',
     return df
 
 
-def degrade_weather_dataset(df, horizon_hours, degradation_params, 
-                            column_mapping=None, seed=42, lead_times=None):
+def degrade_weather_dataset(df, horizon_hours, degradation_params,
+                            column_mapping=None, seed=42, lead_times=None,
+                            temp_col=None, rain_col=None, snow_col=None):
     """
     Apply forecast degradation to all weather variables in a dataset.
     
@@ -379,7 +380,10 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
         the scalar horizon_hours.  Pass np.arange(1, horizon+1) for a test
         window so that the first predicted hour uses 1-hour noise and the last
         uses full-horizon noise — which is the physically correct behaviour.
-    
+    temp_col, rain_col, snow_col : str, optional
+        Column names for the rain/snow phase correction (pass 2). If any of
+        them is None, the correction is skipped.
+
     Returns
     -------
     pd.DataFrame
@@ -451,12 +455,13 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
     
     # Pass 2: Fix precipitation types based on degraded temperature
     # This MUST happen after temperature degradation
-    df_degraded = fix_precipitation_type(
-        df_degraded,
-        temp_col='Temperature',
-        rain_col='Rainfall',
-        snow_col='Snowfall'
-    )
+    if temp_col and rain_col and snow_col:
+        df_degraded = fix_precipitation_type(
+            df_degraded,
+            temp_col=temp_col,
+            rain_col=rain_col,
+            snow_col=snow_col
+        )
 
     return df_degraded
 

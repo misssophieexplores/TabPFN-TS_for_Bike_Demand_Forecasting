@@ -167,7 +167,9 @@ class SARIMAXForecaster(BaseForecaster):
         self.trend = trend
         self.model = None
         self.model_fit = None
-        
+        self.exog_cols = None
+        self._train_index = None
+
     def _create_datetime_index(self, n_obs: int) -> pd.DatetimeIndex:
         """
         Create a proper DatetimeIndex for the data.
@@ -184,11 +186,19 @@ class SARIMAXForecaster(BaseForecaster):
         Creates proper datetime index to eliminate statsmodels warnings.
         """
         datetime_index = self._create_datetime_index(len(y_train))
+        self._train_index = datetime_index
         y_series = pd.Series(y_train, index=datetime_index, name='y')
-        
+
         if X_train is not None:
-            X_train = X_train.copy()
-            X_train.index = datetime_index
+            # Drop covariates that are constant in this training window (e.g. season
+            # within 30 days, holiday with no holiday): their effect cannot be estimated
+            # and a constant column duplicates the intercept. Same rule as tune_sarimax.py.
+            self.exog_cols = [c for c in X_train.columns if X_train[c].nunique(dropna=False) > 1]
+            if self.exog_cols:
+                X_train = X_train[self.exog_cols].copy()
+                X_train.index = datetime_index
+            else:
+                X_train = None
         
         self.model = SARIMAX(
             y_series,
@@ -224,9 +234,16 @@ class SARIMAXForecaster(BaseForecaster):
             raise ValueError("X_future required for SARIMAX prediction")
         
         if X_future is not None:
-            future_index = pd.date_range(start='2020-01-01', periods=horizon, freq=self.freq)
-            X_future = X_future.copy()
-            X_future.index = future_index
+            if self.exog_cols:
+                # Forecast index continues directly after the training index
+                future_index = pd.date_range(
+                    start=self._train_index[-1] + self._train_index.freq,
+                    periods=horizon, freq=self.freq
+                )
+                X_future = X_future[self.exog_cols].copy()
+                X_future.index = future_index
+            else:
+                X_future = None
             
         forecast = self.model_fit.forecast(steps=horizon, exog=X_future)
         return np.array(forecast)
@@ -236,3 +253,5 @@ class SARIMAXForecaster(BaseForecaster):
         super().reset()
         self.model = None
         self.model_fit = None
+        self.exog_cols = None
+        self._train_index = None

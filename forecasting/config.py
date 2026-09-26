@@ -28,6 +28,8 @@ class ForecastConfig:
     season_mapping: Optional[Dict] = None
     weather_covariates: Optional[List[str]] = None
     weather_degradation_mapping: Optional[Dict[str, str]] = None
+    rain_col: Optional[str] = None   # used for rain/snow phase correction in the 'degraded' scenario
+    snow_col: Optional[str] = None
     column_scale_factors: Dict[str, float] = field(default_factory=dict)
 
     # --- Model parameters (dataset-specific — override in city config) ---

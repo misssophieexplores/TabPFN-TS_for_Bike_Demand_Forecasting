@@ -11,7 +11,7 @@ Usage:
     # Tune a specific city only:
     python forecasting/models/tuning/tune_arima.py --city seoul
 
-    # Override scenario (default: clean_only):
+    # --scenario only labels the output file name (ARIMA uses no covariates):
     python forecasting/models/tuning/tune_arima.py --scenario all_weather
 """
 
@@ -39,17 +39,6 @@ except ImportError:
     print("ERROR: pmdarima not installed")
     print("Install with: pip install pmdarima")
     sys.exit(1)
-
-
-def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -> list:
-    if scenario == "all_weather":
-        return [c for c in config.weather_covariates if c in df.columns]
-    else:  # clean_only
-        covariates = [c for c in config.weather_degradation_mapping.keys() if c in df.columns]
-        for col in [config.holiday_col, config.season_col]:
-            if col and col in df.columns:
-                covariates.append(col)
-        return covariates
 
 
 def tune_arima(
@@ -211,7 +200,7 @@ def main():
     parser.add_argument('--city', type=str, choices=['seoul', 'london', 'washington'],
                         default=None, help='City to tune (default: all cities)')
     parser.add_argument('--scenario', type=str, choices=['clean_only', 'all_weather'],
-                        default='clean_only', help='Covariate set (default: clean_only)')
+                        default='clean_only', help='Label for the output file name only; ARIMA uses no covariates (default: clean_only)')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
 
