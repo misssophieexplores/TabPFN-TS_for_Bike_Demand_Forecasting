@@ -22,6 +22,10 @@ from typing import Optional
 from models.base import BaseForecaster
 
 
+# Fixed seed applied immediately before every NeuralProphet model is created.
+_NP_SEED = 42
+
+
 # ---------------------------------------------------------------------------
 # Silencing helpers
 # ---------------------------------------------------------------------------
@@ -185,6 +189,10 @@ class ProphetForecaster(BaseForecaster):
 class NeuralProphetForecaster(BaseForecaster):
     """
     NeuralProphet forecaster with weather covariates.
+
+    The model is built with n_forecasts=horizon, and the horizon is only known
+    in predict(). fit() therefore stores the training data; predict(horizon)
+    creates and fits the NeuralProphet model.
     """
 
     needs_datetime = True
@@ -212,22 +220,48 @@ class NeuralProphetForecaster(BaseForecaster):
         self._covariate_cols: list[str] = []
 
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
-        _silence_neuralprophet()
-        from neuralprophet import NeuralProphet
-
         if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
             raise ValueError(
                 "NeuralProphetForecaster requires X_train with a DatetimeIndex. "
                 "Ensure needs_datetime=True is handled in run_experiments.py."
             )
 
+        # Store training data only; the model is created and fitted in
+        # predict(), where the horizon (= n_forecasts) is known.
+        train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
+
+        self._covariate_cols = list(X_train.columns)
+        for col in self._covariate_cols:
+            train_df[col] = X_train[col].values
+
+        self._last_train_df = train_df
+        self.model = None
+        self._is_fitted = True
+
+    def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
+        if not self._is_fitted:
+            raise RuntimeError("Model must be fitted before predicting.")
+
+        if X_future is None or not isinstance(X_future.index, pd.DatetimeIndex):
+            raise ValueError(
+                "NeuralProphetForecaster requires X_future with a DatetimeIndex."
+            )
+
+        _silence_neuralprophet()
+        from neuralprophet import NeuralProphet, set_random_seed
+
+        h = int(horizon)
+        train_df = self._last_train_df.copy()
+        covariate_cols = list(self._covariate_cols)
+
         # NOTE: do NOT pass trainer_config={"enable_progress_bar": False} —
         # NeuralProphet installs its own ProgressBar callback, which conflicts
         # with that flag and raises MisconfigurationException. Disable the
         # progress bar via `progress="none"` in .fit() instead (see _np_fit).
+        set_random_seed(_NP_SEED)
         self.model = NeuralProphet(
             n_lags=self.n_lags,
-            n_forecasts=1,
+            n_forecasts=h,
             learning_rate=self.learning_rate,
             seasonality_mode=self.seasonality_mode,
             yearly_seasonality=self.yearly_seasonality,
@@ -237,14 +271,8 @@ class NeuralProphetForecaster(BaseForecaster):
             drop_missing=True,
         )
 
-        train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
-
-        self._covariate_cols = list(X_train.columns)
-        for col in self._covariate_cols:
-            train_df[col] = X_train[col].values
+        for col in covariate_cols:
             self.model.add_lagged_regressor(col)
-
-        self._last_train_df = train_df
 
         # PyTorch 2.4+ compat shim for NP's checkpoint loader
         import torch
@@ -259,42 +287,42 @@ class NeuralProphetForecaster(BaseForecaster):
 
         # Sync to cols NP actually kept (it silently drops degenerate cols)
         if self.model.config_lagged_regressors:
-            self._covariate_cols = [
-                c for c in self._covariate_cols
+            covariate_cols = [
+                c for c in covariate_cols
                 if c in self.model.config_lagged_regressors
             ]
         else:
-            self._covariate_cols = []
+            covariate_cols = []
+        self._covariate_cols = covariate_cols
 
-        keep_cols = ["ds", "y"] + self._covariate_cols
-        self._last_train_df = self._last_train_df[keep_cols]
-
-        self._is_fitted = True
-
-    def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
-        if not self._is_fitted:
-            raise RuntimeError("Model must be fitted before predicting.")
-
-        if X_future is None or not isinstance(X_future.index, pd.DatetimeIndex):
-            raise ValueError(
-                "NeuralProphetForecaster requires X_future with a DatetimeIndex."
-            )
+        keep_cols = ["ds", "y"] + covariate_cols
+        train_df = train_df[keep_cols]
 
         with _silence_all_output():
             future_df = self.model.make_future_dataframe(
-                self._last_train_df,
-                periods=horizon,
+                train_df,
+                periods=h,
                 n_historic_predictions=True,
             )
 
-        for col in self._covariate_cols:
-            future_df.iloc[-horizon:, future_df.columns.get_loc(col)] = (
-                X_future[col].values[:horizon]
+        # The frame must contain exactly h future rows (after the training window)
+        last_train_ds = pd.Timestamp(train_df["ds"].iloc[-1])
+        n_future = int((future_df["ds"] > last_train_ds).sum())
+        if n_future != h:
+            raise RuntimeError(
+                f"NeuralProphet future frame has {n_future} future rows, expected {h}."
+            )
+
+        # Fill covariates only into the h future rows
+        for col in covariate_cols:
+            future_df.iloc[-h:, future_df.columns.get_loc(col)] = (
+                X_future[col].values[:h]
             )
 
         forecast = _np_predict(self.model, future_df)
-        yhat_cols = sorted([c for c in forecast.columns if c.startswith("yhat")])
-        return forecast[yhat_cols].iloc[-horizon:].values.flatten()[:horizon]
+        # Step i (1-based) is in column yhat{i} of row -(h - i + 1)
+        y_pred = [forecast[f"yhat{i+1}"].iloc[-h + i] for i in range(h)]
+        return np.asarray(y_pred, dtype=float)
 
     def reset(self) -> None:
         super().reset()
@@ -309,6 +337,10 @@ class NeuralProphetForecaster(BaseForecaster):
 class NeuralProphetForecaster_NoWeather(BaseForecaster):
     """
     NeuralProphet forecaster, univariate (no covariates).
+
+    The model is built with n_forecasts=horizon, and the horizon is only known
+    in predict(). fit() therefore stores the training data; predict(horizon)
+    creates and fits the NeuralProphet model.
     """
 
     needs_datetime = True
@@ -335,40 +367,16 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
         self._last_train_df = None
 
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
-        _silence_neuralprophet()
-        from neuralprophet import NeuralProphet
-
         if X_train is None or not isinstance(X_train.index, pd.DatetimeIndex):
             raise ValueError(
                 "NeuralProphetForecaster_NoWeather requires X_train with a DatetimeIndex. "
                 "Ensure needs_datetime=True is handled in run_experiments.py."
             )
 
-        self.model = NeuralProphet(
-            n_lags=self.n_lags,
-            n_forecasts=1,
-            learning_rate=self.learning_rate,
-            seasonality_mode=self.seasonality_mode,
-            yearly_seasonality=self.yearly_seasonality,
-            weekly_seasonality=self.weekly_seasonality,
-            daily_seasonality=self.daily_seasonality,
-            epochs=self.epochs,
-            drop_missing=True,
-        )
-
-        train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
-        self._last_train_df = train_df
-
-        import torch
-        _original_load = torch.load
-        torch.load = lambda *args, **kwargs: _original_load(
-            *args, **{**kwargs, "weights_only": False}
-        )
-        try:
-            _np_fit(self.model, train_df)
-        finally:
-            torch.load = _original_load
-
+        # Store training data only; the model is created and fitted in
+        # predict(), where the horizon (= n_forecasts) is known.
+        self._last_train_df = pd.DataFrame({"ds": X_train.index, "y": y_train})
+        self.model = None
         self._is_fitted = True
 
     def predict(self, horizon: int, X_future: Optional[pd.DataFrame] = None) -> np.ndarray:
@@ -380,16 +388,54 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
                 "NeuralProphetForecaster_NoWeather requires X_future with a DatetimeIndex."
             )
 
+        _silence_neuralprophet()
+        from neuralprophet import NeuralProphet, set_random_seed
+
+        h = int(horizon)
+        train_df = self._last_train_df.copy()
+
+        set_random_seed(_NP_SEED)
+        self.model = NeuralProphet(
+            n_lags=self.n_lags,
+            n_forecasts=h,
+            learning_rate=self.learning_rate,
+            seasonality_mode=self.seasonality_mode,
+            yearly_seasonality=self.yearly_seasonality,
+            weekly_seasonality=self.weekly_seasonality,
+            daily_seasonality=self.daily_seasonality,
+            epochs=self.epochs,
+            drop_missing=True,
+        )
+
+        import torch
+        _original_load = torch.load
+        torch.load = lambda *args, **kwargs: _original_load(
+            *args, **{**kwargs, "weights_only": False}
+        )
+        try:
+            _np_fit(self.model, train_df)
+        finally:
+            torch.load = _original_load
+
         with _silence_all_output():
             future_df = self.model.make_future_dataframe(
-                self._last_train_df,
-                periods=horizon,
+                train_df,
+                periods=h,
                 n_historic_predictions=True,
             )
 
+        # The frame must contain exactly h future rows (after the training window)
+        last_train_ds = pd.Timestamp(train_df["ds"].iloc[-1])
+        n_future = int((future_df["ds"] > last_train_ds).sum())
+        if n_future != h:
+            raise RuntimeError(
+                f"NeuralProphet future frame has {n_future} future rows, expected {h}."
+            )
+
         forecast = _np_predict(self.model, future_df)
-        yhat_cols = sorted([c for c in forecast.columns if c.startswith("yhat")])
-        return forecast[yhat_cols].iloc[-horizon:].values.flatten()[:horizon]
+        # Step i (1-based) is in column yhat{i} of row -(h - i + 1)
+        y_pred = [forecast[f"yhat{i+1}"].iloc[-h + i] for i in range(h)]
+        return np.asarray(y_pred, dtype=float)
 
     def reset(self) -> None:
         super().reset()

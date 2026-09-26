@@ -75,7 +75,7 @@ def evaluate_params_on_fold(
     params: Dict,
     covariate_cols: List[str],
 ) -> Tuple[float, float]:
-    from neuralprophet import NeuralProphet
+    from neuralprophet import NeuralProphet, set_random_seed
 
     n_lags = params["n_lags"]
     horizon = config.tune_horizon
@@ -86,9 +86,10 @@ def evaluate_params_on_fold(
             f"Insufficient training rows ({len(train_df)}) for n_lags={n_lags}."
         )
 
+    set_random_seed(42)
     model = NeuralProphet(
         n_lags=n_lags,
-        n_forecasts=1,
+        n_forecasts=config.tune_horizon,
         learning_rate=params["learning_rate"],
         yearly_seasonality=True,
         weekly_seasonality=True,
@@ -133,11 +134,18 @@ def evaluate_params_on_fold(
     keep_cols = ["ds", "y"] + active_covariates
     np_train = np_train[keep_cols]
 
-    # make_future_dataframe returns full training df + horizon future rows;
-    # fill only the tail rows with held-out covariate values from test_df.
+    # make_future_dataframe returns full training df + horizon future rows
+    # (n_forecasts == horizon); fill only the h future rows with held-out
+    # covariate values from test_df.
     future_df = model.make_future_dataframe(
         np_train, periods=horizon, n_historic_predictions=True
     )
+    last_train_ds = pd.Timestamp(np_train["ds"].iloc[-1])
+    n_future = int((future_df["ds"] > last_train_ds).sum())
+    if n_future != horizon:
+        raise RuntimeError(
+            f"NeuralProphet future frame has {n_future} future rows, expected {horizon}."
+        )
     for col in active_covariates:
         if col in test_df.columns:
             future_df.iloc[-horizon:, future_df.columns.get_loc(col)] = (
@@ -148,8 +156,11 @@ def evaluate_params_on_fold(
         warnings.filterwarnings("ignore")
         forecast = model.predict(future_df)
 
-    yhat_cols = sorted([c for c in forecast.columns if c.startswith("yhat")])
-    y_pred = forecast[yhat_cols].iloc[-horizon:].values.flatten()[:horizon]
+    # Step i (1-based) is in column yhat{i} of row -(h - i + 1)
+    h = horizon
+    y_pred = np.asarray(
+        [forecast[f"yhat{i+1}"].iloc[-h + i] for i in range(h)], dtype=float
+    )
     y_test = test_df[config.target_col].values[:horizon]
 
     calc = MetricsCalculator()
