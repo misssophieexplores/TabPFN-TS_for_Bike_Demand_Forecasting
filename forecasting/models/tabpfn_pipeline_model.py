@@ -14,11 +14,11 @@ DatetimeIndex to X_train/X_test from the dataset's date column.
 """
 
 import os
-os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES' # #TODO: comment out before running on GPU
+# os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES' # #TODO: comment out before running on GPU
 os.environ['TABPFN_ALLOW_CPU_LARGE_DATASET'] = '1'
 
 import torch
-torch.set_num_threads(1) # TODO: comment out before running on GPU
+# torch.set_num_threads(1)
 
 from tqdm import tqdm
 from functools import partialmethod
