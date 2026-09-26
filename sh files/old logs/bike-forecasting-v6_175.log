@@ -1,0 +1,186 @@
+[2026-06-14 14:41:20] MULTI-CITY FORECASTING | Cities: seoul, washington, london
+[2026-06-14 14:41:20] STARTING: SEOUL
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: misssophie to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run no53d0z1
+wandb: Tracking run with wandb version 0.25.0
+wandb: Run data is saved locally in /home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/wandb/run-20260614_144121-no53d0z1
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run seoul_v6
+wandb: ⭐️ View project at https://wandb.ai/misssophie/bike-forecasting
+wandb: 🚀 View run at https://wandb.ai/misssophie/bike-forecasting/runs/no53d0z1
+
+Results saved to: results/results_master_v6.csv
+Detailed results saved to: results/detailed_results_master_v6.csv
+wandb: uploading artifact run-no53d0z1-TabPFN-TS-3_degraded_h168_folds; uploading artifact run-no53d0z1-results_table; uploading artifact run-no53d0z1-results_summary; updating run metadata
+wandb: uploading artifact run-no53d0z1-TabPFN-TS-3_degraded_h168_folds; uploading artifact run-no53d0z1-results_table; uploading artifact run-no53d0z1-results_summary
+wandb: uploading artifact run-no53d0z1-results_table; uploading artifact run-no53d0z1-results_summary
+wandb: uploading artifact run-no53d0z1-results_table
+wandb: uploading media/table/TabPFN-TS-3_degraded_h168_folds_23_5b7adae054cbb662579a.table.json; uploading media/table/results_table_24_e69d8f0268b9fabdd507.table.json; uploading media/table/results_summary_24_1838409c3f0c4088313c.table.json; uploading output.log; uploading wandb-summary.json (+ 1 more)
+wandb: uploading media/table/results_table_24_e69d8f0268b9fabdd507.table.json; uploading media/table/results_summary_24_1838409c3f0c4088313c.table.json; uploading output.log; uploading config.yaml
+wandb: 
+wandb: Run history:
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h168_MAE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_MASE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_RMSE ▁
+wandb: TabPFN-TS-3_NoWeather_clean_only_h168_sMAPE ▁
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h24_MAE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_MASE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_RMSE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h24_sMAPE ▁
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h48_MAE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h48_MASE ▁
+wandb:                                         +38 ...
+wandb: 
+wandb: Run summary:
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h168_MAE 333.8726
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_MASE 1.20135
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_RMSE 492.75771
+wandb: TabPFN-TS-3_NoWeather_clean_only_h168_sMAPE 44.18733
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h24_MAE 288.23897
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_MASE 0.99952
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_RMSE 388.21895
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h24_sMAPE 37.93976
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h48_MAE 322.74161
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h48_MASE 1.13054
+wandb:                                         +38 ...
+wandb: 
+wandb: 🚀 View run seoul_v6 at: https://wandb.ai/misssophie/bike-forecasting/runs/no53d0z1
+wandb: ⭐️ View project at: https://wandb.ai/misssophie/bike-forecasting
+wandb: Synced 5 W&B file(s), 14 media file(s), 28 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260614_144121-no53d0z1/logs
+
+[OK] seoul completed in 48.0 min
+[2026-06-14 15:29:21] STARTING: WASHINGTON
+wandb: setting up run q9gbilau
+wandb: Tracking run with wandb version 0.25.0
+wandb: Run data is saved locally in /home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/wandb/run-20260614_152921-q9gbilau
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run washington_v6
+wandb: ⭐️ View project at https://wandb.ai/misssophie/bike-forecasting
+wandb: 🚀 View run at https://wandb.ai/misssophie/bike-forecasting/runs/q9gbilau
+
+Results saved to: results/results_master_v6.csv
+Detailed results saved to: results/detailed_results_master_v6.csv
+wandb: uploading artifact run-q9gbilau-TabPFN-TS-3_degraded_h168_folds; uploading artifact run-q9gbilau-results_table; uploading artifact run-q9gbilau-results_summary; updating run metadata
+wandb: uploading artifact run-q9gbilau-TabPFN-TS-3_degraded_h168_folds; uploading artifact run-q9gbilau-results_table; uploading artifact run-q9gbilau-results_summary
+wandb: uploading artifact run-q9gbilau-results_table; uploading artifact run-q9gbilau-results_summary
+wandb: uploading media/table/TabPFN-TS-3_degraded_h168_folds_23_993f2471f911e29bc0da.table.json; uploading media/table/results_table_24_0b108b6253aee7769cd8.table.json; uploading media/table/results_summary_24_28704d6a467bfed3ae58.table.json; uploading output.log; uploading wandb-summary.json (+ 1 more)
+wandb: uploading history steps 22-24, summary, console lines 0-2
+wandb: 
+wandb: Run history:
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h168_MAE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_MASE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_RMSE ▁
+wandb: TabPFN-TS-3_NoWeather_clean_only_h168_sMAPE ▁
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h24_MAE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_MASE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_RMSE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h24_sMAPE ▁
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h48_MAE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h48_MASE ▁
+wandb:                                         +38 ...
+wandb: 
+wandb: Run summary:
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h168_MAE 66.34104
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_MASE 0.78866
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_RMSE 104.38312
+wandb: TabPFN-TS-3_NoWeather_clean_only_h168_sMAPE 35.55835
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h24_MAE 65.20222
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_MASE 0.79491
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_RMSE 92.87254
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h24_sMAPE 34.59037
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h48_MAE 69.34369
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h48_MASE 0.84899
+wandb:                                         +38 ...
+wandb: 
+wandb: 🚀 View run washington_v6 at: https://wandb.ai/misssophie/bike-forecasting/runs/q9gbilau
+wandb: ⭐️ View project at: https://wandb.ai/misssophie/bike-forecasting
+wandb: Synced 5 W&B file(s), 14 media file(s), 28 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260614_152921-q9gbilau/logs
+
+[OK] washington completed in 48.3 min
+[2026-06-14 16:17:41] STARTING: LONDON
+wandb: setting up run gh8ufws0
+wandb: Tracking run with wandb version 0.25.0
+wandb: Run data is saved locally in /home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/wandb/run-20260614_161742-gh8ufws0
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run london_v6
+wandb: ⭐️ View project at https://wandb.ai/misssophie/bike-forecasting
+wandb: 🚀 View run at https://wandb.ai/misssophie/bike-forecasting/runs/gh8ufws0
+
+Results saved to: results/results_master_v6.csv
+Detailed results saved to: results/detailed_results_master_v6.csv
+wandb: uploading artifact run-gh8ufws0-TabPFN-TS-3_degraded_h168_folds; uploading artifact run-gh8ufws0-results_table; uploading artifact run-gh8ufws0-results_summary; updating run metadata
+wandb: uploading artifact run-gh8ufws0-TabPFN-TS-3_degraded_h168_folds; uploading artifact run-gh8ufws0-results_table; uploading artifact run-gh8ufws0-results_summary
+wandb: uploading artifact run-gh8ufws0-results_table; uploading artifact run-gh8ufws0-results_summary
+wandb: uploading media/table/results_table_24_eea952d5d66fc9dc501c.table.json; uploading media/table/results_summary_24_1cf0a85911f69aa2ce4c.table.json; uploading output.log; uploading wandb-summary.json; uploading config.yaml (+ 1 more)
+wandb: uploading history steps 22-24, summary, console lines 0-2
+wandb: 
+wandb: Run history:
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h168_MAE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_MASE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_RMSE ▁
+wandb: TabPFN-TS-3_NoWeather_clean_only_h168_sMAPE ▁
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h24_MAE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_MASE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_RMSE ▁
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h24_sMAPE ▁
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h48_MAE ▁
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h48_MASE ▁
+wandb:                                         +38 ...
+wandb: 
+wandb: Run summary:
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h168_MAE 340.93399
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_MASE 0.91893
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h168_RMSE 603.4514
+wandb: TabPFN-TS-3_NoWeather_clean_only_h168_sMAPE 31.43587
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h24_MAE 328.4033
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_MASE 0.87827
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h24_RMSE 493.10021
+wandb:  TabPFN-TS-3_NoWeather_clean_only_h24_sMAPE 30.45768
+wandb:    TabPFN-TS-3_NoWeather_clean_only_h48_MAE 333.88246
+wandb:   TabPFN-TS-3_NoWeather_clean_only_h48_MASE 0.89126
+wandb:                                         +38 ...
+wandb: 
+wandb: 🚀 View run london_v6 at: https://wandb.ai/misssophie/bike-forecasting/runs/gh8ufws0
+wandb: ⭐️ View project at: https://wandb.ai/misssophie/bike-forecasting
+wandb: Synced 5 W&B file(s), 14 media file(s), 28 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260614_161742-gh8ufws0/logs
+
+[OK] london completed in 49.7 min
+
+[2026-06-14 17:07:25] Computing comparative metrics (pooled across cities)
+                          model  n_tasks  win_rate  skill_score
+                          ARIMA       12  0.000000    -0.881266
+                  NeuralProphet       12  0.000000    -0.640759
+                  NeuralProphet       12  0.000000    -1.460307
+        NeuralProphet_NoWeather       12  0.000000    -0.620575
+NeuralProphet_NoWeather_Untuned       12  0.000000    -0.638766
+          NeuralProphet_Untuned       12  0.000000    -1.225971
+          NeuralProphet_Untuned       12  0.000000    -2.074277
+                        Prophet       12  0.083333    -0.173334
+                Prophet_Untuned       12  0.000000    -0.307720
+                        SARIMAX       12  0.250000    -0.237086
+                        SARIMAX       12  0.083333    -0.831098
+                         TabPFN       12  1.000000     0.442041
+                         TabPFN       12  1.000000     0.298494
+                    TabPFN-TS-3       12  1.000000     0.342950
+                    TabPFN-TS-3       12  0.750000     0.119995
+          TabPFN-TS-3_NoWeather       12  1.000000     0.190563
+               TabPFN_NoWeather       12  1.000000     0.318493
+            TabPFN_NoWeather_v3       12  1.000000     0.190563
+                      TabPFN_v3       12  1.000000     0.342950
+                      TabPFN_v3       12  0.750000     0.119995
+                        TimesFM       12  1.000000     0.211592
+                        TimesFM       12  0.000000    -0.617707
+              TimesFM_NoWeather       12  1.000000     0.442952
+                        XGBoost       12  1.000000     0.361646
+                        XGBoost       12  1.000000     0.322509
+
+[2026-06-14 17:07:26] ALL CITIES COMPLETE
+  [OK    ]  seoul
+  [OK    ]  washington
+  [OK    ]  london
+
+  Total wall time: 146.1 min

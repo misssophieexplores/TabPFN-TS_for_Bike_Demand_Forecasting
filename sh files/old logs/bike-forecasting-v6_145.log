@@ -1,0 +1,164 @@
+[2026-05-20 00:20:02] MULTI-CITY FORECASTING | Cities: seoul, washington, london
+[2026-05-20 00:20:02] STARTING: SEOUL
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from WANDB_API_KEY.
+wandb: Currently logged in as: misssophie to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run j24sut53
+wandb: Tracking run with wandb version 0.25.0
+wandb: Run data is saved locally in /home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/wandb/run-20260520_002003-j24sut53
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run seoul_v6
+wandb: ⭐️ View project at https://wandb.ai/misssophie/bike-forecasting
+wandb: 🚀 View run at https://wandb.ai/misssophie/bike-forecasting/runs/j24sut53
+Importing plotly failed. Interactive plots will not work.
+Importing plotly failed. Interactive plots will not work.
+
+Results saved to: results/results_master_v6.csv
+Detailed results saved to: results/detailed_results_master_v6.csv
+wandb: uploading data; uploading artifact run-j24sut53-NeuralProphet_Tuned_degraded_h168_folds; uploading artifact run-j24sut53-results_table; uploading artifact run-j24sut53-results_summary; uploading artifact run-j24sut53-comparative_metrics (+ 1 more)
+wandb: uploading data; uploading artifact run-j24sut53-NeuralProphet_Tuned_degraded_h168_folds; uploading artifact run-j24sut53-results_table; uploading artifact run-j24sut53-results_summary; uploading artifact run-j24sut53-comparative_metrics
+wandb: uploading data; uploading artifact run-j24sut53-NeuralProphet_Tuned_degraded_h168_folds; uploading artifact run-j24sut53-results_table; uploading artifact run-j24sut53-results_summary; uploading artifact run-j24sut53-comparative_metrics (+ 1 more)
+wandb: uploading data; uploading artifact run-j24sut53-NeuralProphet_Tuned_degraded_h168_folds; uploading artifact run-j24sut53-results_table; uploading artifact run-j24sut53-results_summary; uploading artifact run-j24sut53-comparative_metrics
+wandb: uploading data; uploading artifact run-j24sut53-results_table; uploading artifact run-j24sut53-results_summary; uploading artifact run-j24sut53-comparative_metrics
+wandb: uploading data; uploading artifact run-j24sut53-comparative_metrics
+wandb: uploading data
+wandb: uploading history steps 30-66, summary, console lines 2-4
+wandb: 
+wandb: Run history:
+wandb:                 ARIMA_vs_Seasonal_Naive_skill_score ▁█▇
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_lower ▁█▇
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_upper ▁█▆
+wandb:                    ARIMA_vs_Seasonal_Naive_win_rate ▁▁▁
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_lower ▁▁▁
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_upper ▁▁▁
+wandb:   NeuralProphet_NoWeather_Tuned_clean_only_h168_MAE ▁
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_MASE ▁
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_RMSE ▁
+wandb: NeuralProphet_NoWeather_Tuned_clean_only_h168_sMAPE ▁
+wandb:                                                +132 ...
+wandb: 
+wandb: Run summary:
+wandb:                 ARIMA_vs_Seasonal_Naive_skill_score -0.74653
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_lower -0.87657
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_upper -0.6255
+wandb:                    ARIMA_vs_Seasonal_Naive_win_rate 0
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_lower 0
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_upper 0
+wandb:   NeuralProphet_NoWeather_Tuned_clean_only_h168_MAE 406.99582
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_MASE 1.43874
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_RMSE 563.24162
+wandb: NeuralProphet_NoWeather_Tuned_clean_only_h168_sMAPE 54.98981
+wandb:                                                +132 ...
+wandb: 
+wandb: 🚀 View run seoul_v6 at: https://wandb.ai/misssophie/bike-forecasting/runs/j24sut53
+wandb: ⭐️ View project at: https://wandb.ai/misssophie/bike-forecasting
+wandb: Synced 5 W&B file(s), 19 media file(s), 38 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260520_002003-j24sut53/logs
+
+[OK] seoul completed in 502.8 min
+[2026-05-20 08:42:51] STARTING: WASHINGTON
+wandb: setting up run 2xgaepnq
+wandb: Tracking run with wandb version 0.25.0
+wandb: Run data is saved locally in /home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/wandb/run-20260520_084252-2xgaepnq
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run washington_v6
+wandb: ⭐️ View project at https://wandb.ai/misssophie/bike-forecasting
+wandb: 🚀 View run at https://wandb.ai/misssophie/bike-forecasting/runs/2xgaepnq
+
+Results saved to: results/results_master_v6.csv
+Detailed results saved to: results/detailed_results_master_v6.csv
+wandb: uploading artifact run-2xgaepnq-NeuralProphet_Tuned_degraded_h168_folds; uploading artifact run-2xgaepnq-results_table; uploading artifact run-2xgaepnq-results_summary; uploading artifact run-2xgaepnq-comparative_metrics; updating run metadata
+wandb: uploading artifact run-2xgaepnq-NeuralProphet_Tuned_degraded_h168_folds; uploading artifact run-2xgaepnq-results_table; uploading artifact run-2xgaepnq-results_summary; uploading artifact run-2xgaepnq-comparative_metrics
+wandb: uploading artifact run-2xgaepnq-results_table; uploading artifact run-2xgaepnq-results_summary; uploading artifact run-2xgaepnq-comparative_metrics
+wandb: uploading artifact run-2xgaepnq-comparative_metrics
+wandb: uploading media/table/comparative_metrics_33_96a8eb14f51a2ee23478.table.json; uploading output.log; uploading wandb-summary.json; uploading config.yaml; uploading media/table/NeuralProphet_Tuned_degraded_h168_folds_31_30c6f7f5877198551c0a.table.json (+ 2 more)
+wandb: uploading history steps 30-69, summary, console lines 0-2
+wandb: 
+wandb: Run history:
+wandb:                 ARIMA_vs_Seasonal_Naive_skill_score ▁█▇
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_lower ▁█▇
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_upper ▁█▆
+wandb:                    ARIMA_vs_Seasonal_Naive_win_rate ▁▁▁
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_lower ▁▁▁
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_upper ▁▁▁
+wandb:   NeuralProphet_NoWeather_Tuned_clean_only_h168_MAE ▁
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_MASE ▁
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_RMSE ▁
+wandb: NeuralProphet_NoWeather_Tuned_clean_only_h168_sMAPE ▁
+wandb:                                                +132 ...
+wandb: 
+wandb: Run summary:
+wandb:                 ARIMA_vs_Seasonal_Naive_skill_score -0.74653
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_lower -0.87657
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_upper -0.6255
+wandb:                    ARIMA_vs_Seasonal_Naive_win_rate 0
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_lower 0
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_upper 0
+wandb:   NeuralProphet_NoWeather_Tuned_clean_only_h168_MAE 106.01238
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_MASE 1.24996
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_RMSE 144.96026
+wandb: NeuralProphet_NoWeather_Tuned_clean_only_h168_sMAPE 64.21522
+wandb:                                                +132 ...
+wandb: 
+wandb: 🚀 View run washington_v6 at: https://wandb.ai/misssophie/bike-forecasting/runs/2xgaepnq
+wandb: ⭐️ View project at: https://wandb.ai/misssophie/bike-forecasting
+wandb: Synced 5 W&B file(s), 19 media file(s), 38 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260520_084252-2xgaepnq/logs
+
+[OK] washington completed in 518.5 min
+[2026-05-20 17:21:18] STARTING: LONDON
+wandb: setting up run 8oxbuw2s
+wandb: Tracking run with wandb version 0.25.0
+wandb: Run data is saved locally in /home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/wandb/run-20260520_172119-8oxbuw2s
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run london_v6
+wandb: ⭐️ View project at https://wandb.ai/misssophie/bike-forecasting
+wandb: 🚀 View run at https://wandb.ai/misssophie/bike-forecasting/runs/8oxbuw2s
+
+Results saved to: results/results_master_v6.csv
+Detailed results saved to: results/detailed_results_master_v6.csv
+wandb: uploading artifact run-8oxbuw2s-NeuralProphet_Tuned_degraded_h168_folds; uploading artifact run-8oxbuw2s-results_table; uploading artifact run-8oxbuw2s-results_summary; uploading artifact run-8oxbuw2s-comparative_metrics; updating run metadata
+wandb: uploading artifact run-8oxbuw2s-NeuralProphet_Tuned_degraded_h168_folds; uploading artifact run-8oxbuw2s-results_table; uploading artifact run-8oxbuw2s-results_summary; uploading artifact run-8oxbuw2s-comparative_metrics
+wandb: uploading artifact run-8oxbuw2s-results_table; uploading artifact run-8oxbuw2s-results_summary; uploading artifact run-8oxbuw2s-comparative_metrics
+wandb: uploading artifact run-8oxbuw2s-comparative_metrics
+wandb: uploading media/table/NeuralProphet_Tuned_degraded_h168_folds_31_9a533aa1074b4fc1447b.table.json; uploading media/table/results_table_32_f1fdc5f2e1ea915422c3.table.json; uploading media/table/results_summary_32_0627b6883377ca56a7cf.table.json; uploading history steps 30-72, summary, console lines 0-2
+wandb: uploading data
+wandb: 
+wandb: Run history:
+wandb:                 ARIMA_vs_Seasonal_Naive_skill_score ▁█▇
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_lower ▁█▇
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_upper ▁█▆
+wandb:                    ARIMA_vs_Seasonal_Naive_win_rate ▁▁▁
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_lower ▁▁▁
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_upper ▁▁▁
+wandb:   NeuralProphet_NoWeather_Tuned_clean_only_h168_MAE ▁
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_MASE ▁
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_RMSE ▁
+wandb: NeuralProphet_NoWeather_Tuned_clean_only_h168_sMAPE ▁
+wandb:                                                +132 ...
+wandb: 
+wandb: Run summary:
+wandb:                 ARIMA_vs_Seasonal_Naive_skill_score -0.74653
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_lower -0.87657
+wandb:        ARIMA_vs_Seasonal_Naive_skill_score_ci_upper -0.6255
+wandb:                    ARIMA_vs_Seasonal_Naive_win_rate 0
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_lower 0
+wandb:           ARIMA_vs_Seasonal_Naive_win_rate_ci_upper 0
+wandb:   NeuralProphet_NoWeather_Tuned_clean_only_h168_MAE 566.06878
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_MASE 1.51985
+wandb:  NeuralProphet_NoWeather_Tuned_clean_only_h168_RMSE 802.73111
+wandb: NeuralProphet_NoWeather_Tuned_clean_only_h168_sMAPE 63.17366
+wandb:                                                +132 ...
+wandb: 
+wandb: 🚀 View run london_v6 at: https://wandb.ai/misssophie/bike-forecasting/runs/8oxbuw2s
+wandb: ⭐️ View project at: https://wandb.ai/misssophie/bike-forecasting
+wandb: Synced 5 W&B file(s), 19 media file(s), 38 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260520_172119-8oxbuw2s/logs
+
+[OK] london completed in 506.9 min
+
+[2026-05-21 01:48:12] ALL CITIES COMPLETE
+  [OK    ]  seoul
+  [OK    ]  washington
+  [OK    ]  london
+
+  Total wall time: 1528.2 min

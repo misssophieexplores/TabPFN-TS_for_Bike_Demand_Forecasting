@@ -1,0 +1,154 @@
+
+======================================================================
+TUNING NEURALPROPHET FOR: LONDON
+======================================================================
+
+Loading data for london...
+Loaded 17544 observations
+======================================================================
+NEURALPROPHET TUNING (FAST) | city=london | horizon=24h | scenario=clean_only
+======================================================================
+Trials: 20
+Search folds: 2 (last 2 of 245)
+Validation folds: 90
+Search epochs cap: 50
+n_lags_options: [24, 48] (weighted toward smaller)
+max_train_rows: unlimited
+Cutoff date: 2016-05-03 23:00:00
+Tune obs: 11664
+Covariates (9): ['t1', 'hum', 'wind_speed', 'solar_radiation_wm2', 'rainfall_mm', 'snowfall_cm', 'visibility_km', 'is_holiday', 'season']
+======================================================================
+Importing plotly failed. Interactive plots will not work.
+Importing plotly failed. Interactive plots will not work.
+[   1/20] MAE=657.23 RMSE=870.62 | lr=0.02098 n_lags=24 *
+[   2/20] MAE=598.27 RMSE=821.00 | lr=0.03765 n_lags=48 *
+[   3/20] MAE=1072.64 RMSE=1355.08 | lr=0.00019 n_lags=48
+[   4/20] MAE=595.88 RMSE=862.85 | lr=0.01921 n_lags=48 *
+[   5/20] MAE=2181.98 RMSE=2652.35 | lr=0.00024 n_lags=24
+[   6/20] MAE=1035.99 RMSE=1253.47 | lr=0.00130 n_lags=48
+[   7/20] MAE=658.32 RMSE=897.96 | lr=0.00854 n_lags=48
+[   8/20] MAE=741.52 RMSE=944.75 | lr=0.00214 n_lags=24
+[   9/20] MAE=750.21 RMSE=976.59 | lr=0.00461 n_lags=24
+[  10/20] MAE=626.54 RMSE=822.98 | lr=0.03040 n_lags=48
+[  11/20] MAE=624.14 RMSE=829.14 | lr=0.01880 n_lags=24
+[  12/20] MAE=671.64 RMSE=950.29 | lr=0.08168 n_lags=48
+[  13/20] MAE=535.38 RMSE=758.01 | lr=0.02163 n_lags=24 *
+[  14/20] MAE=674.87 RMSE=943.13 | lr=0.00251 n_lags=24
+[  15/20] MAE=1366.86 RMSE=1562.03 | lr=0.00029 n_lags=48
+[  16/20] MAE=603.37 RMSE=847.30 | lr=0.01715 n_lags=48
+[  17/20] MAE=939.41 RMSE=1195.23 | lr=0.00095 n_lags=24
+[  18/20] MAE=911.94 RMSE=1110.28 | lr=0.00256 n_lags=24
+[  19/20] MAE=1955.16 RMSE=2476.48 | lr=0.00025 n_lags=24
+[  20/20] MAE=1826.63 RMSE=2014.59 | lr=0.00048 n_lags=48
+
+======================================================================
+BEST PARAMETERS FROM SEARCH
+======================================================================
+Search MAE=535.38  RMSE=758.01
+{
+  "learning_rate": 0.02163468076306622,
+  "n_lags": 24
+}
+
+Validating with FULL epochs on 90 folds...
+  Fold 155: MAE=574.9, RMSE=832.0
+  Fold 156: MAE=445.1, RMSE=660.5
+  Fold 157: MAE=579.2, RMSE=892.1
+  Fold 158: MAE=287.0, RMSE=455.4
+  Fold 159: MAE=719.5, RMSE=982.6
+  Fold 160: MAE=462.1, RMSE=668.0
+  Fold 161: MAE=456.3, RMSE=643.3
+  Fold 162: MAE=496.1, RMSE=708.1
+  Fold 163: MAE=388.4, RMSE=605.1
+  Fold 164: MAE=539.5, RMSE=941.3
+  Fold 165: MAE=308.3, RMSE=431.9
+  Fold 166: MAE=621.8, RMSE=985.7
+  Fold 167: MAE=435.7, RMSE=613.0
+  Fold 168: MAE=415.7, RMSE=613.8
+  Fold 169: MAE=474.7, RMSE=635.4
+  Fold 170: MAE=466.3, RMSE=650.5
+  Fold 171: MAE=542.5, RMSE=894.3
+  Fold 172: MAE=580.3, RMSE=775.0
+  Fold 173: MAE=662.3, RMSE=961.3
+  Fold 174: MAE=573.7, RMSE=727.0
+  Fold 175: MAE=485.9, RMSE=715.4
+  Fold 176: MAE=507.2, RMSE=740.6
+  Fold 177: MAE=364.9, RMSE=583.0
+  Fold 178: MAE=586.8, RMSE=939.8
+  Fold 179: MAE=290.0, RMSE=492.6
+  Fold 180: MAE=803.6, RMSE=1151.6
+  Fold 181: MAE=487.0, RMSE=644.3
+  Fold 182: MAE=463.0, RMSE=581.2
+  Fold 183: MAE=560.8, RMSE=694.4
+  Fold 184: MAE=450.8, RMSE=684.3
+  Fold 185: MAE=608.6, RMSE=825.7
+  Fold 186: MAE=328.9, RMSE=476.5
+  Fold 187: MAE=649.2, RMSE=1030.6
+  Fold 188: MAE=362.9, RMSE=599.3
+  Fold 189: MAE=562.1, RMSE=730.5
+  Fold 190: MAE=540.0, RMSE=693.1
+  Fold 191: MAE=510.6, RMSE=745.6
+  Fold 192: MAE=665.9, RMSE=1024.5
+  Fold 193: MAE=388.0, RMSE=556.1
+  Fold 194: MAE=823.3, RMSE=1151.7
+  Fold 195: MAE=483.7, RMSE=665.6
+  Fold 196: MAE=444.6, RMSE=647.8
+  Fold 197: MAE=445.7, RMSE=662.7
+  Fold 198: MAE=430.8, RMSE=630.5
+  Fold 199: MAE=597.9, RMSE=954.7
+  Fold 200: MAE=263.5, RMSE=411.7
+  Fold 201: MAE=711.9, RMSE=1084.3
+  Fold 202: MAE=439.9, RMSE=677.6
+  Fold 203: MAE=487.2, RMSE=726.3
+  Fold 204: MAE=486.3, RMSE=747.2
+  Fold 205: MAE=699.8, RMSE=1055.1
+  Fold 206: MAE=480.0, RMSE=609.2
+  Fold 207: MAE=333.4, RMSE=431.2
+  Fold 208: MAE=488.3, RMSE=591.2
+  Fold 209: MAE=594.1, RMSE=867.2
+  Fold 210: MAE=548.2, RMSE=820.5
+  Fold 211: MAE=453.8, RMSE=663.7
+  Fold 212: MAE=436.8, RMSE=668.8
+  Fold 213: MAE=816.1, RMSE=1113.9
+  Fold 214: MAE=371.1, RMSE=537.8
+  Fold 215: MAE=920.3, RMSE=1238.5
+  Fold 216: MAE=473.0, RMSE=684.3
+  Fold 217: MAE=405.1, RMSE=543.6
+  Fold 218: MAE=507.6, RMSE=732.3
+  Fold 219: MAE=467.7, RMSE=647.6
+  Fold 220: MAE=584.4, RMSE=863.2
+  Fold 221: MAE=286.2, RMSE=421.2
+  Fold 222: MAE=950.9, RMSE=1278.0
+  Fold 223: MAE=419.4, RMSE=613.0
+  Fold 224: MAE=534.8, RMSE=736.8
+  Fold 225: MAE=559.8, RMSE=781.4
+  Fold 226: MAE=633.6, RMSE=899.5
+  Fold 227: MAE=605.7, RMSE=859.7
+  Fold 228: MAE=433.6, RMSE=554.8
+  Fold 229: MAE=937.2, RMSE=1245.5
+  Fold 230: MAE=547.6, RMSE=782.9
+  Fold 231: MAE=558.0, RMSE=788.6
+  Fold 232: MAE=534.0, RMSE=800.9
+  Fold 233: MAE=645.3, RMSE=911.1
+  Fold 234: MAE=676.3, RMSE=1018.0
+  Fold 235: MAE=344.3, RMSE=525.0
+  Fold 236: MAE=739.7, RMSE=1047.7
+  Fold 237: MAE=517.1, RMSE=702.9
+  Fold 238: MAE=559.0, RMSE=817.2
+  Fold 239: MAE=561.2, RMSE=829.7
+  Fold 240: MAE=576.5, RMSE=849.5
+  Fold 241: MAE=641.3, RMSE=940.9
+  Fold 242: MAE=480.6, RMSE=623.3
+  Fold 243: MAE=375.4, RMSE=451.5
+  Fold 244: MAE=901.1, RMSE=1173.0
+
+Validation results:
+  MAE:  531.76 ± 145.28
+  RMSE: 762.95 ± 202.88
+
+Results saved to: results/tuning/neuralprophet_best_params_london_clean_only_720_20260515_161655.json
+  --> config.neuralprophet_params_file = 'results/tuning/neuralprophet_best_params_london_clean_only_720_20260515_161655.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================

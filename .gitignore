@@ -14,7 +14,8 @@ checkpoint_seoul_t*
 checkpoint_london_t*
 checkpoint_washington_t*
 /results/tuning/aussortieren
-*.sh
+
 
 /.timesfm_venv
 /results/tuning/2026-09-26
+sh files/old logs/tune_neuralprophet_121.log
