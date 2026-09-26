@@ -9,6 +9,17 @@ import pandas as pd
 
 class MetricsCalculator:
     """Calculate forecasting performance metrics"""
+
+    @staticmethod
+    def observed_mask(df: pd.DataFrame, functioning_day_col: Optional[str]) -> np.ndarray:
+        """
+        Boolean mask over the rows of df: True = observed (scored), False =
+        imputed (functioning_day_col == 'No'). All True if the column is not
+        configured or not present.
+        """
+        if functioning_day_col and functioning_day_col in df.columns:
+            return (df[functioning_day_col] != 'No').to_numpy()
+        return np.ones(len(df), dtype=bool)
     
     @staticmethod
     def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -53,7 +64,8 @@ class MetricsCalculator:
         y_true: np.ndarray, 
         y_pred: np.ndarray, 
         y_train: np.ndarray, 
-        seasonal_period: int = 24
+        seasonal_period: int = 24,
+        train_mask: Optional[np.ndarray] = None,
     ) -> float:
         """
         Mean Absolute Scaled Error.
@@ -71,6 +83,10 @@ class MetricsCalculator:
             Training set values (for scaling)
         seasonal_period : int
             Seasonal period (24 for hourly data with daily seasonality)
+        train_mask : np.ndarray of bool, optional
+            True = observed training value. Seasonal-naive pairs
+            (t, t - seasonal_period) are used for scaling only if both values
+            are observed; imputed training values are excluded.
             
         Returns:
         --------
@@ -79,6 +95,11 @@ class MetricsCalculator:
         """
         # Calculate naive seasonal forecast error on training set
         naive_errors = np.abs(y_train[seasonal_period:] - y_train[:-seasonal_period])
+        if train_mask is not None:
+            train_mask = np.asarray(train_mask, dtype=bool)
+            naive_errors = naive_errors[train_mask[seasonal_period:] & train_mask[:-seasonal_period]]
+        if naive_errors.size == 0:
+            return float("nan")
         mae_naive = np.mean(naive_errors)
         
         # Calculate forecast error
@@ -343,7 +364,9 @@ class MetricsCalculator:
         cls, 
         y_true: np.ndarray, 
         y_pred: np.ndarray, 
-        y_train: np.ndarray
+        y_train: np.ndarray,
+        test_mask: Optional[np.ndarray] = None,
+        train_mask: Optional[np.ndarray] = None,
     ) -> Dict[str, float]:
         """
         Calculate all per-series metrics at once.
@@ -360,16 +383,31 @@ class MetricsCalculator:
             Predicted values
         y_train : np.ndarray
             Training set values (for MASE calculation)
+        test_mask : np.ndarray of bool, optional
+            True = observed test value. Only these steps are scored; imputed
+            steps (Functioning Day == 'No') are excluded.
+        train_mask : np.ndarray of bool, optional
+            True = observed training value (MASE scaling, see mase()).
             
         Returns:
         --------
         Dict[str, float]
-            Dictionary with all metric values
+            Dictionary with all metric values; all NaN if no test step is
+            observed.
         """
+        y_true = np.asarray(y_true, dtype=float)
+        y_pred = np.asarray(y_pred, dtype=float)
+        y_train = np.asarray(y_train, dtype=float)
+        if test_mask is not None:
+            test_mask = np.asarray(test_mask, dtype=bool)
+            y_true = y_true[test_mask]
+            y_pred = y_pred[test_mask]
+        if y_true.size == 0:
+            return {'MAE': np.nan, 'RMSE': np.nan, 'MASE': np.nan, 'sMAPE': np.nan}
         return {
             'MAE': cls.mae(y_true, y_pred),
             'RMSE': cls.rmse(y_true, y_pred),
-            'MASE': cls.mase(y_true, y_pred, y_train),
+            'MASE': cls.mase(y_true, y_pred, y_train, train_mask=train_mask),
             'sMAPE': cls.smape(y_true, y_pred)
         }
 

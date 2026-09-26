@@ -38,6 +38,12 @@ class TimeSeriesCV:
         This is the single source of truth for the cutoff calculation.
         split() calls this method internally to guarantee consistency.
 
+        The cutoff timestamp itself is NOT part of the test period: split()
+        builds test windows as (test_start, test_end] with test_start = cutoff
+        for fold 0, so the cutoff is the last training hour of fold 0 and the
+        held-out test period is (cutoff, data_end]. Tuning data is therefore
+        selected with `<= cutoff`.
+
         Parameters:
         -----------
         df : pd.DataFrame
@@ -51,13 +57,37 @@ class TimeSeriesCV:
         df = df.copy()
         df[self.config.date_col] = pd.to_datetime(df[self.config.date_col])
         data_end = df[self.config.date_col].max()
-        n_eval_hours = self.config.n_folds * max(self.config.horizons)
+        n_eval_hours = self.get_eval_hours()
         return data_end - pd.Timedelta(hours=n_eval_hours)
+
+    def get_eval_hours(self) -> int:
+        """Length of the evaluation period in hours: n_folds * max(horizons)."""
+        return self.config.n_folds * max(self.config.horizons)
+
+    def expected_n_folds(self, horizon: int) -> int:
+        """
+        Number of evaluation folds for this horizon with partial_last_fold=True:
+        ceil(eval_hours / horizon). If eval_hours is not a multiple of horizon,
+        the last fold is partial (eval_hours % horizon test hours).
+        """
+        return int(np.ceil(self.get_eval_hours() / horizon))
+
+    def get_tuning_period(self, tune_df: pd.DataFrame) -> dict:
+        """
+        First and last timestamp of the tuning data (ISO strings, for the
+        tuning JSON). The last timestamp equals get_cutoff_date() of the full data.
+        """
+        dates = pd.to_datetime(tune_df[self.config.date_col])
+        return {
+            "first_timestamp": dates.min().isoformat(),
+            "last_timestamp": dates.max().isoformat(),
+        }
 
     def split(
         self,
         df: pd.DataFrame,
         horizon: int,
+        partial_last_fold: bool = False,
     ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
         """
         Generate train/test splits for time series cross-validation.
@@ -72,6 +102,13 @@ class TimeSeriesCV:
             Full dataset with datetime index or column
         horizon : int
             Forecast horizon (number of hours)
+        partial_last_fold : bool, default=False
+            If the period from the first fold date to the end of the data is
+            not a multiple of horizon, keep the last fold with a shorter test
+            window (only the remaining hours, from the regular fold origin)
+            instead of dropping it. Used for evaluation (run_experiments.py),
+            so every horizon covers the full evaluation period. Tuning scripts
+            use the default (full-horizon folds only).
             
         Returns:
         --------
@@ -123,9 +160,15 @@ class TimeSeriesCV:
             test_start = first_fold_date + pd.Timedelta(hours=fold * horizon)
             test_end = test_start + pd.Timedelta(hours=horizon)
             
-            # Break if we've run out of data
-            if test_end > data_end:
+            # Break if we've run out of data. With partial_last_fold, a last
+            # fold that extends past data_end is truncated to data_end.
+            if test_start >= data_end:
                 break
+            if test_end > data_end:
+                if not partial_last_fold:
+                    break
+                test_end = data_end
+            n_test_hours = int((test_end - test_start) / pd.Timedelta(hours=1))
             
             # Create train/test split (rolling: fixed-size window ending at test_start)
             train_end = test_start
@@ -153,8 +196,9 @@ class TimeSeriesCV:
                 'test_total': len(test_df)
             })
             
-            # Verify training size and valid test size
-            if len(train_df) >= self.config.n_train_samples and len(test_df) == horizon:
+            # Verify training size and valid test size (horizon hours, or the
+            # remaining hours for a partial last fold)
+            if len(train_df) >= self.config.n_train_samples and len(test_df) == n_test_hours:
                 splits.append((train_df, test_df))
 
             fold += 1

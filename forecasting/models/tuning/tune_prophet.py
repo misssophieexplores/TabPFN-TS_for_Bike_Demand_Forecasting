@@ -106,8 +106,13 @@ def evaluate_params_on_fold(
     y_pred = forecast["yhat"].values
 
     y_test = test_df[config.target_col].values[: config.tune_horizon]
+    # Imputed hours (Functioning Day == 'No') are excluded from scoring
     calc = MetricsCalculator()
-    metrics = calc.calculate_all(y_test, y_pred, train_df[config.target_col].values)
+    metrics = calc.calculate_all(
+        y_test, y_pred, train_df[config.target_col].values,
+        test_mask=calc.observed_mask(test_df, config.functioning_day_col)[: config.tune_horizon],
+        train_mask=calc.observed_mask(train_df, config.functioning_day_col),
+    )
     return float(metrics["MAE"]), float(metrics["RMSE"])
 
 
@@ -134,6 +139,11 @@ def tune_prophet(
     else:
         n = min(config.tune_folds, len(splits))
         fold_range = range(len(splits) - n, len(splits))
+    # Skip folds whose test window is fully imputed (nothing to score)
+    fold_range = [
+        i for i in fold_range
+        if MetricsCalculator.observed_mask(splits[i][1], config.functioning_day_col).any()
+    ]
 
     if len(fold_range) == 0:
         raise RuntimeError(
@@ -254,6 +264,7 @@ def tune_prophet(
     return {
         "city": city,
         "n_train_samples": config.n_train_samples,
+        "tuning_period": cv.get_tuning_period(tune_df),
         "prophet_params": best_params,
         "tuning": {
             "search_type": "random_search",

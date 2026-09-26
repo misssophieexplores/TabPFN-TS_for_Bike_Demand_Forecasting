@@ -7,7 +7,7 @@ What this does:
 - n_estimators is NOT searched — determined automatically via XGBoost early stopping
   on a held-out slice of each training fold (last 15%, min 24 obs).
 - Covariate selection is driven by --scenario (default: clean_only):
-    clean_only   : degradable covariates only (keys of weather_degradation_mapping)
+    clean_only   : degradable covariates (keys of weather_degradation_mapping) + holiday + season
     all_weather  : all weather_covariates from config
 - Saves best config to results/tuning/xgboost_best_params_<city>_<scenario>_<n_train>_<timestamp>.json
 
@@ -144,8 +144,16 @@ def evaluate_params_on_fold(
 
     y_pred = iterative_forecast(model=model, y_history=y_train, X_future=X_test, n_lags=n_lags)
 
+    # Imputed hours (Functioning Day == 'No') are excluded from scoring
     calc = MetricsCalculator()
-    metrics = calc.calculate_all(y_test, y_pred, y_train)
+    train_mask = calc.observed_mask(train_df, config.functioning_day_col)
+    if max_train_size is not None and len(train_mask) > max_train_size:
+        train_mask = train_mask[-max_train_size:]
+    metrics = calc.calculate_all(
+        y_test, y_pred, y_train,
+        test_mask=calc.observed_mask(test_df, config.functioning_day_col),
+        train_mask=train_mask,
+    )
     return float(metrics["MAE"]), float(metrics["RMSE"]), best_iteration
 
 
@@ -174,6 +182,11 @@ def tune_xgboost(
         range(len(splits)) if config.tune_folds is None
         else range(len(splits) - min(config.tune_folds, len(splits)), len(splits))
     )
+    # Skip folds whose test window is fully imputed (nothing to score)
+    tune_split_indices = [
+        i for i in tune_split_indices
+        if MetricsCalculator.observed_mask(splits[i][1], config.functioning_day_col).any()
+    ]
     val_split_indices = tune_split_indices
 
     if not n_lags_options:
@@ -308,6 +321,7 @@ def tune_xgboost(
         "city": city,
         "scenario": scenario,
         "n_train_samples": config.n_train_samples,
+        "tuning_period": cv.get_tuning_period(tune_df),
         "n_lags": best_n_lags,
         "xgb_params": best_params,
         "tuning": {

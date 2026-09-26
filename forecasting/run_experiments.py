@@ -19,7 +19,7 @@ warnings.filterwarnings('ignore')
 from config import ForecastConfig
 from features import prepare_xgboost_features
 from models.base import BaseForecaster
-from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster
+from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster, trend_from_intercept
 from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
 from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
@@ -145,7 +145,19 @@ class ForecastingExperiment:
         # Initialize weather processor
         weather_proc = WeatherProcessor(self.config)
 
-        splits = self.cv.split(df, horizon)
+        # partial_last_fold=True: if the evaluation period is not a multiple of
+        # the horizon, the last fold is scored on the remaining hours instead of
+        # being dropped, so every horizon covers the same evaluation period.
+        splits = self.cv.split(df, horizon, partial_last_fold=True)
+        expected_folds = self.cv.expected_n_folds(horizon)
+        eval_hours = self.cv.get_eval_hours()
+        covered_hours = sum(len(test_df) for _, test_df in splits)
+        if len(splits) != expected_folds or covered_hours != eval_hours:
+            raise RuntimeError(
+                f"{self.config.dataset_name} h={horizon}: {len(splits)} CV folds covering "
+                f"{covered_hours} h, expected {expected_folds} folds covering {eval_hours} h. "
+                f"Check the data for missing hourly timestamps."
+            )
         fold_results = []
 
         for fold_idx, (train_df, test_df) in enumerate(splits):
@@ -184,10 +196,21 @@ class ForecastingExperiment:
             try:
                 model.reset()
                 model.fit(y_train, X_train)
-                y_pred = model.predict(horizon, X_test)
+                # Forecast as many steps as the fold has test hours: horizon,
+                # or fewer for a partial last fold (no data exist beyond it).
+                n_steps = len(test_df)
+                y_pred = model.predict(n_steps, X_test)
 
-                # Calculate metrics
-                metrics = self.metrics_calc.calculate_all(y_test, y_pred, y_train)
+                # Calculate metrics on observed hours only: imputed hours
+                # (Functioning Day == 'No') are excluded from scoring, in the
+                # test window and in the MASE scaling of the training window.
+                fday = self.config.functioning_day_col
+                test_observed = self.metrics_calc.observed_mask(test_df, fday)
+                train_observed = self.metrics_calc.observed_mask(train_df, fday)
+                metrics = self.metrics_calc.calculate_all(
+                    y_test, y_pred, y_train,
+                    test_mask=test_observed, train_mask=train_observed,
+                )
                 metrics['dataset'] = self.config.dataset_name
                 metrics['run_name'] = self.run_name
                 metrics['version'] = self.config.results_version
@@ -206,6 +229,8 @@ class ForecastingExperiment:
                 train_imputed = (train_df[fday] == 'No').sum() if fday and fday in train_df.columns else 0
                 metrics['test_imputed'] = test_imputed
                 metrics['train_imputed'] = train_imputed
+                metrics['test_hours'] = n_steps
+                metrics['test_scored'] = int(test_observed.sum())
 
                 fold_results.append(metrics)
 
@@ -229,7 +254,8 @@ class ForecastingExperiment:
             print(f" [FAILED] All folds failed")
             return None
 
-        # Aggregate fold results
+        # Aggregate fold results. Folds whose test window is fully imputed
+        # have NaN metrics; pandas mean/std skip them (skipna).
         results_df = pd.DataFrame(fold_results)
         aggregated = {
             'dataset': self.config.dataset_name,
@@ -254,6 +280,10 @@ class ForecastingExperiment:
             'total_test_imputed': results_df['test_imputed'].sum(),
             'total_train_imputed': results_df['train_imputed'].sum(),
             'folds_with_imputed_test': (results_df['test_imputed'] > 0).sum(),
+            'total_test_hours': results_df['test_hours'].sum(),
+            'partial_folds': (results_df['test_hours'] < horizon).sum(),
+            'total_test_scored': results_df['test_scored'].sum(),
+            'folds_without_scored_test': (results_df['test_scored'] == 0).sum(),
         }
 
         # Log aggregated results to W&B
@@ -307,6 +337,9 @@ class ForecastingExperiment:
         pd.DataFrame
             Results dataframe with all completed experiments
         """
+        if scenarios is None:
+            scenarios = self.config.weather_scenarios
+
         # On resume, reload previously completed results from CSV
         filename_agg = self.output_dir / f"results_master_{self.config.results_version}.csv"
         if filename_agg.exists():
@@ -508,10 +541,24 @@ def compute_and_log_comparative_metrics(config, log_wandb=True):
     return comparative_df
 
 
-def main():
-    """Main execution"""
-
-    config = ForecastConfig()
+def main(config: Optional[ForecastConfig] = None):
+    """
+    Main execution. Without a config, the city is taken from --city:
+        python forecasting/run_experiments.py --city {seoul,washington,london}
+    """
+    if config is None:
+        import argparse
+        parser = argparse.ArgumentParser(description="Run all baseline experiments for one city")
+        parser.add_argument("--city", type=str, required=True,
+                            choices=["seoul", "washington", "london"])
+        args = parser.parse_args()
+        if args.city == "seoul":
+            from config_seoul import get_config
+        elif args.city == "washington":
+            from config_washington import get_config
+        else:
+            from config_london import get_config
+        config = get_config()
 
     df, dataset_name = load_and_prepare_data(config)
     if config.dataset_name is None:
@@ -549,10 +596,21 @@ def main():
     np_nw_lags = np_nw_cfg["n_lags"]
     np_nw_params = np_nw_cfg["neuralprophet_params"]
 
+    # Intercept selected during tuning -> statsmodels trend (same as
+    # run_weather_baseline.py). A params file without with_intercept raises
+    # KeyError: re-run tuning.
+    arima_order = tuple(arima_cfg["order"])
+    arima_trend = trend_from_intercept(arima_cfg["with_intercept"], arima_order, (0, 0, 0, 0))
+    sarimax_order = tuple(sarimax_cfg["order"])
+    sarimax_seasonal_order = tuple(sarimax_cfg["seasonal_order"])
+    sarimax_trend = trend_from_intercept(
+        sarimax_cfg["with_intercept"], sarimax_order, sarimax_seasonal_order
+    )
+
     models = [
         SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
-        ARIMAForecaster(order=tuple(arima_cfg["order"])),
-        SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
+        ARIMAForecaster(order=arima_order, trend=arima_trend),
+        SARIMAXForecaster(order=sarimax_order, seasonal_order=sarimax_seasonal_order, trend=sarimax_trend),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
         ProphetForecaster(**prophet_params),
         NeuralProphetForecaster(n_lags=np_lags, **np_params),

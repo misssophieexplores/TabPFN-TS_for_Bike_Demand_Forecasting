@@ -105,6 +105,11 @@ def tune_arima(
     else:
         n = min(config.tune_folds, len(splits))
         fold_range = range(len(splits) - n, len(splits))
+    # Skip folds whose test window is fully imputed (nothing to score)
+    fold_range = [
+        i for i in fold_range
+        if calc.observed_mask(splits[i][1], config.functioning_day_col).any()
+    ]
 
     if verbose:
         print(f"\nValidating on {len(fold_range)} folds...")
@@ -129,7 +134,12 @@ def tune_arima(
                 error_action='ignore'
             )
             y_pred = model_fold.predict(n_periods=config.tune_horizon)
-            metrics = calc.calculate_all(y_test_fold, y_pred, y_train_fold)
+            # Imputed hours (Functioning Day == 'No') are excluded from scoring
+            metrics = calc.calculate_all(
+                y_test_fold, y_pred, y_train_fold,
+                test_mask=calc.observed_mask(test_df, config.functioning_day_col),
+                train_mask=calc.observed_mask(train_df, config.functioning_day_col),
+            )
             mae_values.append(metrics['MAE'])
             rmse_values.append(metrics['RMSE'])
             if verbose:
@@ -154,6 +164,7 @@ def tune_arima(
         'city': city,
         'scenario': scenario,
         'n_train_samples': config.n_train_samples,
+        'tuning_period': cv.get_tuning_period(tune_df),
         'order': order,
         'with_intercept': with_intercept,
         'aic': float(aic),

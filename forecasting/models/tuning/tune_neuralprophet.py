@@ -210,8 +210,13 @@ def evaluate_params_on_fold(
     )
     y_test = test_df[config.target_col].values[:h]
 
+    # Imputed hours (Functioning Day == 'No') are excluded from scoring
     calc = MetricsCalculator()
-    metrics = calc.calculate_all(y_test, y_pred, train_df[config.target_col].values)
+    metrics = calc.calculate_all(
+        y_test, y_pred, train_df[config.target_col].values,
+        test_mask=calc.observed_mask(test_df, config.functioning_day_col)[:h],
+        train_mask=calc.observed_mask(train_df, config.functioning_day_col),
+    )
     return float(metrics["MAE"]), float(metrics["RMSE"])
 
 
@@ -250,6 +255,12 @@ def tune_neuralprophet(
         validation_fold_range = range(
             n_avail - min(config.tune_folds, n_avail), n_avail
         )
+
+    # Skip folds whose test window is fully imputed (nothing to score)
+    def _has_scored(i: int) -> bool:
+        return MetricsCalculator.observed_mask(splits[i][1], config.functioning_day_col).any()
+    search_fold_range = [i for i in search_fold_range if _has_scored(i)]
+    validation_fold_range = [i for i in validation_fold_range if _has_scored(i)]
 
     rng = np.random.default_rng(seed)
 
@@ -350,6 +361,7 @@ def tune_neuralprophet(
         "city": city,
         "scenario": scenario,
         "n_train_samples": config.n_train_samples,
+        "tuning_period": cv.get_tuning_period(tune_df),
         "n_lags": int(best_params["n_lags"]),
         "neuralprophet_params": {"learning_rate": best_params["learning_rate"]},
         "tuning": {
