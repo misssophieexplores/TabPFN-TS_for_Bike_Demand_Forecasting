@@ -61,8 +61,8 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 3. **Split**: `TimeSeriesCV.split(df, horizon, partial_last_fold=True)` creates rolling window train/test folds covering the full evaluation period
 4. **Weather Preparation**: Per-fold weather preparation via `WeatherProcessor.prepare_weather_data(split=...)`. Training data always uses clean observed weather. In the 'degraded' scenario the training fold also provides the degradation parameters (solar cap). For the 'degraded' scenario, test data receives per-row lead-time noise: row *i* is degraded using lead time *(i + 1)* hours, so error grows from near-zero at the first step up to full-horizon noise at the last step.
 5. **Model inputs**: models with `use_time_features=True` get calendar features appended (`prepare_xgboost_features`); models with `needs_datetime=True` get a real `DatetimeIndex` on `X_train`/`X_test` (an empty DataFrame with that index if the model has no covariates)
-6. **Fit**: `model.reset()`, then `model.fit(y_train, X_train)` on each fold (NeuralProphet only stores the data here — see Models)
-7. **Predict**: `model.predict(n_steps, X_test)` generates forecasts, with `n_steps = len(test_df)`: the horizon, or fewer hours for a partial last fold
+6. **Fit**: `model.reset()`, then `model.fit(y_train, X_train)` on each fold (NeuralProphet only stores the data here — see Models). Wall-clock time of `fit()` is recorded as `fit_time_s`
+7. **Predict**: `model.predict(n_steps, X_test)` generates forecasts, with `n_steps = len(test_df)`: the horizon, or fewer hours for a partial last fold. Wall-clock time of `predict()` is recorded as `predict_time_s`; `runtime_s = fit_time_s + predict_time_s` (see Runtime Measurement)
 8. **Evaluate**: `MetricsCalculator.calculate_all(y_test, y_pred, y_train, test_mask, train_mask)` computes metrics on observed hours only; imputed hours (`functioning_day_col == 'No'`) are excluded from scoring (masks from `MetricsCalculator.observed_mask()`). Imputed hours stay in the model inputs (training data)
 9. **Log**: W&B logs aggregated metrics and a per-fold table
 10. **Save**: Aggregated row appended to `results_master_{version}.csv` after each model-horizon-scenario run; fold-level rows written to `detailed_results_master_{version}.csv` at the end of the run
@@ -133,9 +133,10 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - 168h: Substantial errors
 
 **Reproducibility:**
-- Seed management: `horizon_seed = (base_seed + fold_idx) + horizon`
+- Seed management: `horizon_seed = base_seed + 10000 * horizon + fold_idx` (`degrade_dataframe()` raises `ValueError` if `fold_idx` is outside [0, 10000))
 - Same seed → identical degradation
 - Different folds → different realistic errors
+- Every (horizon, fold) pair gets its own seed (at most 980 folds, for h=6, so `fold_idx < 10000`)
 
 ### Models (`models/`)
 **BaseForecaster**: Abstract interface requiring:
@@ -439,6 +440,7 @@ Runs all datasets sequentially without manual intervention.
 - Automatic skip logic: models with `use_covariates=False` skip the 'degraded' scenario
 - Coverage check: `run_single_experiment()` raises `RuntimeError` unless the splits number `expected_n_folds(horizon)` and their test windows add up to exactly `get_eval_hours()` hours (catches missing hourly timestamps), so no evaluation hours are dropped for any horizon
 - Fold-level errors logged to `errors_{version}.log` with full traceback and to W&B (`error`); `[ERROR]` line always printed to stdout regardless of `verbose`; the fold is skipped and the run continues
+- Runtime: `fit()` and `predict()` are timed per fold with `time.perf_counter()` (`fit_time_s`, `predict_time_s`, `runtime_s`) and aggregated per model, horizon and scenario (see Results Schema)
 
 - `run_all_experiments(models, df, scenarios=None)`: `scenarios=None` uses `config.weather_scenarios`
 - The module sets `warnings.filterwarnings('ignore')` globally, except for the SARIMAX "did not converge" warning (shown once per run)
@@ -517,12 +519,13 @@ Rationale:
 - Computationally cheap (just percentile calculations + random sampling)
 
 ### Reproducible Error Simulation
-Seed hierarchy: `horizon_seed = (base_seed + fold_idx) + horizon`
+Seed hierarchy: `horizon_seed = base_seed + 10000 * horizon + fold_idx`
 
 Rationale:
 - Full reproducibility across runs
 - Independent errors for different horizons
 - Different errors per fold (realistic variability)
+- Previously `base_seed + fold_idx + horizon` produced duplicate seeds across horizons (e.g. fold 18 at h=6 and fold 0 at h=24 both got `base_seed + 24`), so those folds shared the same random draws. With the horizon scaled by 10000 and `fold_idx < 10000`, seeds are unique. Degraded results produced before this fix (v6 and earlier) used the old seeds and are re-run in v7.
 
 ### Dynamic CV Fold Calculation
 First fold cutoff counted back from end of dataset: `data_end - (n_folds * max_horizon)`
@@ -544,6 +547,14 @@ Logged in detailed results for post-hoc analysis
 Imputed hours are excluded from scoring (experiments and tuning): only observed test hours enter MAE/RMSE/MASE/sMAPE, and the MASE scale uses only fully observed seasonal-naive pairs. They remain in the data used for fitting and as lag inputs.
 
 Rationale: imputed values are not real demand, so scoring forecasts against them measures agreement with the imputation, not forecast skill.
+
+### Runtime Measurement
+Each fold's `fit()` and `predict()` calls are timed separately with `time.perf_counter()`. Weather preparation, feature construction, `reset()` and scoring are excluded. Per-fold times are in the detailed CSV; per (model, horizon, scenario) mean, std and total are in the aggregated CSV.
+
+Rationale:
+- Makes the accuracy/cost trade-off between models reportable per horizon and scenario.
+- Fit and predict are kept separate because the split differs by model: NeuralProphet trains inside `predict()` (its `fit_time_s` is ≈ 0 and `predict_time_s` includes training), and XGBoost's recursive forecasts make `predict()` cost grow with `n_steps`. `runtime_s` (fit + predict) is the comparable total across models.
+- Totals depend on the number of folds (980 for h=6 vs 35 for h=168); compare `runtime_mean_s` for per-forecast cost and `runtime_total_s` for the cost of the full evaluation period.
 
 ### Rolling Window CV
 Training window is fixed-size and advances by `horizon` hours with each fold. Test set is always exactly `horizon` hours.
@@ -588,6 +599,7 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 
 **Logged per experiment:**
 - {model}_{scenario}_h{horizon}_MAE/RMSE/MASE/sMAPE (aggregated)
+- {model}_{scenario}_h{horizon}_runtime_mean_s / _runtime_total_s (aggregated)
 
 **Fold-level tables:**
 - {model}_{scenario}_h{horizon}_folds (detailed per-fold results)
@@ -621,8 +633,9 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 - `model_uses_covariates`: Boolean (from model.use_covariates property)
 - `degradation_seed`: Random seed used (42 by default)
 - `num_weather_vars`: Number of columns in `X_train` (taken from the first fold) (0 for models without covariates; for models with covariates: 7 degradable + holiday + season = 9, plus 4 calendar time features for XGBoost = 13 total features; TabPFN creates its own calendar features, which is 17 additional features)
+- Runtime in seconds (wall-clock, over successful folds): `fit_time_mean_s`, `predict_time_mean_s`, `runtime_mean_s`, `runtime_std_s` (per fold), and `fit_time_total_s`, `predict_time_total_s`, `runtime_total_s` (summed over folds)
 
-**Additional columns in detailed_results_master_{version}.csv (per fold):** `MAE`, `RMSE`, `MASE`, `sMAPE` (observed hours only), `fold`, `test_imputed`, `train_imputed`, `test_hours`, `test_scored`
+**Additional columns in detailed_results_master_{version}.csv (per fold):** `MAE`, `RMSE`, `MASE`, `sMAPE` (observed hours only), `fold`, `test_imputed`, `train_imputed`, `test_hours`, `test_scored`, `fit_time_s`, `predict_time_s`, `runtime_s` (seconds)
 
 
 ## Known Limitations
@@ -638,3 +651,4 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 8. The rain/snow phase correction uses a fixed 2 °C threshold (the real transition spans roughly 0–4 °C) and moves amounts between rain (mm) and snow (cm) without unit conversion
 9. The partial last fold (h=48) covers lead times 1–24 only and is averaged with equal weight to the full folds; for NeuralProphet it is forecast by a model with `n_forecasts = 24`
 10. Fold metrics are averaged with equal weight per fold; a fold with few observed hours (partly imputed test window) counts as much as a fully observed one
+11. Runtimes are wall-clock times on the machine that ran the experiment: they depend on hardware, CPU/GPU availability, thread settings (e.g. XGBoost `n_jobs=-1`, TabPFN `CPUParallelWorker`) and concurrent load, so they are only comparable within one run environment. The first fold of a model can include one-off costs (library warm-up, model loading for TabPFN/TimesFM). Failed folds are not timed

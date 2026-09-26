@@ -148,7 +148,7 @@ class WeatherProcessor:
         Degradation is applied on-the-fly during each fold:
         - Prevents data leakage between folds
         - Different degradation per fold (realistic)
-        - Reproducible via seed = base_seed + fold_idx + horizon
+        - Reproducible via seed = base_seed + 10000 * horizon + fold_idx
         
         Examples
         --------
@@ -215,9 +215,11 @@ class WeatherProcessor:
         Notes
         -----
         Seed calculation:
-        - fold_seed = base_seed + fold_idx
-        - horizon_seed = fold_seed + horizon
-        - This ensures reproducibility and independence
+        - seed = base_seed + 10000 * horizon + fold_idx
+        - Unique per (horizon, fold) as long as fold_idx < 10000 (at most
+          980 folds, for h=6). The previous base_seed + fold_idx + horizon
+          gave duplicates across horizons (e.g. fold 18 at h=6 and fold 0
+          at h=24 both got base_seed + 24).
 
         Lead-time assignment:
         - Row i (0-indexed) represents the forecast for 1 hour ahead at
@@ -225,9 +227,13 @@ class WeatherProcessor:
         - This means the first test step gets near-zero noise (1 h lead) and
           the last step gets full horizon noise — physically correct behaviour.
         """
-        # Compute fold-specific seed
-        fold_seed = self.config.degradation_seed + fold_idx
-        horizon_seed = fold_seed + horizon
+        # Seed unique per (horizon, fold): fold_idx < 10000 for all horizons
+        if not 0 <= fold_idx < 10000:
+            raise ValueError(
+                f"fold_idx={fold_idx} out of range [0, 10000): degradation seeds "
+                f"would collide across horizons"
+            )
+        horizon_seed = self.config.degradation_seed + 10000 * horizon + fold_idx
         
         # Per-row lead times: step 0 → 1 h, step 1 → 2 h, …, step h-1 → h
         lead_times = np.arange(1, len(df) + 1)

@@ -8,6 +8,7 @@ from typing import List, Dict, Optional
 import warnings
 import json
 import os
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 import wandb
@@ -195,11 +196,17 @@ class ForecastingExperiment:
 
             try:
                 model.reset()
+                # Wall-clock runtime of fit() and predict() only (data and
+                # feature preparation excluded).
+                t0 = time.perf_counter()
                 model.fit(y_train, X_train)
+                fit_time = time.perf_counter() - t0
                 # Forecast as many steps as the fold has test hours: horizon,
                 # or fewer for a partial last fold (no data exist beyond it).
                 n_steps = len(test_df)
+                t0 = time.perf_counter()
                 y_pred = model.predict(n_steps, X_test)
+                predict_time = time.perf_counter() - t0
 
                 # Calculate metrics on observed hours only: imputed hours
                 # (Functioning Day == 'No') are excluded from scoring, in the
@@ -231,6 +238,11 @@ class ForecastingExperiment:
                 metrics['train_imputed'] = train_imputed
                 metrics['test_hours'] = n_steps
                 metrics['test_scored'] = int(test_observed.sum())
+
+                # Runtime (seconds)
+                metrics['fit_time_s'] = fit_time
+                metrics['predict_time_s'] = predict_time
+                metrics['runtime_s'] = fit_time + predict_time
 
                 fold_results.append(metrics)
 
@@ -284,6 +296,14 @@ class ForecastingExperiment:
             'partial_folds': (results_df['test_hours'] < horizon).sum(),
             'total_test_scored': results_df['test_scored'].sum(),
             'folds_without_scored_test': (results_df['test_scored'] == 0).sum(),
+            # Runtime (seconds) over successful folds
+            'fit_time_mean_s': results_df['fit_time_s'].mean(),
+            'predict_time_mean_s': results_df['predict_time_s'].mean(),
+            'runtime_mean_s': results_df['runtime_s'].mean(),
+            'runtime_std_s': results_df['runtime_s'].std(),
+            'fit_time_total_s': results_df['fit_time_s'].sum(),
+            'predict_time_total_s': results_df['predict_time_s'].sum(),
+            'runtime_total_s': results_df['runtime_s'].sum(),
         }
 
         # Log aggregated results to W&B
@@ -292,6 +312,8 @@ class ForecastingExperiment:
             f"{model.name}_{weather_scenario}_h{horizon}_RMSE": aggregated['RMSE_mean'],
             f"{model.name}_{weather_scenario}_h{horizon}_MASE": aggregated['MASE_mean'],
             f"{model.name}_{weather_scenario}_h{horizon}_sMAPE": aggregated['sMAPE_mean'],
+            f"{model.name}_{weather_scenario}_h{horizon}_runtime_mean_s": aggregated['runtime_mean_s'],
+            f"{model.name}_{weather_scenario}_h{horizon}_runtime_total_s": aggregated['runtime_total_s'],
         })
 
         # Append to master CSV incrementally
