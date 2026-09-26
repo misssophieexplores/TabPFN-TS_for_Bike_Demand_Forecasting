@@ -50,5 +50,6 @@ def get_config() -> ForecastConfig:
     config.sarimax_params_file = "results/tuning/sarimax_best_params_seoul_clean_only_720_20260512_085510.json"
     config.xgb_params_file = "results/tuning/xgboost_best_params_seoul_clean_only_720_20260516_013807.json"
     config.prophet_params_file = "results/tuning/prophet_best_params_seoul_720_20260516_002239.json"
-    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_seoul_clean_only_720_20260515_161701.json" 
+    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_seoul_clean_only_720_20260515_161701.json"
+    config.neuralprophet_noweather_params_file = None  # set after: tune_neuralprophet.py --city seoul --scenario no_weather
     return config

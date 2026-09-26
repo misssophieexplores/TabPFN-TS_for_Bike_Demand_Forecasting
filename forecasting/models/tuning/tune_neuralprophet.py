@@ -1,33 +1,41 @@
 """
 NeuralProphet Hyperparameter Tuning (random search)
 
-Jointly tunes: learning_rate, n_lags, num_hidden_layers, d_hidden
-Covariate selection driven by --scenario (default: clean_only):
-    clean_only  : degradable covariates only (keys of weather_degradation_mapping)
-    all_weather : all weather_covariates from config
+Jointly tunes: learning_rate, n_lags
 
-Note: NeuralProphet is slow. Default trials=30 is a conservative starting point;
-      increase with --trials if compute budget allows.
+The model is set up exactly as in evaluation (models/prophet_models.py):
+  - n_forecasts = config.tune_horizon (direct multi-step forecast)
+  - covariates as future regressors (add_future_regressor)
+  - daily and weekly seasonality on, yearly off (30-day training window)
+  - epochs=None (NeuralProphet picks the number of epochs)
+  - neuralprophet.set_random_seed(42) before every model is created
+
+Search: random search on the last --search-folds folds (default 10).
+Validation: the best parameters are re-evaluated on the last config.tune_folds
+folds (all folds if None).
+
+Covariate set, selected by --scenario:
+    clean_only  : degradable covariates (keys of weather_degradation_mapping)
+                  + holiday + season                    -> NeuralProphetForecaster
+    all_weather : all weather_covariates from config
+    no_weather  : no covariates                          -> NeuralProphetForecaster_NoWeather
 
 Usage:
-    # Tune all cities:
-    python forecasting/models/tuning/tune_neuralprophet.py
-
-    # Tune a specific city only:
     python forecasting/models/tuning/tune_neuralprophet.py --city seoul
-
-    # Override scenario or other options:
-    python forecasting/models/tuning/tune_neuralprophet.py --city seoul --scenario all_weather --trials 60
+    python forecasting/models/tuning/tune_neuralprophet.py --city seoul --scenario no_weather
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # forecasting/
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
+import contextlib
+import io
 import json
 import logging
+import os
 import traceback
 import warnings
 from datetime import datetime
@@ -41,24 +49,51 @@ from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from run_experiments import load_and_prepare_data
 
-# Silence NeuralProphet training output
-logging.getLogger("NP").setLevel(logging.WARNING)
-logging.getLogger("NP.config_model").setLevel(logging.WARNING)
-logging.getLogger("NP.utils_torch").setLevel(logging.WARNING)
-logging.getLogger("neuralprophet").setLevel(logging.WARNING)
-logging.getLogger("lightning").setLevel(logging.WARNING)
-logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
+
+# Fixed seed applied immediately before every NeuralProphet model is created.
+NP_SEED = 42
 
 
+# ----------------------------------------------------------------------
+# Silencing
+# ----------------------------------------------------------------------
+for _name in [
+    "NP", "NP.config_model", "NP.utils_torch", "NP.df_utils", "NP.config",
+    "NP.forecaster", "NP.data.processing", "NP.data.splitting", "neuralprophet",
+    "lightning", "lightning.pytorch", "lightning.pytorch.utilities.rank_zero",
+    "lightning.pytorch.accelerators.cuda", "pytorch_lightning",
+    "pytorch_lightning.utilities.rank_zero", "pytorch_lightning.accelerators.cuda",
+]:
+    logging.getLogger(_name).setLevel(logging.ERROR)
+    logging.getLogger(_name).propagate = False
+
+warnings.filterwarnings("ignore")
+os.environ["PYTHONWARNINGS"] = "ignore"
+os.environ["PYTORCH_LIGHTNING_SEED_WORKERS"] = "0"
+os.environ["LIGHTNING_LOGGER_LEVEL"] = "ERROR"
+
+
+@contextlib.contextmanager
+def _silence_all_output():
+    with contextlib.redirect_stdout(io.StringIO()), \
+         contextlib.redirect_stderr(io.StringIO()):
+        yield
+
+
+# ----------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------
 def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -> List[str]:
+    if scenario == "no_weather":
+        return []
     if scenario == "all_weather":
         return [c for c in config.weather_covariates if c in df.columns]
-    else:  # clean_only
-        covariates = [c for c in config.weather_degradation_mapping.keys() if c in df.columns]
-        for col in [config.holiday_col, config.season_col]:
-            if col and col in df.columns:
-                covariates.append(col)
-        return covariates
+    # clean_only
+    covariates = [c for c in config.weather_degradation_mapping.keys() if c in df.columns]
+    for col in [config.holiday_col, config.season_col]:
+        if col and col in df.columns:
+            covariates.append(col)
+    return covariates
 
 
 def sample_params(rng: np.random.Generator, n_lags_options: List[int]) -> Dict:
@@ -68,6 +103,34 @@ def sample_params(rng: np.random.Generator, n_lags_options: List[int]) -> Dict:
     }
 
 
+def _build_model(n_lags: int, n_forecasts: int, learning_rate: float):
+    from neuralprophet import NeuralProphet, set_random_seed
+
+    kwargs = dict(
+        n_lags=n_lags,
+        n_forecasts=n_forecasts,
+        learning_rate=learning_rate,
+        yearly_seasonality=False,
+        weekly_seasonality=True,
+        daily_seasonality=True,
+        seasonality_mode="multiplicative",
+        epochs=None,
+        drop_missing=True,
+    )
+    try:
+        set_random_seed(NP_SEED)
+        return NeuralProphet(**kwargs, trainer_config={"enable_model_summary": False})
+    except TypeError:
+        set_random_seed(NP_SEED)
+        model = NeuralProphet(**kwargs)
+        if hasattr(model, "config_train") and hasattr(model.config_train, "trainer_kwargs"):
+            model.config_train.trainer_kwargs = {
+                "enable_progress_bar": False,
+                "enable_model_summary": False,
+            }
+        return model
+
+
 def evaluate_params_on_fold(
     train_df: pd.DataFrame,
     test_df: pd.DataFrame,
@@ -75,29 +138,15 @@ def evaluate_params_on_fold(
     params: Dict,
     covariate_cols: List[str],
 ) -> Tuple[float, float]:
-    from neuralprophet import NeuralProphet, set_random_seed
-
     n_lags = params["n_lags"]
-    horizon = config.tune_horizon
+    h = config.tune_horizon
 
-    # NeuralProphet needs at least n_lags + n_forecasts rows
-    if len(train_df) < n_lags + horizon + 1:
+    if len(train_df) < n_lags + h + 1:
         raise ValueError(
             f"Insufficient training rows ({len(train_df)}) for n_lags={n_lags}."
         )
 
-    set_random_seed(42)
-    model = NeuralProphet(
-        n_lags=n_lags,
-        n_forecasts=config.tune_horizon,
-        learning_rate=params["learning_rate"],
-        yearly_seasonality=True,
-        weekly_seasonality=True,
-        daily_seasonality=True,
-        seasonality_mode="multiplicative",
-        epochs=None,    # let NeuralProphet choose based on data size
-        drop_missing=True,
-    )
+    model = _build_model(n_lags, h, params["learning_rate"])
 
     np_train = pd.DataFrame({
         "ds": train_df[config.date_col].values,
@@ -109,59 +158,57 @@ def evaluate_params_on_fold(
         if col not in train_df.columns:
             continue
         np_train[col] = train_df[col].values
-        model.add_lagged_regressor(col)
+        model.add_future_regressor(col)
         active_covariates.append(col)
 
-    # Monkey-patch torch.load to fix PyTorch 2.4+ checkpoint loading incompatibility
     import torch
     _orig_load = torch.load
     torch.load = lambda *a, **kw: _orig_load(*a, **{**kw, "weights_only": False})
     try:
-        with warnings.catch_warnings():
+        with warnings.catch_warnings(), _silence_all_output():
             warnings.filterwarnings("ignore")
-            model.fit(np_train, freq="h")
+            model.fit(np_train, freq="h", progress="none")
     finally:
         torch.load = _orig_load
 
-    # Sync to cols NeuralProphet actually kept (silently drops e.g. all-zero cols)
-    if model.config_lagged_regressors:
-        active_covariates = [
-            c for c in active_covariates if c in model.config_lagged_regressors
-        ]
-    else:
-        active_covariates = []
+    # Sync to cols NP actually kept (it drops regressors that are constant
+    # in the training window)
+    kept = model.config_regressors.regressors
+    active_covariates = [c for c in active_covariates if kept and c in kept]
 
-    keep_cols = ["ds", "y"] + active_covariates
-    np_train = np_train[keep_cols]
+    np_train = np_train[["ds", "y"] + active_covariates]
 
-    # make_future_dataframe returns full training df + horizon future rows
-    # (n_forecasts == horizon); fill only the h future rows with held-out
-    # covariate values from test_df.
-    future_df = model.make_future_dataframe(
-        np_train, periods=horizon, n_historic_predictions=True
-    )
+    # Future covariate values for the h forecast steps
+    regressors_df = None
+    if active_covariates:
+        regressors_df = pd.DataFrame(
+            {col: test_df[col].values[:h] for col in active_covariates}
+        )
+        if len(regressors_df) != h:
+            raise RuntimeError(f"test_df has {len(regressors_df)} rows, expected {h}.")
+
+    with _silence_all_output():
+        future_df = model.make_future_dataframe(
+            np_train, regressors_df=regressors_df, periods=h, n_historic_predictions=True
+        )
+
+    # n_forecasts == h, so exactly h future rows are expected
     last_train_ds = pd.Timestamp(np_train["ds"].iloc[-1])
     n_future = int((future_df["ds"] > last_train_ds).sum())
-    if n_future != horizon:
+    if n_future != h:
         raise RuntimeError(
-            f"NeuralProphet future frame has {n_future} future rows, expected {horizon}."
+            f"NeuralProphet future frame has {n_future} future rows, expected {h}."
         )
-    for col in active_covariates:
-        if col in test_df.columns:
-            future_df.iloc[-horizon:, future_df.columns.get_loc(col)] = (
-                test_df[col].values[:horizon]
-            )
 
-    with warnings.catch_warnings():
+    with _silence_all_output(), warnings.catch_warnings():
         warnings.filterwarnings("ignore")
         forecast = model.predict(future_df)
 
     # Step i (1-based) is in column yhat{i} of row -(h - i + 1)
-    h = horizon
     y_pred = np.asarray(
         [forecast[f"yhat{i+1}"].iloc[-h + i] for i in range(h)], dtype=float
     )
-    y_test = test_df[config.target_col].values[:horizon]
+    y_test = test_df[config.target_col].values[:h]
 
     calc = MetricsCalculator()
     metrics = calc.calculate_all(y_test, y_pred, train_df[config.target_col].values)
@@ -173,9 +220,10 @@ def tune_neuralprophet(
     config: ForecastConfig,
     city: str,
     scenario: str = "clean_only",
-    trials: int = 30,
+    trials: int = 20,
     seed: int = 42,
     n_lags_options: Optional[List[int]] = None,
+    search_folds: int = 10,
     verbose: bool = True,
 ) -> Dict:
     if not n_lags_options:
@@ -192,16 +240,15 @@ def tune_neuralprophet(
     if len(splits) == 0:
         raise RuntimeError("No CV splits available for the given horizon/config.")
 
-    if config.tune_folds is None:
-        fold_range = range(len(splits))
-    else:
-        n = min(config.tune_folds, len(splits))
-        fold_range = range(len(splits) - n, len(splits))
+    n_avail = len(splits)
+    n_search = min(search_folds, n_avail)
+    search_fold_range = range(n_avail - n_search, n_avail)
 
-    if len(fold_range) == 0:
-        raise RuntimeError(
-            f"fold_range is empty — splits={len(splits)}, tune_folds={config.tune_folds}. "
-            "Check config.tune_folds is not 0 and that enough data exists for CV splits."
+    if config.tune_folds is None:
+        validation_fold_range = range(n_avail)
+    else:
+        validation_fold_range = range(
+            n_avail - min(config.tune_folds, n_avail), n_avail
         )
 
     rng = np.random.default_rng(seed)
@@ -209,49 +256,40 @@ def tune_neuralprophet(
     if verbose:
         print("=" * 70)
         print(
-            f"NEURALPROPHET TUNING (random search) | city={city} "
+            f"NEURALPROPHET TUNING | city={city} "
             f"| horizon={config.tune_horizon}h | scenario={scenario}"
         )
         print("=" * 70)
         print(f"Trials: {trials}")
-        print(
-            f"Folds: {len(fold_range)} "
-            f"({'all' if config.tune_folds is None else config.tune_folds})"
-        )
+        print(f"Search folds: {len(search_fold_range)} (last {n_search} of {n_avail})")
+        print(f"Validation folds: {len(validation_fold_range)}")
         print(f"n_lags_options: {n_lags_options}")
-        print(f"Cutoff date (held-out test start): {cutoff_date}")
-        print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
-        print(f"n_train_samples: {config.n_train_samples}")
+        print(f"Cutoff date: {cutoff_date}")
+        print(f"Tune obs: {len(tune_df)}")
         print(f"Covariates ({len(covariate_cols)}): {covariate_cols}")
         print("=" * 70)
 
     best_params: Optional[Dict] = None
     best_mae = float("inf")
     best_rmse = float("inf")
-    n_failed = 0
 
+    # --- SEARCH PHASE ---
     for t in range(1, trials + 1):
         params = sample_params(rng, n_lags_options)
-        maes: List[float] = []
-        rmses: List[float] = []
-        failed = False
+        maes, rmses, failed = [], [], False
 
-        for fold_idx in fold_range:
-            train_df, test_df = splits[fold_idx]
+        for fold_idx in search_fold_range:
+            train_df_, test_df_ = splits[fold_idx]
             try:
                 mae, rmse = evaluate_params_on_fold(
-                    train_df, test_df, config, params, covariate_cols
+                    train_df_, test_df_, config, params, covariate_cols
                 )
                 maes.append(mae)
                 rmses.append(rmse)
             except Exception:
                 failed = True
-                n_failed += 1
-                print(
-                    f"\n[{t:>4}/{trials}] FAILED fold {fold_idx} "
-                    f"(params: n_lags={params['n_lags']} "
-                    f"lr={params['learning_rate']:.5f}):"
-                )
+                print(f"\n[{t:>4}/{trials}] FAILED fold {fold_idx} "
+                      f"(n_lags={params['n_lags']} lr={params['learning_rate']:.5f}):")
                 traceback.print_exc()
                 break
 
@@ -261,11 +299,10 @@ def tune_neuralprophet(
         mae_mean = float(np.mean(maes))
         rmse_mean = float(np.mean(rmses))
 
-        if verbose and (t <= 10 or t % 5 == 0):
-            print(
-                f"[{t:>4}/{trials}] MAE={mae_mean:.2f} RMSE={rmse_mean:.2f} | "
-                f"lr={params['learning_rate']:.5f} n_lags={params['n_lags']}"
-            )
+        if verbose:
+            marker = " *" if mae_mean < best_mae else ""
+            print(f"[{t:>4}/{trials}] MAE={mae_mean:.2f} RMSE={rmse_mean:.2f} | "
+                  f"lr={params['learning_rate']:.5f} n_lags={params['n_lags']}{marker}")
 
         if mae_mean < best_mae:
             best_mae = mae_mean
@@ -277,20 +314,19 @@ def tune_neuralprophet(
 
     if verbose:
         print("\n" + "=" * 70)
-        print("BEST PARAMETERS FOUND")
+        print("BEST PARAMETERS FROM SEARCH")
         print("=" * 70)
-        print(f"Tuning MAE={best_mae:.2f}  RMSE={best_rmse:.2f}")
+        print(f"Search MAE={best_mae:.2f}  RMSE={best_rmse:.2f}")
         print(json.dumps(best_params, indent=2))
-        print(f"\nValidating on {len(fold_range)} folds...")
+        print(f"\nValidating on {len(validation_fold_range)} folds...")
 
-    mae_values: List[float] = []
-    rmse_values: List[float] = []
-
-    for fold_idx in fold_range:
-        train_df, test_df = splits[fold_idx]
+    # --- VALIDATION PHASE ---
+    mae_values, rmse_values = [], []
+    for fold_idx in validation_fold_range:
+        train_df_, test_df_ = splits[fold_idx]
         try:
             mae, rmse = evaluate_params_on_fold(
-                train_df, test_df, config, best_params, covariate_cols
+                train_df_, test_df_, config, best_params, covariate_cols
             )
             mae_values.append(mae)
             rmse_values.append(rmse)
@@ -314,16 +350,15 @@ def tune_neuralprophet(
         "city": city,
         "scenario": scenario,
         "n_train_samples": config.n_train_samples,
-        # top-level n_lags mirrors the XGBoost output convention
         "n_lags": int(best_params["n_lags"]),
-        "neuralprophet_params": {
-            "learning_rate": best_params["learning_rate"],
-        },
+        "neuralprophet_params": {"learning_rate": best_params["learning_rate"]},
         "tuning": {
-            "search_type": "random_search_joint_n_lags",
+            "search_type": "random_search",
             "trials": int(trials),
-            "tune_folds": len(fold_range),
+            "search_folds": len(search_fold_range),
+            "validation_folds": len(validation_fold_range),
             "seed": int(seed),
+            "np_seed": NP_SEED,
             "metric_optimized": "MAE",
             "best_tune_mae_mean": float(best_mae),
             "best_tune_rmse_mean": float(best_rmse),
@@ -375,50 +410,39 @@ def run_city(city: str, args) -> None:
         trials=args.trials,
         seed=args.seed,
         n_lags_options=n_lags_options,
+        search_folds=args.search_folds,
         verbose=True,
     )
     output_file = save_results(params, args.output_dir)
-    print(f"  --> config.neuralprophet_params_file = '{output_file}'")
+    field = (
+        "neuralprophet_noweather_params_file"
+        if args.scenario == "no_weather"
+        else "neuralprophet_params_file"
+    )
+    print(f"  --> config.{field} = '{output_file}'")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Tune NeuralProphet (random search, joint n_lags + architecture)"
-    )
-    parser.add_argument(
-        "--city",
-        type=str,
-        choices=["seoul", "london", "washington"],
-        default=None,
-        help="City to tune (default: all cities)",
-    )
-    parser.add_argument(
-        "--scenario",
-        type=str,
-        choices=["clean_only", "all_weather"],
-        default="clean_only",
-        help="Covariate set (default: clean_only)",
-    )
-    parser.add_argument(
-        "--trials",
-        type=int,
-        default=30,
-        help="Random search trials (default: 30; NeuralProphet is slow)",
-    )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument(
-        "--output-dir", type=str, default="results/tuning", help="Directory to save results"
-    )
-    parser.add_argument(
-        "--n-lags-options",
-        type=str,
-        default="12,24,48,168",
-        help="Comma-separated n_lags candidates (default: 12,24,48,168)",
-    )
+    parser = argparse.ArgumentParser(description="Tune NeuralProphet (random search)")
+    parser.add_argument("--city", type=str,
+                        choices=["seoul", "london", "washington"], default=None,
+                        help="City to tune (default: all cities)")
+    parser.add_argument("--scenario", type=str,
+                        choices=["clean_only", "all_weather", "no_weather"],
+                        default="clean_only",
+                        help="Covariate set (default: clean_only)")
+    parser.add_argument("--trials", type=int, default=20,
+                        help="Random search trials (default: 20)")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Seed for parameter sampling (default: 42)")
+    parser.add_argument("--output-dir", type=str, default="results/tuning")
+    parser.add_argument("--n-lags-options", type=str, default="12,24,48,168",
+                        help="Comma-separated n_lags candidates (default: 12,24,48,168)")
+    parser.add_argument("--search-folds", type=int, default=10,
+                        help="Last N folds used during search (default: 10)")
     args = parser.parse_args()
 
     cities = [args.city] if args.city else ["seoul", "london", "washington"]
-
     for city in cities:
         print("\n" + "=" * 70)
         print(f"TUNING NEURALPROPHET FOR: {city.upper()}")

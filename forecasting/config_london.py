@@ -47,5 +47,6 @@ def get_config() -> ForecastConfig:
     config.xgb_params_file = "results/tuning/xgboost_best_params_london_clean_only_720_20260515_200549.json"
     config.prophet_params_file = "results/tuning/prophet_best_params_london_720_20260516_001526.json"
     config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_london_clean_only_720_20260515_161655.json"
+    config.neuralprophet_noweather_params_file = None  # set after: tune_neuralprophet.py --city london --scenario no_weather
 
     return config

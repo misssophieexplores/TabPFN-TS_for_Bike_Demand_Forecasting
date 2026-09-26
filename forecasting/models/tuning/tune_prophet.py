@@ -1,12 +1,11 @@
 """
 Prophet Hyperparameter Tuning (random search)
 
-Tunes: changepoint_prior_scale, seasonality_prior_scale,
-       holidays_prior_scale, seasonality_mode
+Tunes: changepoint_prior_scale, seasonality_prior_scale, seasonality_mode
 
-Note: holidays_prior_scale only affects inference if country holidays are
-      added to the model (e.g. via model.add_country_holidays). It is included
-      in the search space for completeness and forward-compatibility.
+Seasonality: daily and weekly on, yearly off (the 30-day training window is
+far shorter than one year). holidays_prior_scale is not tuned: the model has
+no holidays, so it has no effect.
 
 Usage:
     # Tune all cities:
@@ -69,9 +68,6 @@ def sample_params(rng: np.random.Generator) -> Dict:
         "seasonality_prior_scale": float(
             np.exp(rng.uniform(np.log(0.01), np.log(10.0)))
         ),
-        "holidays_prior_scale": float(
-            np.exp(rng.uniform(np.log(0.01), np.log(10.0)))
-        ),
         "seasonality_mode": str(rng.choice(["multiplicative", "additive"])),
     }
 
@@ -90,7 +86,7 @@ def evaluate_params_on_fold(
     })
 
     model = Prophet(
-        yearly_seasonality=True,
+        yearly_seasonality=False,
         weekly_seasonality=True,
         daily_seasonality=True,
         **params,

@@ -6,8 +6,11 @@ DatetimeIndex to X_train/X_test from the dataset's date column.
 This ensures Prophet's seasonality decomposition uses correct calendar positions.
 
   ProphetForecaster                 — univariate, no covariates
-  NeuralProphetForecaster           — with weather covariates
+  NeuralProphetForecaster           — with weather covariates (future regressors)
   NeuralProphetForecaster_NoWeather — univariate variant
+
+Yearly seasonality is off by default: the training window (n_train_samples=720,
+30 days) is far shorter than one year. Daily and weekly seasonality stay on.
 """
 
 import contextlib
@@ -115,7 +118,7 @@ class ProphetForecaster(BaseForecaster):
 
     def __init__(
         self,
-        yearly_seasonality: bool = True,
+        yearly_seasonality: bool = False,
         weekly_seasonality: bool = True,
         daily_seasonality: bool = True,
         seasonality_mode: str = "multiplicative",
@@ -190,6 +193,9 @@ class NeuralProphetForecaster(BaseForecaster):
     """
     NeuralProphet forecaster with weather covariates.
 
+    Covariates are future regressors (add_future_regressor): the forecast for
+    each step uses the covariate values of that step, taken from X_future.
+
     The model is built with n_forecasts=horizon, and the horizon is only known
     in predict(). fit() therefore stores the training data; predict(horizon)
     creates and fits the NeuralProphet model.
@@ -203,7 +209,7 @@ class NeuralProphetForecaster(BaseForecaster):
         learning_rate: Optional[float] = None,
         epochs: Optional[int] = None,
         seasonality_mode: str = "multiplicative",
-        yearly_seasonality: bool = True,
+        yearly_seasonality: bool = False,
         weekly_seasonality: bool = True,
         daily_seasonality: bool = True,
     ):
@@ -272,7 +278,7 @@ class NeuralProphetForecaster(BaseForecaster):
         )
 
         for col in covariate_cols:
-            self.model.add_lagged_regressor(col)
+            self.model.add_future_regressor(col)
 
         # PyTorch 2.4+ compat shim for NP's checkpoint loader
         import torch
@@ -285,22 +291,30 @@ class NeuralProphetForecaster(BaseForecaster):
         finally:
             torch.load = _original_load
 
-        # Sync to cols NP actually kept (it silently drops degenerate cols)
-        if self.model.config_lagged_regressors:
-            covariate_cols = [
-                c for c in covariate_cols
-                if c in self.model.config_lagged_regressors
-            ]
-        else:
-            covariate_cols = []
+        # Sync to cols NP actually kept (it drops regressors that are constant
+        # in the training window)
+        kept = self.model.config_regressors.regressors
+        covariate_cols = [c for c in covariate_cols if kept and c in kept]
         self._covariate_cols = covariate_cols
 
         keep_cols = ["ds", "y"] + covariate_cols
         train_df = train_df[keep_cols]
 
+        # Future covariate values for the h forecast steps
+        regressors_df = None
+        if covariate_cols:
+            regressors_df = pd.DataFrame(
+                {col: X_future[col].values[:h] for col in covariate_cols}
+            )
+            if len(regressors_df) != h:
+                raise RuntimeError(
+                    f"X_future has {len(regressors_df)} rows, expected {h}."
+                )
+
         with _silence_all_output():
             future_df = self.model.make_future_dataframe(
                 train_df,
+                regressors_df=regressors_df,
                 periods=h,
                 n_historic_predictions=True,
             )
@@ -311,12 +325,6 @@ class NeuralProphetForecaster(BaseForecaster):
         if n_future != h:
             raise RuntimeError(
                 f"NeuralProphet future frame has {n_future} future rows, expected {h}."
-            )
-
-        # Fill covariates only into the h future rows
-        for col in covariate_cols:
-            future_df.iloc[-h:, future_df.columns.get_loc(col)] = (
-                X_future[col].values[:h]
             )
 
         forecast = _np_predict(self.model, future_df)
@@ -351,7 +359,7 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
         learning_rate: Optional[float] = None,
         epochs: Optional[int] = None,
         seasonality_mode: str = "multiplicative",
-        yearly_seasonality: bool = True,
+        yearly_seasonality: bool = False,
         weekly_seasonality: bool = True,
         daily_seasonality: bool = True,
     ):

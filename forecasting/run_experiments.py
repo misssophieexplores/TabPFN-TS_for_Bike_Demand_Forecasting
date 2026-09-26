@@ -539,6 +539,16 @@ def main():
     np_lags = np_cfg["n_lags"]
     np_params = np_cfg["neuralprophet_params"]
 
+    if config.neuralprophet_noweather_params_file is None:
+        raise ValueError(
+            "config.neuralprophet_noweather_params_file is not set. Run "
+            "tune_neuralprophet.py --scenario no_weather for this city first."
+        )
+    with open(config.neuralprophet_noweather_params_file) as f:
+        np_nw_cfg = json.load(f)
+    np_nw_lags = np_nw_cfg["n_lags"]
+    np_nw_params = np_nw_cfg["neuralprophet_params"]
+
     models = [
         SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
         ARIMAForecaster(order=tuple(arima_cfg["order"])),
@@ -546,7 +556,7 @@ def main():
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
         ProphetForecaster(**prophet_params),
         NeuralProphetForecaster(n_lags=np_lags, **np_params),
-        NeuralProphetForecaster_NoWeather(n_lags=np_lags, **np_params),
+        NeuralProphetForecaster_NoWeather(n_lags=np_nw_lags, **np_nw_params),
         TabPFNPipelineForecaster(),
         TabPFNPipelineForecaster_NoWeather(),
         TimesFMForecaster(),

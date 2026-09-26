@@ -72,6 +72,14 @@ def main(config=None, no_confirm=False):
     with open(config.neuralprophet_params_file) as f:
         np_cfg = json.load(f)
 
+    if config.neuralprophet_noweather_params_file is None:
+        raise ValueError(
+            "config.neuralprophet_noweather_params_file is not set. Run "
+            "tune_neuralprophet.py --scenario no_weather for this city first."
+        )
+    with open(config.neuralprophet_noweather_params_file) as f:
+        np_nw_cfg = json.load(f)
+
     # Intercept/trend exactly as selected during tuning.
     # A KeyError here means the params file predates this fix: re-run tuning.
     arima_order = tuple(arima_cfg["order"])
@@ -89,7 +97,7 @@ def main(config=None, no_confirm=False):
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
         ProphetForecaster(**prophet_cfg["prophet_params"]),
         NeuralProphetForecaster(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
-        NeuralProphetForecaster_NoWeather(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
+        NeuralProphetForecaster_NoWeather(n_lags=np_nw_cfg["n_lags"], **np_nw_cfg["neuralprophet_params"]),
         TabPFNPipelineForecaster(),
         TabPFNPipelineForecaster_NoWeather(),
         TimesFMForecaster(),

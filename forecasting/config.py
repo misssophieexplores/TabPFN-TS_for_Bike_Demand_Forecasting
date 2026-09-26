@@ -36,6 +36,7 @@ class ForecastConfig:
     xgb_params_file: Optional[str] = None
     prophet_params_file: Optional[str] = None
     neuralprophet_params_file: Optional[str] = None
+    neuralprophet_noweather_params_file: Optional[str] = None
 
     # # --- Forecasting (shared) --- 
     horizons: List[int] = field(default_factory=lambda: [6, 24, 48, 168])
