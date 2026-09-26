@@ -99,6 +99,7 @@ def tune_arima(
         )
 
     order = model.order
+    with_intercept = bool(model.with_intercept)
     aic = model.aic()
     bic = model.bic()
 
@@ -133,6 +134,7 @@ def tune_arima(
                 start_p=order[0], start_q=order[2],
                 max_p=order[0], max_q=order[2],
                 d=order[1],
+                with_intercept=with_intercept,
                 seasonal=False,
                 suppress_warnings=True,
                 error_action='ignore'
@@ -164,6 +166,7 @@ def tune_arima(
         'scenario': scenario,
         'n_train_samples': config.n_train_samples,
         'order': order,
+        'with_intercept': with_intercept,
         'aic': float(aic),
         'bic': float(bic),
         'mae_mean': float(mae_mean),

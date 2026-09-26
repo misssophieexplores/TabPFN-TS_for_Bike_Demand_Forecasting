@@ -94,7 +94,7 @@ def tune_sarimax(
         warnings.filterwarnings('ignore')
         model = auto_arima(
             y_train,
-            exogenous=X_train,
+            X=X_train,
             seasonal=seasonal,
             m=m,
             stepwise=True,
@@ -110,6 +110,7 @@ def tune_sarimax(
 
     order = model.order
     seasonal_order = model.seasonal_order
+    with_intercept = bool(model.with_intercept)
     aic = model.aic()
     bic = model.bic()
 
@@ -144,16 +145,17 @@ def tune_sarimax(
         try:
             model_fold = auto_arima(
                 y_train_fold,
-                exogenous=X_train_fold,
+                X=X_train_fold,
                 start_p=order[0], start_q=order[2], start_P=seasonal_order[0], start_Q=seasonal_order[2],
                 max_p=order[0], max_q=order[2], max_P=seasonal_order[0], max_Q=seasonal_order[2],
                 d=order[1], D=seasonal_order[1],
+                with_intercept=with_intercept,
                 seasonal=seasonal,
                 m=m,
                 suppress_warnings=True,
                 error_action='ignore'
             )
-            y_pred = model_fold.predict(n_periods=config.tune_horizon, exogenous=X_test_fold)
+            y_pred = model_fold.predict(n_periods=config.tune_horizon, X=X_test_fold)
             metrics = calc.calculate_all(y_test_fold, y_pred, y_train_fold)
             mae_values.append(metrics['MAE'])
             rmse_values.append(metrics['RMSE'])
@@ -180,6 +182,7 @@ def tune_sarimax(
         'n_train_samples': config.n_train_samples,
         'order': order,
         'seasonal_order': seasonal_order,
+        'with_intercept': with_intercept,
         'aic': float(aic),
         'bic': float(bic),
         'mae_mean': float(mae_mean),

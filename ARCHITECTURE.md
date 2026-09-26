@@ -12,7 +12,7 @@ forecasting/
 ├── features.py              # Calendar time feature engineering (used by XGBoost)
 ├── models/
 │   ├── base.py              # BaseForecaster abstract class
-│   ├── statistical.py       # Seasonal Naive, ARIMA, SARIMAX
+│   ├── statistical.py       # Seasonal Naive, ARIMA, SARIMAX, trend_from_intercept()
 │   ├── ml_models.py         # XGBoost with lag features
 │   ├── tabpfn_pipeline_model.py  # TabPFN pipeline models
 │   ├── prophet_models.py    # Prophet, NeuralProphet, NeuralProphet_NoWeather
@@ -97,7 +97,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - `season_col`: Optional column name for season (normalized to 0–3 int via `season_mapping`, appended to `weather_covariates` at load time)
 - `season_mapping`: Explicit per-dataset dict mapping raw season values to 0–3 integers (handles strings, 0-based, and 1-based encodings)
 - `verbose`: If `True`, prints detailed progress (CV info, data loading, W&B URLs). Default `False` in `config.py` (cluster/server runs where stdout is captured in SLURM logs).
-- Params files: each city config points to the tuned-parameter JSON files in `results/tuning/` (all tuned with `n_train_samples=720`).
+- Params files: each city config points to the tuned-parameter JSON files in `results/tuning/` (all tuned with `n_train_samples=720`). ARIMA and SARIMAX params files must contain `with_intercept`, i.e. they must come from the current tuning scripts; older files are rejected by `run_weather_baseline.py`.
 
 ### Weather Degradation (`weather/`)
 **WeatherProcessor**: Orchestrates weather data preparation for scenarios
@@ -144,8 +144,8 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 
 **Implemented models:**
 - SeasonalNaiveForecaster: Repeats last seasonal period
-- ARIMAForecaster: Tuned parameters via auto_arima (e.g., (2,1,2))
-- SARIMAXForecaster: Tuned parameters via auto_arima (e.g., (4,0,0)×(1,0,1,24))
+- ARIMAForecaster: Tuned order via auto_arima (e.g., (2,1,2)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
+- SARIMAXForecaster: Tuned orders via auto_arima (e.g., (4,0,0)×(1,0,1,24)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
 - XGBoostForecaster: Uses lagged features (n_lags=24) + weather covariates (including holiday and season via `weather_covariates`) + calendar time features (hour, dayofweek, month, is_weekend). `use_time_features=True` — pipeline appends calendar features automatically at fold time. **Note: XGBoost must be re-tuned whenever `weather_covariates` changes (e.g. after adding holiday/season).**
 - TabPFNPipelineForecaster: Uses TabPFNv2 with calendar + auto seasonal features + weather covariates
 - TabPFNPipelineForecaster_NoWeather: TabPFNv2 with calendar + auto seasonal features only (univariate)
@@ -154,7 +154,17 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - NeuralProphetForecaster: NeuralProphet with weather covariates (`use_covariates=True`). Every covariate column is added as a **lagged regressor** (`add_lagged_regressor`); columns that NeuralProphet silently drops (e.g. all-constant) are removed from the covariate list after fitting. Default `n_lags=24`, `seasonality_mode="multiplicative"`, all seasonalities on, `epochs=None` (NeuralProphet picks based on data size).
 - NeuralProphetForecaster_NoWeather: Same as above, univariate (no covariates).
 
-**Model list used for paper results** (`run_weather_baseline.py`, same list in `run_experiments.main()`): Seasonal Naive (`seasonal_period`), ARIMA and SARIMAX (orders from their params files), XGBoost (`n_lags` + `xgb_params`), Prophet (`prophet_params`), NeuralProphet and NeuralProphet_NoWeather (both with `n_lags` + `neuralprophet_params` from the same NeuralProphet params file, i.e. the NoWeather variant uses parameters tuned with covariates), TabPFN and TabPFN_NoWeather, TimesFM and TimesFM_NoWeather (default arguments).
+**Model list used for paper results** (`run_weather_baseline.py`, same list in `run_experiments.main()`): Seasonal Naive (`seasonal_period`), ARIMA and SARIMAX (orders and `with_intercept` from their params files, translated to a statsmodels `trend`), XGBoost (`n_lags` + `xgb_params`), Prophet (`prophet_params`), NeuralProphet and NeuralProphet_NoWeather (both with `n_lags` + `neuralprophet_params` from the same NeuralProphet params file, i.e. the NoWeather variant uses parameters tuned with covariates), TabPFN and TabPFN_NoWeather, TimesFM and TimesFM_NoWeather (default arguments).
+
+**ARIMA / SARIMAX specifics (`statistical.py`):**
+- Tuning uses pmdarima, the experiments use statsmodels (`ARIMA`, `SARIMAX`). The two handle the constant differently: pmdarima's `with_intercept` is chosen during the search, statsmodels `SARIMAX` adds no constant unless `trend` is set, and statsmodels `ARIMA` adds one by default only when d = 0.
+- Both forecasters therefore take a `trend` argument, and `trend_from_intercept(with_intercept, order, seasonal_order)` maps the tuned intercept to it:
+  - no intercept → `"n"` (passed explicitly, so ARIMA does not add its default constant)
+  - intercept, d + D = 0 → `"c"` (constant)
+  - intercept, d + D = 1 → `"t"` (drift; a constant in the differenced series)
+  - intercept, d + D ≥ 2 → `ValueError`
+- ARIMAForecaster: `ARIMA(y, order, trend)` on the raw array, default `fit()`; no covariates.
+- SARIMAXForecaster: `SARIMAX(y, exog, order, seasonal_order, trend, enforce_stationarity=False, enforce_invertibility=False)`, fitted with `method='lbfgs'`, `maxiter=200`; a warning is raised if the optimizer does not converge. `y` and `X` get a synthetic hourly `DatetimeIndex` starting 2020-01-01 (fit and predict) to silence statsmodels index warnings; the real timestamps are not used.
 
 **Prophet / NeuralProphet specifics (`prophet_models.py`):**
 - All three set `needs_datetime = True`, so `run_experiments.py` attaches a real `DatetimeIndex` (from `config.date_col`) to `X_train`/`X_test`. `fit()`/`predict()` raise `ValueError` without it. This keeps seasonality aligned to real calendar positions.
@@ -194,8 +204,9 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 **ARIMA/SARIMAX approach** (using pmdarima `auto_arima`):
 - Stepwise search minimizing AIC, run once on the **first** CV split (`splits[0]`) of the pre-cutoff data
 - ARIMA: non-seasonal, `max_p=7`, `max_q=3`, `max_order=8`, no covariates
-- SARIMAX: seasonal with `m = --seasonal-period` (default 24), `max_p=5`, `max_q=3`, `max_P=2`, `max_Q=2`, `max_order=8`; covariates chosen by `--scenario` (`clean_only` default: keys of `weather_degradation_mapping` + holiday + season; `all_weather`: all of `config.weather_covariates`), passed as `exogenous=`
-- Validation: on each of the last `tune_folds` folds, the found order is refit and scored on `tune_horizon` steps; failed folds are skipped
+- SARIMAX: seasonal with `m = --seasonal-period` (default 24), `max_p=5`, `max_q=3`, `max_P=2`, `max_Q=2`, `max_order=8`; covariates chosen by `--scenario` (`clean_only` default: keys of `weather_degradation_mapping` + holiday + season; `all_weather`: all of `config.weather_covariates`), passed as `X=` (in search, fold fits and `predict`)
+- Intercept: `with_intercept` is left at pmdarima's default (`'auto'`) during the search; the selected value is saved to the JSON and fixed for the validation folds
+- Validation: on each of the last `tune_folds` folds, the found order and intercept are refit with pmdarima and scored on `tune_horizon` steps; failed folds are skipped (SARIMAX prints the traceback, ARIMA a short `FAILED` line)
 - `--scenario` is also accepted by `tune_arima.py` and ends up in the file name, although ARIMA uses no covariates
 
 **ARIMA/SARIMAX Parameters:**
@@ -203,6 +214,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - **d/D**: Differencing order (trend removal)
 - **q/Q**: Moving average order (error correction)
 - **s**: Seasonal period (24 for hourly data)
+- **with_intercept**: Whether the model includes a constant (drift if differenced)
 
 **XGBoost approach**:
 - Wide random search optimizing MAE
@@ -262,6 +274,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   "n_train_samples": int,
   "order": [p, d, q],
   "seasonal_order": [P, D, Q, s],
+  "with_intercept": bool,
   "aic": float,
   "bic": float,
   "mae_mean": float,
@@ -273,7 +286,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   "m": int
 }
 ```
-`seasonal_order`, `covariates_used` and `m` are SARIMAX only.
+`seasonal_order`, `covariates_used` and `m` are SARIMAX only. `with_intercept` is required by `run_weather_baseline.py`.
 
 **Output format (XGBoost):**
 ```json
@@ -405,6 +418,7 @@ Runs all datasets sequentially without manual intervention.
 - Runs clean_only and degraded scenarios for all models (`all_weather` is commented out)
 - All horizons: [6, 24, 48, 168] hours, 35 folds
 - Loads tuned hyperparameters from the JSON files named in the city config (ARIMA, SARIMAX, XGBoost, Prophet, NeuralProphet)
+- ARIMA/SARIMAX: `trend` is derived from `with_intercept` and the orders via `trend_from_intercept()`; a params file without `with_intercept` raises `KeyError` (re-run tuning)
 - Auto-skips degraded scenario for models without covariates
 - Displays degradation impact summary (gated behind `config.verbose`)
 - Uses ForecastingExperiment class for W&B logging, checkpointing, and result saving
@@ -425,6 +439,14 @@ Rationale:
 - In neuralprophet 0.8.0 (`data/split.py`, `_make_future_dataframe`), when `n_lags > 0` the `periods` argument of `make_future_dataframe` is overwritten with `n_forecasts`. With `n_forecasts=1`, only one future row was created, so scoring the last `horizon` rows mixed 1 real forecast with `horizon - 1` in-sample fitted values, and the covariate fill overwrote training-row covariates with test-period values.
 - With `n_forecasts = horizon`, the future frame has exactly `horizon` rows; a row-count check raises an error if this assumption ever breaks (e.g. after a NeuralProphet upgrade).
 - Results produced before this fix are invalid and need to be re-run.
+
+### ARIMA/SARIMAX Intercept Consistency
+The intercept selected by pmdarima during tuning is saved (`with_intercept`) and reproduced in statsmodels via `trend`.
+
+Rationale:
+- Previously the flag was not saved and `SARIMAXForecaster` passed no `trend`, so a SARIMAX tuned with an intercept was evaluated without one; statsmodels `ARIMA` added a constant only when d = 0, regardless of the tuning result.
+- `tune_sarimax.py` previously passed covariates as `exogenous=`, which recent pmdarima versions do not accept as the covariate argument; it now uses `X=`.
+- ARIMA/SARIMAX params files and results produced before this fix are invalid and need to be re-run.
 
 ### On-the-Fly Degradation
 Degradation applied fresh for each CV fold during data preparation, not pre-computed.
@@ -538,3 +560,4 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 4. NeuralProphet hyperparameters are tuned at `config.tune_horizon` only and reused for all evaluation horizons
 5. NeuralProphet_NoWeather reuses the NeuralProphet parameters tuned with covariates
 6. ARIMA/SARIMAX orders are searched on the first CV split only
+7. ARIMA/SARIMAX tuning-time validation metrics (`mae_mean` etc. in the params files) come from pmdarima fits, not from `ARIMAForecaster`/`SARIMAXForecaster` (e.g. pmdarima enforces stationarity/invertibility, `SARIMAXForecaster` does not), so they are not directly comparable to experiment results

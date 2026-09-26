@@ -22,7 +22,7 @@ import json
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import ForecastConfig
-from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster
+from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster, trend_from_intercept
 from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
 from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
@@ -72,11 +72,20 @@ def main(config=None, no_confirm=False):
     with open(config.neuralprophet_params_file) as f:
         np_cfg = json.load(f)
 
+    # Intercept/trend exactly as selected during tuning.
+    # A KeyError here means the params file predates this fix: re-run tuning.
+    arima_order = tuple(arima_cfg["order"])
+    arima_trend = trend_from_intercept(arima_cfg["with_intercept"], arima_order)
+
+    sarimax_order = tuple(sarimax_cfg["order"])
+    sarimax_seasonal_order = tuple(sarimax_cfg["seasonal_order"])
+    sarimax_trend = trend_from_intercept(sarimax_cfg["with_intercept"], sarimax_order, sarimax_seasonal_order)
+
     # All models
     all_models = [
         SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
-        ARIMAForecaster(order=tuple(arima_cfg["order"])),
-        SARIMAXForecaster(order=tuple(sarimax_cfg["order"]), seasonal_order=tuple(sarimax_cfg["seasonal_order"])),
+        ARIMAForecaster(order=arima_order, trend=arima_trend),
+        SARIMAXForecaster(order=sarimax_order, seasonal_order=sarimax_seasonal_order, trend=sarimax_trend),
         XGBoostForecaster(n_lags=n_lags, **xgb_params),
         ProphetForecaster(**prophet_cfg["prophet_params"]),
         NeuralProphetForecaster(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),

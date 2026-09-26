@@ -9,6 +9,30 @@ from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from models.base import BaseForecaster
 
+
+def trend_from_intercept(with_intercept: bool, order: tuple, seasonal_order: tuple = (0, 0, 0, 0)) -> str:
+    """
+    Translate pmdarima's `with_intercept` into the equivalent statsmodels `trend`.
+
+    pmdarima's intercept is a constant in the (seasonally) differenced series:
+    - no differencing (d + D == 0): a plain constant  -> trend="c"
+    - one difference  (d + D == 1): a drift            -> trend="t"
+    Without an intercept, "n" is passed explicitly, because statsmodels ARIMA
+    otherwise adds a constant by default when d == 0.
+    """
+    if not with_intercept:
+        return "n"
+    n_diff = order[1] + seasonal_order[1]
+    if n_diff == 0:
+        return "c"
+    if n_diff == 1:
+        return "t"
+    raise ValueError(
+        f"with_intercept=True with d + D = {n_diff} has no supported statsmodels equivalent "
+        f"(order={order}, seasonal_order={seasonal_order})"
+    )
+
+
 class SeasonalNaiveForecaster(BaseForecaster):
     """
     Seasonal naive baseline.
@@ -55,7 +79,7 @@ class ARIMAForecaster(BaseForecaster):
     Does not use covariates.
     """
     
-    def __init__(self, order: tuple = (2, 1, 2), freq: str = 'h'):
+    def __init__(self, order: tuple = (2, 1, 2), freq: str = 'h', trend: Optional[str] = None):
         """
         Initialize ARIMA forecaster.
         
@@ -68,16 +92,20 @@ class ARIMAForecaster(BaseForecaster):
             - q: number of MA terms
         freq : str
             Pandas frequency string (e.g., 'h' for hourly, 'D' for daily)
+        trend : str, optional
+            statsmodels trend ("n", "c", "t"). None keeps the statsmodels default.
+            Use trend_from_intercept() to match a pmdarima-tuned model.
         """
         super().__init__("ARIMA", use_covariates=False)
         self.order = order
         self.freq = freq
+        self.trend = trend
         self.model = None
         self.model_fit = None
         
     def fit(self, y_train: np.ndarray, X_train: Optional[pd.DataFrame] = None) -> None:
         """Fit ARIMA model"""
-        self.model = ARIMA(y_train, order=self.order)
+        self.model = ARIMA(y_train, order=self.order, trend=self.trend)
         self.model_fit = self.model.fit()
         self._is_fitted = True
         
@@ -110,7 +138,8 @@ class SARIMAXForecaster(BaseForecaster):
         self, 
         order: tuple = (4, 0, 0), 
         seasonal_order: tuple = (1, 0, 1, 24),
-        freq: str = 'h'
+        freq: str = 'h',
+        trend: Optional[str] = None
     ):
         """
         Initialize SARIMAX forecaster.
@@ -127,11 +156,15 @@ class SARIMAXForecaster(BaseForecaster):
             - s: seasonal period (24 for hourly data)
         freq : str
             Pandas frequency string (e.g., 'h' for hourly, 'D' for daily)
+        trend : str, optional
+            statsmodels trend ("n", "c", "t"). None means no trend term.
+            Use trend_from_intercept() to match a pmdarima-tuned model.
         """
         super().__init__("SARIMAX", use_covariates=True)
         self.order = order
         self.seasonal_order = seasonal_order
         self.freq = freq
+        self.trend = trend
         self.model = None
         self.model_fit = None
         
@@ -162,6 +195,7 @@ class SARIMAXForecaster(BaseForecaster):
             exog=X_train,
             order=self.order,
             seasonal_order=self.seasonal_order,
+            trend=self.trend,
             enforce_stationarity=False,
             enforce_invertibility=False
         )
