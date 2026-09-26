@@ -275,6 +275,7 @@ class NeuralProphetForecaster(BaseForecaster):
             daily_seasonality=self.daily_seasonality,
             epochs=self.epochs,
             drop_missing=True,
+            trainer_config={"enable_model_summary": False},
         )
 
         for col in covariate_cols:
@@ -413,6 +414,7 @@ class NeuralProphetForecaster_NoWeather(BaseForecaster):
             daily_seasonality=self.daily_seasonality,
             epochs=self.epochs,
             drop_missing=True,
+            trainer_config={"enable_model_summary": False},
         )
 
         import torch
