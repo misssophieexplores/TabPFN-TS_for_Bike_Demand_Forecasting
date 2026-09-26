@@ -17,3 +17,4 @@ checkpoint_washington_t*
 *.sh
 
 /.timesfm_venv
+/results/tuning/2026-09-26

@@ -14,12 +14,15 @@ DatetimeIndex to X_train/X_test from the dataset's date column.
 """
 
 import os
-# #TODO: comment out before running on GPU
-os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES'
+os.environ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY'] = 'YES' # #TODO: comment out before running on GPU
 os.environ['TABPFN_ALLOW_CPU_LARGE_DATASET'] = '1'
 
 import torch
-torch.set_num_threads(1)
+torch.set_num_threads(1) # TODO: comment out before running on GPU
+
+from tqdm import tqdm
+from functools import partialmethod
+tqdm.__init__ = partialmethod(tqdm.__init__, disable=True)
 
 import numpy as np
 import pandas as pd
@@ -40,7 +43,7 @@ class TabPFNPipelineForecaster(BaseForecaster):
     needs_datetime = True
 
     def __init__(self, tabpfn_mode: TabPFNMode = TabPFNMode.LOCAL):
-        super().__init__("TabPFN", use_covariates=True)
+        super().__init__("TabPFN-TS-3", use_covariates=True)
         self.tabpfn_mode = tabpfn_mode
         self.pipeline = None
         self.context_df = None
@@ -79,7 +82,7 @@ class TabPFNPipelineForecaster(BaseForecaster):
         self.context_df = context_df
         self.last_timestamp = X_train.index[-1]
         self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode,
-        tabpfn_model_config={"model_path": "tabpfn-v2-regressor-2noar4o2.ckpt"},
+        # tabpfn_model_config={"model_path": "tabpfn-v2-regressor-2noar4o2.ckpt"},
         )
         self._is_fitted = True
 
@@ -132,7 +135,7 @@ class TabPFNPipelineForecaster_NoWeather(BaseForecaster):
     needs_datetime = True
 
     def __init__(self, tabpfn_mode: TabPFNMode = TabPFNMode.LOCAL):
-        super().__init__("TabPFN_NoWeather", use_covariates=False)
+        super().__init__("TabPFN-TS-3_NoWeather", use_covariates=False)
         self.tabpfn_mode = tabpfn_mode
         self.pipeline = None
         self.context_df = None
@@ -163,7 +166,7 @@ class TabPFNPipelineForecaster_NoWeather(BaseForecaster):
 
         self.last_timestamp = X_train.index[-1]
         self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode,
-        tabpfn_model_config={"model_path": "tabpfn-v2-regressor-2noar4o2.ckpt"},
+        # tabpfn_model_config={"model_path": "tabpfn-v2-regressor-2noar4o2.ckpt"},
         )
         self._is_fitted = True
 

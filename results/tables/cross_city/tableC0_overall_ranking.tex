@@ -1,21 +1,21 @@
 \begin{table}[ht!]
 \centering
-\caption{Overall cross-city model ranking by mean MASE (clean weather, averaged over all cities and forecast horizons). Delta columns show differences relative to the best-ranked model.}
+\caption{Overall cross-city model ranking by mean MASE (clean weather, averaged over all cities and forecast horizons). Delta column shows MASE difference relative to the best-ranked model. Skill \% is the geometric-mean skill score vs.\ Seasonal Naive.}
 \label{tab:cross_city_overall_ranking}
-{\small\setlength{\tabcolsep}{3pt}\scriptsize
-\begin{tabular}{clrlrlrlrl}
+{\small\setlength{\tabcolsep}{4pt}\scriptsize
+\begin{tabular}{clrrrrrr}
 \toprule
-Rank & Model & MASE & ~~\(\Delta\) & MAE & ~~\(\Delta\) & RMSE & ~~\(\Delta\) & sMAPE & ~~\(\Delta\) \\
+Rank & Model & MAE & RMSE & sMAPE & MASE & MASE \(\Delta\) & MASE Skill \% \\
 \midrule
-1 & TabPFN & 0.622 &  & 153.1 &  & 225.9 &  & 25.94 &  \\
-2 & XGBoost & 0.717 & +0.095 & 176.6 & +23.565 & 253.8 & +27.856 & 28.78 & +2.832 \\
-3 & TabPFN_NoWeather & 0.771 & +0.149 & 195.5 & +42.431 & 281.3 & +55.328 & 29.85 & +3.907 \\
-4 & Seasonal_Naive & 1.106 & +0.484 & 276.8 & +123.713 & 401.7 & +175.803 & 42.75 & +16.810 \\
-5 & Prophet & 1.295 & +0.673 & 331.0 & +177.956 & 429.9 & +203.954 & 57.69 & +31.747 \\
-6 & SARIMAX & 1.431 & +0.809 & 384.2 & +231.129 & 483.1 & +257.188 & 60.02 & +34.072 \\
-7 & NeuralProphet_NoWeather & 1.871 & +1.249 & 475.4 & +322.316 & 617.0 & +391.053 & 72.38 & +46.435 \\
-8 & NeuralProphet & 1.880 & +1.258 & 471.7 & +318.606 & 610.5 & +384.528 & 73.48 & +47.538 \\
-9 & ARIMA & 2.114 & +1.492 & 563.7 & +410.597 & 719.9 & +493.947 & 77.57 & +51.622 \\
+1 & TabPFN & 153 & 226 & 25.9 & 0.622 & --- & +44.2 \\
+2 & XGBoost & 177 & 254 & 28.8 & 0.717 & +0.096 & +36.2 \\
+3 & TabPFN_NoWeather & 195 & 281 & 29.9 & 0.771 & +0.149 & +31.8 \\
+4 & Seasonal_Naive & 277 & 402 & 42.8 & 1.106 & +0.484 & +0.0 \\
+5 & Prophet & 331 & 430 & 57.7 & 1.295 & +0.674 & -17.3 \\
+6 & SARIMAX & 384 & 483 & 60.0 & 1.431 & +0.810 & -23.7 \\
+7 & NeuralProphet_NoWeather & 475 & 617 & 72.4 & 1.871 & +1.249 & -62.1 \\
+8 & NeuralProphet & 472 & 610 & 73.5 & 1.880 & +1.258 & -64.1 \\
+9 & ARIMA & 564 & 720 & 77.6 & 2.114 & +1.492 & -88.1 \\
 \bottomrule
 \end{tabular}
 }
