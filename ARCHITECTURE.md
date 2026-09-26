@@ -22,8 +22,7 @@ forecasting/
 │       ├── tune_sarimax.py          # Auto-SARIMAX tuning (pmdarima)
 │       ├── tune_xgboost.py          # XGBoost random search
 │       ├── tune_prophet.py          # Prophet random search
-│       ├── tune_neuralprophet.py    # NeuralProphet random search (full)
-│       └── tune_neuralprophet_fast.py  # NeuralProphet random search (speed-optimized for cluster limits)
+│       └── tune_neuralprophet.py    # NeuralProphet random search (with or without covariates)
 ├── weather/
 │   ├── weather_degradation.py      # NWP forecast error simulation
 │   └── weather_processor.py        # Scenario orchestration
@@ -153,11 +152,11 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - TabPFNPipelineForecaster: Uses TabPFNv2 with calendar + auto seasonal features + weather covariates
 - TabPFNPipelineForecaster_NoWeather: TabPFNv2 with calendar + auto seasonal features only (univariate)
 - TimesFMForecaster / TimesFMForecaster_NoWeather (`timesfm_model.py`): TimesFM, with and without weather covariates — TODO: document
-- ProphetForecaster: Univariate Prophet (`use_covariates=False`). Daily, weekly and yearly seasonality on; defaults `seasonality_mode="multiplicative"`, `changepoint_prior_scale=0.05`, `seasonality_prior_scale=10.0`, `holidays_prior_scale=10.0`. Forecast timestamps come from `X_future.index` when available, otherwise an hourly range starting one hour after the last training timestamp.
-- NeuralProphetForecaster: NeuralProphet with weather covariates (`use_covariates=True`). Every covariate column is added as a **lagged regressor** (`add_lagged_regressor`); columns that NeuralProphet silently drops (e.g. all-constant) are removed from the covariate list after fitting. Default `n_lags=24`, `seasonality_mode="multiplicative"`, all seasonalities on, `epochs=None` (NeuralProphet picks based on data size).
+- ProphetForecaster: Univariate Prophet (`use_covariates=False`). Daily and weekly seasonality on, yearly off (see Key Design Decisions); defaults `seasonality_mode="multiplicative"`, `changepoint_prior_scale=0.05`, `seasonality_prior_scale=10.0`, `holidays_prior_scale=10.0`. Forecast timestamps come from `X_future.index` when available, otherwise an hourly range starting one hour after the last training timestamp.
+- NeuralProphetForecaster: NeuralProphet with weather covariates (`use_covariates=True`). Every covariate column is added as a **future regressor** (`add_future_regressor`): the forecast for each step uses the covariate values of that step (from `X_future`), so degraded test weather affects the forecast. Columns that NeuralProphet drops (constant in the training window) are removed from the covariate list after fitting. Default `n_lags=24` (autoregression on past demand), `seasonality_mode="multiplicative"`, daily and weekly seasonality on, yearly off, `epochs=None` (NeuralProphet picks based on data size).
 - NeuralProphetForecaster_NoWeather: Same as above, univariate (no covariates).
 
-**Model list used for paper results** (`run_weather_baseline.py`; `run_experiments.main()` builds the same list): Seasonal Naive (`seasonal_period`), ARIMA and SARIMAX (orders and `with_intercept` from their params files, translated to a statsmodels `trend`), XGBoost (`n_lags` + `xgb_params`), Prophet (`prophet_params`), NeuralProphet (`n_lags` + `neuralprophet_params` from `neuralprophet_params_file`), NeuralProphet_NoWeather (same keys from its own `neuralprophet_noweather_params_file`), TabPFN and TabPFN_NoWeather, TimesFM and TimesFM_NoWeather (default arguments).
+**Model list used for paper results** (`run_weather_baseline.py`; `run_experiments.main()` builds the same list): Seasonal Naive (`seasonal_period`), ARIMA and SARIMAX (orders and `with_intercept` from their params files, translated to a statsmodels `trend`), XGBoost (`n_lags` + `xgb_params`), Prophet (`prophet_params`), NeuralProphet (`n_lags` + `neuralprophet_params` from `neuralprophet_params_file`), NeuralProphet_NoWeather (same keys from its own `neuralprophet_noweather_params_file`, tuned without covariates), TabPFN and TabPFN_NoWeather, TimesFM and TimesFM_NoWeather (default arguments).
 
 **ARIMA / SARIMAX specifics (`statistical.py`):**
 - Tuning uses pmdarima, the experiments use statsmodels (`ARIMA`, `SARIMAX`). The two handle the constant differently: pmdarima's `with_intercept` is chosen during the search, statsmodels `SARIMAX` adds no constant unless `trend` is set, and statsmodels `ARIMA` adds one by default only when d = 0.
@@ -174,7 +173,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - All three set `needs_datetime = True`, so `run_experiments.py` attaches a real `DatetimeIndex` (from `config.date_col`) to `X_train`/`X_test`. `fit()`/`predict()` raise `ValueError` without it. This keeps seasonality aligned to real calendar positions.
 - **NeuralProphet trains in `predict()`, not `fit()`.** The model uses direct multi-step forecasting with `n_forecasts = horizon`, and the horizon is only known in `predict(horizon, X_future)`. `fit()` therefore only stores the training frame; `predict()` creates, fits and runs the model. Each `predict()` call retrains.
 - Forecast extraction: the last `h` rows of the forecast frame are the future steps; step *i* (1-based) is read from column `yhat{i}` in row `-(h - i + 1)`.
-- Covariates from `X_future` are written only into the `h` future rows. `predict()` raises `RuntimeError` if the future frame does not contain exactly `h` rows after the last training timestamp.
+- Future covariate values for the `h` steps are passed to `make_future_dataframe(..., regressors_df=...)`, built from the first `h` rows of `X_future`. `predict()` raises `RuntimeError` if `X_future` has fewer than `h` rows or if the future frame does not contain exactly `h` rows after the last training timestamp.
 - Reproducibility: `neuralprophet.set_random_seed(42)` is called immediately before every NeuralProphet model is created.
 - Output silencing: NeuralProphet / PyTorch Lightning / cmdstanpy logging is suppressed, and the progress bar is disabled via `fit(..., progress="none")` (with fallbacks for other NeuralProphet versions). Do **not** pass `trainer_config={"enable_progress_bar": False}` — it conflicts with NeuralProphet's own progress-bar callback.
 - PyTorch 2.4+ compatibility: `torch.load` is temporarily patched to `weights_only=False` during NeuralProphet fitting (NeuralProphet's checkpoint loader otherwise fails).
@@ -190,9 +189,8 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - `tune_arima.py`: Non-seasonal ARIMA (p,d,q)
 - `tune_sarimax.py`: Seasonal ARIMA with exogenous variables (p,d,q)×(P,D,Q,s)
 - `tune_xgboost.py`: XGBoost with lag features (n_lags + XGBoost hyperparameters)
-- `tune_prophet.py`: Prophet (changepoint / seasonality / holidays prior scales + seasonality mode)
-- `tune_neuralprophet.py`: NeuralProphet (learning_rate + n_lags), full search
-- `tune_neuralprophet_fast.py`: NeuralProphet, speed-optimized variant of the above
+- `tune_prophet.py`: Prophet (changepoint / seasonality prior scales + seasonality mode)
+- `tune_neuralprophet.py`: NeuralProphet (learning_rate + n_lags), with covariates or without (`--scenario no_weather`)
 
 **Common to the ARIMA, SARIMAX, Prophet and NeuralProphet tuning scripts:**
 - Tune only on data up to `TimeSeriesCV.get_cutoff_date()` — the held-out test period is never touched
@@ -240,34 +238,29 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 
 **Prophet approach** (`tune_prophet.py`):
 - Random search, default 50 trials (`--trials`)
-- Daily, weekly and yearly seasonality always on
+- Daily and weekly seasonality on, yearly off (same as `ProphetForecaster`)
 - Validation re-uses the same `tune_folds` folds as the search
 
 **Prophet Parameters:**
 - **changepoint_prior_scale**: log-uniform in [0.001, 0.5] — trend flexibility
 - **seasonality_prior_scale**: log-uniform in [0.01, 10] — seasonality strength
-- **holidays_prior_scale**: log-uniform in [0.01, 10] — only has an effect if holidays are added to the model (currently not); kept for forward-compatibility
 - **seasonality_mode**: `multiplicative` or `additive`
+- `holidays_prior_scale` is not tuned: the model has no holidays, so it has no effect (`ProphetForecaster` keeps its default of 10.0)
 
 **NeuralProphet approach** (`tune_neuralprophet.py`):
-- Random search, default 30 trials (NeuralProphet is slow)
-- Jointly tunes `learning_rate` and `n_lags`; `n_lags` options default to [12, 24, 48, 168] (`--n-lags-options`)
-- Model: `n_forecasts = config.tune_horizon` (direct multi-step, same as the forecaster), multiplicative seasonality, all seasonalities on, `epochs=None`
-- Covariates chosen by `--scenario`, added as lagged regressors:
-  - `clean_only` (default): keys of `weather_degradation_mapping` + holiday + season
+- Model set up exactly as in evaluation: `n_forecasts = config.tune_horizon` (direct multi-step), covariates as future regressors, multiplicative seasonality, daily and weekly on, yearly off, `epochs=None`, `neuralprophet.set_random_seed(42)` before every model is created
+- Random search, default 20 trials (`--trials`); jointly tunes `learning_rate` and `n_lags`
+- `n_lags` options default to [12, 24, 48, 168] (`--n-lags-options`, same candidates as XGBoost), sampled uniformly
+- Search on the last `--search-folds` folds (default 10); validation of the best parameters on the last `tune_folds` folds (all folds if `None`)
+- Covariates chosen by `--scenario`:
+  - `clean_only` (default): keys of `weather_degradation_mapping` + holiday + season → params for `NeuralProphetForecaster`
   - `all_weather`: all of `config.weather_covariates`
-  - `no_weather`: no covariates; produces the params file for NeuralProphet_NoWeather (`config.neuralprophet_noweather_params_file`)
-- `neuralprophet.set_random_seed(42)` before every model is created
-- Validation re-uses the same `tune_folds` folds as the search
-
-**NeuralProphet fast variant** (`tune_neuralprophet_fast.py`) — same model setup and covariates, with these speed-ups:
-- Default 20 trials; `n_lags` options default to [24, 48], sampled with weight ∝ 1/√n_lags (favours cheaper models)
-- Search phase: epochs capped (`--search-epochs`, default 50), `daily_seasonality` off, only the last `--search-folds` folds (default 2), optional `--max-train-rows` window per fold
-- Validation phase: full epochs (`epochs=None`), `daily_seasonality` on, full training data, on the `tune_folds` folds (all folds if `None`)
+  - `no_weather`: no covariates → params for `NeuralProphetForecaster_NoWeather` (`config.neuralprophet_noweather_params_file`)
+- The printed config line names the matching field (`neuralprophet_params_file` or `neuralprophet_noweather_params_file`)
 
 **NeuralProphet Parameters:**
 - **learning_rate**: log-uniform in [1e-4, 0.1]
-- **n_lags**: Number of past target values fed to the autoregressive part (also the lag window for lagged regressors)
+- **n_lags**: Number of past target values fed to the autoregressive part
 
 **Note on horizons:** NeuralProphet is tuned at a single horizon (`config.tune_horizon`), but at evaluation time `n_forecasts` equals each experiment horizon. The tuned `learning_rate`/`n_lags` are therefore reused for horizons they were not tuned on.
 
@@ -324,7 +317,6 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   "prophet_params": {
     "changepoint_prior_scale": float,
     "seasonality_prior_scale": float,
-    "holidays_prior_scale": float,
     "seasonality_mode": str
   },
   "tuning": {
@@ -344,7 +336,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 }
 ```
 
-**Output format (NeuralProphet)** — `neuralprophet_best_params_{city}_{scenario}_{n_train_samples}_{timestamp}.json` (same file name pattern for both scripts):
+**Output format (NeuralProphet)** — `neuralprophet_best_params_{city}_{scenario}_{n_train_samples}_{timestamp}.json`:
 ```json
 {
   "city": str,
@@ -353,14 +345,16 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   "n_lags": int,
   "neuralprophet_params": { "learning_rate": float },
   "tuning": {
-    "search_type": "random_search_joint_n_lags" | "random_search_fast",
+    "search_type": "random_search",
     "trials": int,
+    "search_folds": int,
+    "validation_folds": int,
     "seed": int,
+    "np_seed": int,
     "metric_optimized": "MAE",
     "best_tune_mae_mean": float,
     "best_tune_rmse_mean": float,
-    "n_lags_options": [int],
-    ...
+    "n_lags_options": [int]
   },
   "mae_mean": float,
   "mae_std": float,
@@ -370,7 +364,6 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   "covariates_used": [str]
 }
 ```
-The full script adds `tune_folds` to `tuning`; the fast script adds `search_folds`, `search_epochs_cap`, `validation_folds` and `max_train_rows`.
 
 **Tuning frequency:** Once per dataset. Parameters describe data structure, not forecast length.
 
@@ -449,6 +442,19 @@ Rationale:
 - In neuralprophet 0.8.0 (`data/split.py`, `_make_future_dataframe`), when `n_lags > 0` the `periods` argument of `make_future_dataframe` is overwritten with `n_forecasts`. With `n_forecasts=1`, only one future row was created, so scoring the last `horizon` rows mixed 1 real forecast with `horizon - 1` in-sample fitted values, and the covariate fill overwrote training-row covariates with test-period values.
 - With `n_forecasts = horizon`, the future frame has exactly `horizon` rows; a row-count check raises an error if this assumption ever breaks (e.g. after a NeuralProphet upgrade).
 - Results produced before this fix are invalid and need to be re-run.
+
+### NeuralProphet Covariates as Future Regressors
+NeuralProphet weather, holiday and season covariates are future regressors, not lagged regressors.
+
+Rationale:
+- A lagged regressor only uses covariate values from before the forecast start, i.e. clean training-window weather. The weather of the forecast hours (clean or degraded) would never reach the model, so the degraded scenario could not affect NeuralProphet.
+- With future regressors, each forecast step uses the covariate values of that step, the same way SARIMAX uses the test-period covariates.
+- The degradation effect previously measured for NeuralProphet (~44%) came from the `n_forecasts=1` bug (degraded test weather overwrote training rows inside the lag window), not from the forecast weather itself.
+
+### Prophet / NeuralProphet Seasonality
+Daily and weekly seasonality on, yearly off, in the forecasters and in tuning.
+
+Rationale: the training window is 720 hours (30 days). That contains 30 daily and about 4 weekly cycles, but less than one yearly cycle, so yearly seasonality cannot be estimated and would fit noise or trend. This matches the libraries' own `"auto"` rule (a seasonality is used only with at least two full cycles).
 
 ### ARIMA/SARIMAX Intercept Consistency
 The intercept selected by pmdarima during tuning is saved (`with_intercept`) and reproduced in statsmodels via `trend`.
