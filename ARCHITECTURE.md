@@ -453,7 +453,7 @@ Runs all datasets sequentially without manual intervention.
 
 ### Experiment Runner (`run_weather_baseline.py`)
 **`main(config=None, no_confirm=False)`**: Main runner used for paper results
-- Accepts an external config passed in from `main.py`; falls back to a default `ForecastConfig()` if `config` is `None`
+- Requires a city config (from `get_config()` in `config_<city>.py`), passed in by `main.py` or by the `--city` path; raises `ValueError` if `config` is `None`
 - Run directly: `python forecasting/run_weather_baseline.py --city {seoul,washington,london}` (`--city` is required)
 - `no_confirm=True` skips the interactive prompt for non-interactive/cluster use (direct runs ask for confirmation)
 - Runs clean_only and degraded scenarios for all models (`all_weather` is commented out)

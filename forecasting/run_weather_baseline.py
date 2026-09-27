@@ -21,7 +21,6 @@ import json
 # Add parent directory to path if needed
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import ForecastConfig
 from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster, trend_from_intercept
 from models.ml_models import XGBoostForecaster
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
@@ -35,16 +34,19 @@ def main(config=None, no_confirm=False):
 
     Parameters
     ----------
-    config : ForecastConfig, optional
-        Config to use. If None, creates a default ForecastConfig() — preserving
-        the original behaviour when the script is run directly.
+    config : ForecastConfig
+        City config (use get_config() from config_<city>.py). Required:
+        raises ValueError if None.
     no_confirm : bool, optional
         Skip the interactive confirmation prompt. Set to True when called
         programmatically from main.py so cluster jobs don't hang.
     """
 
     if config is None:
-        config = ForecastConfig()
+        raise ValueError(
+            "run_weather_baseline.main() requires a city config "
+            "(use get_config() from config_<city>.py)"
+        )
 
 
     # Load data
