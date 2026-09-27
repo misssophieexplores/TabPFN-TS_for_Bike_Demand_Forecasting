@@ -212,7 +212,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - SARIMAX: seasonal with `m = --seasonal-period` (default 24), `max_p=5`, `max_q=3`, `max_P=2`, `max_Q=2`, `max_order=8`; covariates chosen by `--scenario` (`clean_only` default: keys of `weather_degradation_mapping` + holiday + season; `all_weather`: all of `config.weather_covariates`), passed as `X=` (in search, fold fits and `predict`); covariates constant in the respective training window are dropped (same rule as `SARIMAXForecaster`)
 - Intercept: `with_intercept` is left at pmdarima's default (`'auto'`) during the search; the selected value is saved to the JSON and fixed for the validation folds
 - Validation: on each of the last `tune_folds` folds, the found order and intercept are refit with pmdarima and scored on `tune_horizon` steps; failed folds are skipped (SARIMAX prints the traceback, ARIMA a short `FAILED` line)
-- `--scenario` is also accepted by `tune_arima.py` but only labels the output file name; ARIMA uses no covariates
+- `tune_arima.py` has no `--scenario` argument: ARIMA uses no covariates, so one params file serves all scenarios (same as Prophet)
 
 **ARIMA/SARIMAX Parameters:**
 - **p/P**: Autoregressive order (past values)
@@ -270,7 +270,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 
 **Note on horizons:** NeuralProphet is tuned at a single horizon (`config.tune_horizon`), but at evaluation time `n_forecasts` equals each experiment horizon. The tuned `learning_rate`/`n_lags` are therefore reused for horizons they were not tuned on.
 
-**Output format (ARIMA/SARIMAX)** — `arima_best_params_{city}_{scenario}_{n_train_samples}_{timestamp}.json` / `sarimax_best_params_{city}_{scenario}_{n_train_samples}_{timestamp}.json`:
+**Output format (ARIMA/SARIMAX)** — `arima_best_params_{city}_{n_train_samples}_{timestamp}.json` / `sarimax_best_params_{city}_{scenario}_{n_train_samples}_{timestamp}.json`:
 ```json
 {
   "city": str,
@@ -291,7 +291,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   "m": int
 }
 ```
-`seasonal_order`, `covariates_used` and `m` are SARIMAX only. `with_intercept` is required by `run_weather_baseline.py`.
+`scenario`, `seasonal_order`, `covariates_used` and `m` are SARIMAX only. `with_intercept` is required by `run_weather_baseline.py`. ARIMA params files from before the `--scenario` argument was removed contain a `scenario` key and have it in the file name; they remain valid (the key is not read).
 
 **Output format (XGBoost)** — `xgboost_best_params_{city}_{scenario}_{n_train_samples}_{timestamp}.json`:
 ```json

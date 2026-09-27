@@ -10,9 +10,6 @@ Usage:
 
     # Tune a specific city only:
     python forecasting/models/tuning/tune_arima.py --city seoul
-
-    # --scenario only labels the output file name (ARIMA uses no covariates):
-    python forecasting/models/tuning/tune_arima.py --scenario all_weather
 """
 
 import sys
@@ -45,7 +42,6 @@ def tune_arima(
     df: pd.DataFrame,
     config: ForecastConfig,
     city: str,
-    scenario: str = "clean_only",
     verbose: bool = True
 ) -> dict:
     cv = TimeSeriesCV(config)
@@ -57,7 +53,7 @@ def tune_arima(
 
     if verbose:
         print("="*70)
-        print(f"ARIMA AUTO-TUNING (pmdarima) | city={city} | horizon={config.tune_horizon}h | scenario={scenario}")
+        print(f"ARIMA AUTO-TUNING (pmdarima) | city={city} | horizon={config.tune_horizon}h")
         print("="*70)
         print(f"Cutoff date (held-out test start): {cutoff_date}")
         print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
@@ -162,7 +158,6 @@ def tune_arima(
 
     return {
         'city': city,
-        'scenario': scenario,
         'n_train_samples': config.n_train_samples,
         'tuning_period': cv.get_tuning_period(tune_df),
         'order': order,
@@ -181,8 +176,8 @@ def save_results(params: dict, output_dir: str = '.') -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    city, scenario, n_train = params['city'], params['scenario'], params['n_train_samples']
-    output_file = output_dir / f'arima_best_params_{city}_{scenario}_{n_train}_{timestamp}.json'
+    city, n_train = params['city'], params['n_train_samples']
+    output_file = output_dir / f'arima_best_params_{city}_{n_train}_{timestamp}.json'
     with open(output_file, 'w') as f:
         json.dump(params, f, indent=2)
     print(f"\nResults saved to: {output_file}")
@@ -201,7 +196,7 @@ def run_city(city: str, args) -> None:
     df, _ = load_and_prepare_data(config)
     print(f"Loaded {len(df)} observations for {city}")
 
-    params = tune_arima(df=df, config=config, city=city, scenario=args.scenario, verbose=True)
+    params = tune_arima(df=df, config=config, city=city, verbose=True)
     output_file = save_results(params, args.output_dir)
     print(f"  --> config.arima_params_file = '{output_file}'")
 
@@ -210,8 +205,6 @@ def main():
     parser = argparse.ArgumentParser(description='Tune ARIMA using auto_arima')
     parser.add_argument('--city', type=str, choices=['seoul', 'london', 'washington'],
                         default=None, help='City to tune (default: all cities)')
-    parser.add_argument('--scenario', type=str, choices=['clean_only', 'all_weather'],
-                        default='clean_only', help='Label for the output file name only; ARIMA uses no covariates (default: clean_only)')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
 
