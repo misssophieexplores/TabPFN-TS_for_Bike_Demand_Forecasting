@@ -6,8 +6,12 @@ Covariates are passed directly as extra columns — no manual FeatureTransformer
 Context length and truncation are handled internally by the pipeline.
 
 Two variants:
-  - TabPFNPipelineForecaster:            WITH weather covariates
-  - TabPFNPipelineForecaster_NoWeather:  WITHOUT weather covariates (univariate)
+  - TabPFNPipelineForecaster:            WITH weather covariates     (model name "TabPFN")
+  - TabPFNPipelineForecaster_NoWeather:  WITHOUT weather covariates  (model name "TabPFN_NoWeather")
+
+The TabPFN model is pinned to TabPFN v2.5 (TABPFN_MODEL_CONFIG). Without the
+pin, the checkpoint depends on the installed tabpfn-time-series version
+(e.g. 1.0.10: TabPFN v2; 1.1.0 and 1.2.0: TabPFN v3; 1.3.0: TabPFN v3.5).
 
 Both set needs_datetime = True so run_experiments.py attaches a real
 DatetimeIndex to X_train/X_test from the dataset's date column.
@@ -31,6 +35,9 @@ from typing import Optional
 from models.base import BaseForecaster
 from tabpfn_time_series import TabPFNTSPipeline, TabPFNMode
 
+# TabPFN v2.5 regressor, default checkpoint (tabpfn downloads it on first use)
+TABPFN_MODEL_CONFIG = {"model_path": "tabpfn-v2.5-regressor-v2.5_default.ckpt"}
+
 
 class TabPFNPipelineForecaster(BaseForecaster):
     """
@@ -43,7 +50,7 @@ class TabPFNPipelineForecaster(BaseForecaster):
     needs_datetime = True
 
     def __init__(self, tabpfn_mode: TabPFNMode = TabPFNMode.LOCAL):
-        super().__init__("TabPFN-TS-3", use_covariates=True)
+        super().__init__("TabPFN", use_covariates=True)
         self.tabpfn_mode = tabpfn_mode
         self.pipeline = None
         self.context_df = None
@@ -81,8 +88,9 @@ class TabPFNPipelineForecaster(BaseForecaster):
 
         self.context_df = context_df
         self.last_timestamp = X_train.index[-1]
-        self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode,
-        # tabpfn_model_config={"model_path": "tabpfn-v2-regressor-2noar4o2.ckpt"},
+        self.pipeline = TabPFNTSPipeline(
+            tabpfn_mode=self.tabpfn_mode,
+            tabpfn_model_config=TABPFN_MODEL_CONFIG,
         )
         self._is_fitted = True
 
@@ -135,7 +143,7 @@ class TabPFNPipelineForecaster_NoWeather(BaseForecaster):
     needs_datetime = True
 
     def __init__(self, tabpfn_mode: TabPFNMode = TabPFNMode.LOCAL):
-        super().__init__("TabPFN-TS-3_NoWeather", use_covariates=False)
+        super().__init__("TabPFN_NoWeather", use_covariates=False)
         self.tabpfn_mode = tabpfn_mode
         self.pipeline = None
         self.context_df = None
@@ -165,8 +173,9 @@ class TabPFNPipelineForecaster_NoWeather(BaseForecaster):
         })
 
         self.last_timestamp = X_train.index[-1]
-        self.pipeline = TabPFNTSPipeline(tabpfn_mode=self.tabpfn_mode,
-        # tabpfn_model_config={"model_path": "tabpfn-v2-regressor-2noar4o2.ckpt"},
+        self.pipeline = TabPFNTSPipeline(
+            tabpfn_mode=self.tabpfn_mode,
+            tabpfn_model_config=TABPFN_MODEL_CONFIG,
         )
         self._is_fitted = True
 

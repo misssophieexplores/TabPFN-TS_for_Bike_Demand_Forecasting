@@ -46,11 +46,34 @@ MODEL_KEYS = [
 ]
 
 
+def _append_rows(path: Path, rows: pd.DataFrame) -> None:
+    """Append rows to a CSV; refuse if the existing header has other columns."""
+    if path.exists():
+        existing_cols = list(pd.read_csv(path, nrows=0).columns)
+        if existing_cols != list(rows.columns):
+            raise RuntimeError(
+                f"{path} has different columns than the rows being written. "
+                f"Move it away or use a new results_version."
+            )
+    rows.to_csv(path, mode='a', header=not path.exists(), index=False)
+
+
 def _load_params(path: Optional[str], field: str, how_to_create: str) -> dict:
     if path is None:
         raise ValueError(f"config.{field} is not set. {how_to_create}")
     with open(path) as f:
-        return json.load(f)
+        params = json.load(f)
+    # Params files from older tuning code (no provenance) were tuned with a
+    # different procedure and must not be used for paper runs.
+    if "provenance" not in params:
+        raise ValueError(
+            f"config.{field} = {path} was written by older tuning code (no "
+            f"'provenance'). Re-tune. {how_to_create}"
+        )
+    if params["provenance"].get("git_dirty"):
+        print(f"WARNING: {path} was tuned with uncommitted code changes "
+              f"(commit {params['provenance'].get('git_commit')})")
+    return params
 
 
 def build_models(config: ForecastConfig, keys: Optional[List[str]] = None) -> List[BaseForecaster]:
@@ -299,17 +322,24 @@ class ForecastingExperiment:
 
             try:
                 model.reset()
-                # Wall-clock runtime of fit() and predict() only (data and
-                # feature preparation excluded).
-                t0 = time.perf_counter()
-                model.fit(y_train, X_train)
-                fit_time = time.perf_counter() - t0
-                # Forecast as many steps as the fold has test hours: horizon,
-                # or fewer for a partial last fold (no data exist beyond it).
-                n_steps = len(test_df)
-                t0 = time.perf_counter()
-                y_pred = model.predict(n_steps, X_test)
-                predict_time = time.perf_counter() - t0
+                # Warnings are ignored globally; record them here to count
+                # convergence warnings (e.g. SARIMAX/ARIMA optimizer) per fold.
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    # Wall-clock runtime of fit() and predict() only (data and
+                    # feature preparation excluded).
+                    t0 = time.perf_counter()
+                    model.fit(y_train, X_train)
+                    fit_time = time.perf_counter() - t0
+                    # Forecast as many steps as the fold has test hours: horizon,
+                    # or fewer for a partial last fold (no data exist beyond it).
+                    n_steps = len(test_df)
+                    t0 = time.perf_counter()
+                    y_pred = model.predict(n_steps, X_test)
+                    predict_time = time.perf_counter() - t0
+                n_convergence_warnings = sum(
+                    "converge" in str(w.message).lower() for w in caught
+                )
 
                 # Calculate metrics on observed hours only: imputed hours
                 # (Functioning Day == 'No') are excluded from scoring, in the
@@ -342,6 +372,8 @@ class ForecastingExperiment:
                 metrics['train_imputed'] = train_imputed
                 metrics['test_hours'] = n_steps
                 metrics['test_scored'] = int(test_observed.sum())
+
+                metrics['convergence_warnings'] = n_convergence_warnings
 
                 # Runtime (seconds)
                 metrics['fit_time_s'] = fit_time
@@ -409,6 +441,7 @@ class ForecastingExperiment:
             'partial_folds': (results_df['test_hours'] < horizon).sum(),
             'total_test_scored': results_df['test_scored'].sum(),
             'folds_without_scored_test': (results_df['test_scored'] == 0).sum(),
+            'folds_with_convergence_warnings': int((results_df['convergence_warnings'] > 0).sum()),
             # Runtime (seconds) over successful folds
             'fit_time_mean_s': results_df['fit_time_s'].mean(),
             'predict_time_mean_s': results_df['predict_time_s'].mean(),
@@ -429,13 +462,15 @@ class ForecastingExperiment:
             f"{model.name}_{weather_scenario}_h{horizon}_runtime_total_s": aggregated['runtime_total_s'],
         })
 
-        # Append to master CSV incrementally
+        # Write results after every experiment, BEFORE the checkpoint: an
+        # interrupted run (e.g. cluster time limit) then loses nothing, and a
+        # checkpointed experiment always has its rows on disk.
         self.results.append(aggregated)
-        self._save_checkpoint(model.name, horizon, weather_scenario)
         filename_agg = self.output_dir / f"results_master_{self.config.results_version}.csv"
-        pd.DataFrame([aggregated]).to_csv(
-            filename_agg, mode='a', header=not filename_agg.exists(), index=False
-        )
+        filename_detailed = self.output_dir / f"detailed_results_master_{self.config.results_version}.csv"
+        _append_rows(filename_detailed, pd.DataFrame(fold_results))
+        _append_rows(filename_agg, pd.DataFrame([aggregated]))
+        self._save_checkpoint(model.name, horizon, weather_scenario)
 
         # Log all folds as table
         fold_table = wandb.Table(dataframe=pd.DataFrame(fold_results))
@@ -550,7 +585,11 @@ class ForecastingExperiment:
     
 
     def save_results(self, results_df: pd.DataFrame) -> str:
-        """Append results to master CSV"""
+        """
+        Rewrite the aggregated results file without duplicate rows. Aggregated
+        and fold-level rows are already written after every experiment
+        (run_single_experiment), so nothing is lost if this is never reached.
+        """
 
         # Aggregated results - APPEND mode
         filename_agg = self.output_dir / f"results_master_{self.config.results_version}.csv"
@@ -562,15 +601,6 @@ class ForecastingExperiment:
                 keep='last'
             )
         results_df.to_csv(filename_agg, index=False)
-
-        # Detailed results - APPEND mode
-        filename_detailed = self.output_dir / f"detailed_results_master_{self.config.results_version}.csv"
-        if hasattr(self, 'detailed_results') and self.detailed_results:
-            detailed_df = pd.DataFrame(self.detailed_results)
-            if filename_detailed.exists():
-                existing = pd.read_csv(filename_detailed)
-                detailed_df = pd.concat([existing, detailed_df], ignore_index=True)
-            detailed_df.to_csv(filename_detailed, index=False)
 
         if self.config.verbose:
             print(f"Results appended to: {filename_agg}")

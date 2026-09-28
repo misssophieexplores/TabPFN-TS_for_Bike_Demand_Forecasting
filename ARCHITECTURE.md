@@ -20,7 +20,8 @@ forecasting/
 │   ├── prophet_models.py    # Prophet, NeuralProphet, NeuralProphet_NoWeather
 │   ├── timesfm_model.py     # TimesFMForecaster, TimesFMForecaster_NoWeather
 │   └── tuning/              # Hyperparameter tuning scripts
-│       ├── tune_arima.py            # Auto-ARIMA tuning (pmdarima)
+│       ├── arima_search.py          # Order search shared by tune_arima.py / tune_sarimax.py
+│       ├── tune_arima.py            # ARIMA order tuning (auto_arima candidates, MAE selection)
 │       ├── tune_sarimax.py          # Auto-SARIMAX tuning (pmdarima)
 │       ├── tune_xgboost.py          # XGBoost random search
 │       ├── tune_prophet.py          # Prophet random search
@@ -68,7 +69,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 7. **Predict**: `model.predict(n_steps, X_test)` generates forecasts, with `n_steps = len(test_df)`: the horizon, or fewer hours for a partial last fold. Wall-clock time of `predict()` is recorded as `predict_time_s`; `runtime_s = fit_time_s + predict_time_s` (see Runtime Measurement)
 8. **Evaluate**: `MetricsCalculator.calculate_all(y_test, y_pred, y_train, test_mask, train_mask)` computes metrics on observed hours only; imputed hours (`functioning_day_col == 'No'`) are excluded from scoring (masks from `MetricsCalculator.observed_mask()`). Imputed hours stay in the model inputs (training data)
 9. **Log**: W&B logs aggregated metrics and a per-fold table
-10. **Save**: Aggregated row appended to `results_master_{version}.csv` after each model-horizon-scenario run; fold-level rows written to `detailed_results_master_{version}.csv` at the end of the run
+10. **Save**: after each model-horizon-scenario run, the fold-level rows are appended to `detailed_results_master_{version}.csv` and the aggregated row to `results_master_{version}.csv` (header must match, otherwise `RuntimeError`); only then is the checkpoint updated
 11. **Compare** (once, after all cities): `compute_and_log_comparative_metrics()` computes win rate and skill score vs `Seasonal_Naive`, pooled across cities
 
 **Weather Data Flow:**
@@ -153,8 +154,8 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - ARIMAForecaster: Tuned order via auto_arima (e.g., (2,1,2)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
 - SARIMAXForecaster: Tuned orders via auto_arima (e.g., (4,0,0)×(1,0,1,24)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
 - XGBoostForecaster: Uses lagged features (n_lags=24) + weather covariates (including holiday and season via `weather_covariates`) + calendar time features (hour, dayofweek, month, is_weekend). `use_time_features=True` — pipeline appends calendar features automatically at fold time. **Note: XGBoost must be re-tuned whenever `weather_covariates` changes (e.g. after adding holiday/season).**
-- TabPFNPipelineForecaster: `TabPFNTSPipeline` (tabpfn-time-series) with its default settings, zero-shot. Features: the pipeline's defaults (running index, calendar, auto-seasonal) + every covariate column (present in both context and future frame). Point forecast = median. The TabPFN model version is pinned by the installed tabpfn-time-series version (recorded in `library_versions`)
-- TabPFNPipelineForecaster_NoWeather: same pipeline, univariate (context and future frames contain only timestamps and target)
+- TabPFNPipelineForecaster (model name `TabPFN`): `TabPFNTSPipeline` (tabpfn-time-series), zero-shot, TabPFN v2.5 pinned via `TABPFN_MODEL_CONFIG` (`tabpfn-v2.5-regressor-v2.5_default.ckpt`); all other settings at the pipeline defaults. Features: the pipeline's defaults (running index, calendar, auto-seasonal) + every covariate column (present in both context and future frame). Point forecast = median. Without the explicit pin the checkpoint would depend on the installed tabpfn-time-series version (1.0.10: v2; 1.1.0/1.2.0: v3; 1.3.0: v3.5)
+- TabPFNPipelineForecaster_NoWeather (model name `TabPFN_NoWeather`): same pipeline and model, univariate (context and future frames contain only timestamps and target)
 - TimesFMForecaster / TimesFMForecaster_NoWeather (`timesfm_model.py`, server `run_timesfm_server.py`): TimesFM 2.5 (200M, `google/timesfm-2.5-200m-pytorch`), zero-shot, no timestamps. Compiled with the authors' recommended forecast config (`normalize_inputs`, `use_continuous_quantile_head`, `force_flip_invariance`, `infer_is_positive`, `fix_quantile_crossing` all `True`), `max_context=1024` (context = the 720 training hours), `max_horizon=168`, `return_backcast=True` (required for covariates). Point forecast = median. With covariates: `forecast_with_covariates` in its default mode `"xreg + timesfm"` — an in-context linear regression on the covariates (standardized with context statistics, ridge 0, pseudo-inverse; constant covariates are harmless), TimesFM forecasts the residual; covariate values for the horizon come from `X_test` (clean or degraded). NoWeather: `forecast()`; with `return_backcast=True` this returns the backcast followed by the forecast, so the forecast is the last `horizon` values. The client checks the context has no NaN (the server finds the horizon rows by NaN target), checks each server reply and deletes its temp files
 - ProphetForecaster: Univariate Prophet (`use_covariates=False`). Daily and weekly seasonality on, yearly off (the 30-day training window is far shorter than a year); defaults `seasonality_mode="multiplicative"`, `changepoint_prior_scale=0.05`, `seasonality_prior_scale=10.0`, `holidays_prior_scale=10.0`. Forecast timestamps come from `X_future.index` when available, otherwise an hourly range starting one hour after the last training timestamp.
 - NeuralProphetForecaster: NeuralProphet with weather covariates (`use_covariates=True`). Every covariate column is added as a **future regressor** (`add_future_regressor`): the forecast for each step uses that step's covariate values from `X_future`; columns that NeuralProphet silently drops (e.g. all-constant) are removed from the covariate list after fitting. Default `n_lags=24`, `seasonality_mode="multiplicative"`, daily and weekly seasonality on, yearly off, `epochs=None` (NeuralProphet picks based on data size).
@@ -183,7 +184,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - PyTorch 2.4+ compatibility: `torch.load` is temporarily patched to `weights_only=False` during NeuralProphet fitting (NeuralProphet's checkpoint loader otherwise fails).
 
 **TabPFN Configuration:**
-- `TabPFNTSPipeline(tabpfn_mode=TabPFNMode.LOCAL)`, all other arguments at the package defaults (runs on the local machine, GPU if available)
+- `TabPFNTSPipeline(tabpfn_mode=TabPFNMode.LOCAL, tabpfn_model_config={"model_path": "tabpfn-v2.5-regressor-v2.5_default.ckpt"})` — TabPFN v2.5; all other arguments at the package defaults (runs on the local machine, GPU if available)
 
 ### Hyperparameter Tuning (`models/tuning/`)
 
@@ -197,7 +198,8 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 **Common to all tuning scripts (ARIMA, SARIMAX, XGBoost, Prophet, NeuralProphet):**
 - Tuning data is selected with `df[date_col] <= TimeSeriesCV.get_cutoff_date(df)`. `<=` is correct: the cutoff timestamp is the last training hour of evaluation fold 0, not a test hour (test windows are `(test_start, test_end]`, so the held-out test period is `(cutoff, data_end]`). The held-out test period is never touched.
 - The tuning period (first and last timestamp of the tuning data, from `TimeSeriesCV.get_tuning_period()`) is saved in every tuning JSON as `tuning_period`; `last_timestamp` equals the cutoff date.
-- CV splits are built with `config.tune_horizon`; `config.tune_folds` selects the **last** N folds (`None` = all folds)
+- CV splits are built with `config.tune_horizon`; the tune folds are `TimeSeriesCV.tune_fold_indices(splits)`: the **last** `config.tune_folds` folds (`None` = all folds), without fully imputed test windows — one function for all tuning scripts
+- Scripts that search on a subset (NeuralProphet, ARIMA/SARIMAX) use `TimeSeriesCV.spread_fold_indices(tune_folds, n)`: n folds spread evenly over the tune folds, first and last included. With the default n = 6 these are the same 6 folds in all three scripts
 - Run for all cities by default, or one city with `--city {seoul,london,washington}`; results are saved to `--output-dir` (default `results/tuning`)
 - The script prints the line to paste into the city config (e.g. `config.prophet_params_file = '...'`)
 - Every params JSON contains `provenance`: `{"git_commit": str, "git_dirty": bool, "library_versions": {...}}` (see Code Provenance)
@@ -209,12 +211,14 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - Parameter sampling uses `np.random.default_rng(seed)` (`--seed`, default 42)
 - A failed fold aborts that trial (traceback printed) and the search continues
 
-**ARIMA/SARIMAX approach** (using pmdarima `auto_arima`):
-- Stepwise search minimizing AIC, run once on the **first** CV split (`splits[0]`) of the pre-cutoff data
+**ARIMA/SARIMAX approach** (`arima_search.search_orders()`, shared by `tune_arima.py` and `tune_sarimax.py`):
+- Search folds: `--search-folds` (default 6) spread evenly over the tune folds — the same folds as NeuralProphet
+- 1. Candidates: pmdarima `auto_arima` (stepwise, AIC; `d`/`D` from its unit-root tests; `with_intercept` at pmdarima's default `'auto'`) on the training window of every search fold. Every distinct `(order, seasonal_order, with_intercept)` is a candidate
+- 2. Selection: every candidate is fitted with the experiment model (`ARIMAForecaster` / `SARIMAXForecaster`, statsmodels, `trend` from `trend_from_intercept()`) on every search fold, with the experiment inputs (`run_experiments.prepare_fold_inputs()`), and scored on the next `tune_horizon` hours (MAE, imputed hours excluded). The candidate with the lowest mean MAE is selected — the same criterion as for the other tuned models. A candidate without a statsmodels trend equivalent, or failing on a search fold, is not selectable (reason saved)
 - ARIMA: non-seasonal, `max_p=7`, `max_q=3`, `max_order=8`, no covariates
-- SARIMAX: seasonal with `m = --seasonal-period` (default 24), `max_p=5`, `max_q=3`, `max_P=2`, `max_Q=2`, `max_order=8`; covariates chosen by `--scenario` (`clean_only` default: keys of `weather_degradation_mapping` + holiday + season; `all_weather`: all of `config.weather_covariates`), passed as `X=` (in search, fold fits and `predict`); covariates constant in the respective training window are dropped (same rule as `SARIMAXForecaster`)
-- Intercept: `with_intercept` is left at pmdarima's default (`'auto'`) during the search; the selected value is saved to the JSON and fixed for the validation folds
-- Validation: on each of the last `tune_folds` folds, the found order and intercept are refit with pmdarima and scored on `tune_horizon` steps; failed folds are skipped (SARIMAX prints the traceback, ARIMA a short `FAILED` line)
+- SARIMAX: seasonal with `m = --seasonal-period` (default 24), `max_p=5`, `max_q=3`, `max_P=2`, `max_Q=2`, `max_order=8`; covariates = the experiment's columns for `--scenario` (`WeatherProcessor.get_weather_columns`; `clean_only` default, or `all_weather`); covariates constant in the training window are dropped for the `auto_arima` search (same rule as `SARIMAXForecaster`, which applies it itself when scoring)
+- Non-converged `SARIMAXForecaster` fits are counted per candidate (`non_converged_folds`)
+- No re-evaluation after the search (the selection scores already come from the experiment model)
 - `tune_arima.py` has no `--scenario` argument: ARIMA uses no covariates, so one params file serves all scenarios (same as Prophet)
 
 **ARIMA/SARIMAX Parameters:**
@@ -285,18 +289,25 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   "order": [p, d, q],
   "seasonal_order": [P, D, Q, s],
   "with_intercept": bool,
-  "aic": float,
-  "bic": float,
-  "mae_mean": float,
-  "mae_std": float,
-  "rmse_mean": float,
-  "rmse_std": float,
-  "validation_folds": int,
+  "trend": "n" | "c" | "t",
   "covariates_used": [str],
-  "m": int
+  "m": int,
+  "tuning": {
+    "search_type": str,
+    "tune_folds": int,
+    "search_folds": int,
+    "search_fold_indices": [int],
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": float,
+    "best_tune_rmse_mean": float,
+    "auto_arima_kwargs": {...},
+    "candidates": [{"order", "seasonal_order", "with_intercept", "found_on_folds", "aic_on_found_folds",
+                    "status", "trend", "fold_mae", "mae_mean", "rmse_mean", "non_converged_folds"}]
+  },
+  "provenance": {"git_commit": str, "git_dirty": bool, "library_versions": {...}}
 }
 ```
-`scenario`, `seasonal_order`, `covariates_used` and `m` are SARIMAX only. `with_intercept` is required by `run_weather_baseline.py`. ARIMA params files from before the `--scenario` argument was removed contain a `scenario` key and have it in the file name; they remain valid (the key is not read).
+`scenario`, `seasonal_order`, `covariates_used` and `m` are SARIMAX only. `order`, `seasonal_order` and `with_intercept` are read by `run_experiments.build_models()`; `trend` is saved for reference (the runner derives it again with `trend_from_intercept()`). ARIMA params files from before the `--scenario` argument was removed contain a `scenario` key and have it in the file name; they remain valid (the key is not read).
 
 **Output format (XGBoost)** — `xgboost_best_params_{city}_{scenario}_{n_train_samples}_{timestamp}.json`:
 ```json
@@ -439,7 +450,7 @@ Runs all datasets sequentially without manual intervention.
 - Code provenance: `git_commit`/`git_dirty` are written to every fold row, every aggregated row, the checkpoint and the W&B config; `library_versions` (JSON string) to every aggregated row and the W&B config. A checkpoint without `code_version` or a `results_master_{version}.csv` without `git_commit` (written by older code) raises `RuntimeError`; resuming from another commit prints a warning (see Code Provenance)
 - Runs all model-horizon-scenario combinations
 - Saves aggregated and detailed results; on resume, reloads previously completed results from `results_master_{version}.csv`
-- `save_results()` merges with the existing aggregated CSV and drops duplicates on (`dataset`, `model`, `horizon`, `weather_scenario`, `run_name`), keeping the latest; the detailed CSV is appended
+- `save_results()` merges with the existing aggregated CSV and drops duplicates on (`dataset`, `model`, `horizon`, `weather_scenario`, `run_name`), keeping the latest; the detailed CSV is not touched (already written after every experiment)
 - Automatic skip logic: models with `use_covariates=False` skip the 'degraded' scenario
 - Coverage check: `run_single_experiment()` raises `RuntimeError` unless the splits number `expected_n_folds(horizon)` and their test windows add up to exactly `get_eval_hours()` hours (catches missing hourly timestamps), so no evaluation hours are dropped for any horizon
 - Fold-level errors logged to `errors_{version}.log` with full traceback and to W&B (`error`); `[ERROR]` line always printed to stdout regardless of `verbose`; the fold is skipped and the run continues. If any fold failed, a `[WARN]` line with the count is always printed and `n_failed_folds` > 0 in the aggregated row: that model/horizon/scenario is then averaged over fewer folds than the others and is not comparable
@@ -461,7 +472,7 @@ Runs all datasets sequentially without manual intervention.
 - `no_confirm=True` skips the interactive prompt for non-interactive/cluster use (direct runs ask for confirmation)
 - Runs clean_only and degraded scenarios for all models (`all_weather` is commented out)
 - All horizons: [6, 24, 48, 168] hours over the same 5,880 h evaluation period (980 / 245 / 123 / 35 folds; the last 48 h fold is partial)
-- Builds all models with `run_experiments.build_models(config)`, which loads the tuned hyperparameters from the JSON files named in the city config (ARIMA, SARIMAX, XGBoost, Prophet, NeuralProphet, NeuralProphet_NoWeather)
+- Builds all models with `run_experiments.build_models(config)`, which loads the tuned hyperparameters from the JSON files named in the city config (ARIMA, SARIMAX, XGBoost, Prophet, NeuralProphet, NeuralProphet_NoWeather). A params file without `provenance` (written by older tuning code) raises `ValueError`; one tuned with uncommitted code prints a warning
 - ARIMA/SARIMAX: `trend` is derived from `with_intercept` and the orders via `trend_from_intercept()`; a params file without `with_intercept` raises `KeyError` (re-run tuning)
 - Auto-skips degraded scenario for models without covariates
 - Displays degradation impact summary (gated behind `config.verbose`)
@@ -556,6 +567,17 @@ Rationale:
 - Standard rolling-origin evaluation (Tashman 2000; Hyndman's `tsCV`) scores all available target hours and does not score forecasts beyond the end of the data. Every evaluation hour is scored exactly once per horizon, for any dataset length and horizon, without changing the tuning/evaluation split.
 - Recursive and single-model forecasts (Seasonal Naive, ARIMA, SARIMAX, XGBoost, Prophet) give the same first `n` steps for `predict(n)` as for `predict(horizon)`. NeuralProphet is a direct multi-step model (`n_forecasts = n_steps`), so its partial fold uses a model with the shorter output length.
 
+### ARIMA/SARIMAX Order Selection
+Candidate orders from `auto_arima` on 6 spread tune folds; selection by mean 24-h MAE of the experiment model (statsmodels) on those folds.
+
+Rationale:
+- Previously the order was chosen by AIC on `splits[0]` only. For London and Washington that split lies about 5 months before the 90 tune folds all other models use; for all cities it was a single 30-day window.
+- The previous validation re-fitted with pmdarima, which differs from the statsmodels models used in the experiments (e.g. stationarity/invertibility enforcement). Selection now uses the experiment models themselves.
+- Same folds and same criterion (24-h MAE on the tune folds) as the other tuned models.
+
+### No Post-Processing of Forecasts
+Forecasts are scored as each model produces them: no clipping of negative values or other post-processing, in tuning and in the experiments. TimesFM returns non-negative forecasts because of its own default inference setting (`infer_is_positive=True`), which is part of the model as published.
+
 ### Imputed Data Tracking and Exclusion from Scoring
 Uses the `Functioning Day` column (No = imputed), configured via `functioning_day_col` for all three cities
 Tracked per fold: train_imputed, test_imputed (unchanged), plus test_scored (observed test hours)
@@ -586,7 +608,7 @@ Rationale:
 - A checkpoint or results CSV written by older code (no provenance fields) is rejected, because resuming from it would silently skip experiments or append rows under a different header. Before a full re-run, move the old `results_master_{version}.csv`, `detailed_results_master_{version}.csv` and `checkpoint_*.json` away, or use a new `results_version`.
 
 ### Checkpoint Recovery
-Saves completed `(dataset_name, model, horizon, scenario)` tuples to JSON after each experiment.
+Saves completed `(dataset_name, model, horizon, scenario)` tuples to JSON after each experiment, after its aggregated and fold-level rows are on disk (previously fold-level rows were written only at the end of a city's run, so an interrupted run lost them and the resume skipped the experiments).
 On restart, skips already-completed experiments.
 Prevents data loss from crashes during long runs — including mid-run failures when iterating over multiple datasets.
 File format: `checkpoint_{experiment_name}.json` in `results/` directory.
@@ -655,6 +677,7 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 - `*_mean`/`*_std`: mean/std over folds of the fold metrics, which are computed on observed hours only
 - `version`: Results version string (from `config.results_version`), stored as a separate column alongside `run_name`
 - `git_commit`, `git_dirty`: code version that produced the row (see Code Provenance); also in the detailed CSV
+- `folds_with_convergence_warnings`: folds whose `fit()`/`predict()` raised a warning containing "converge" (e.g. SARIMAX/ARIMA optimizer); per fold: `convergence_warnings` (count) in the detailed CSV
 - `weather_scenario`: 'all_weather' (only used in Pilot project), 'clean_only', or 'degraded'
 - `model_uses_covariates`: Boolean (from model.use_covariates property)
 - `degradation_seed`: Random seed used (42 by default)
@@ -672,8 +695,8 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 3. NeuralProphet training cost grows with the horizon (one output per forecast step with `n_forecasts = horizon`), and the model is retrained on every `predict()` call
 4. NeuralProphet hyperparameters are tuned at `config.tune_horizon` only and reused for all evaluation horizons
 5. Season and holiday can only be used by SARIMAX (and NeuralProphet) in folds where they vary within the 30-day training window
-6. ARIMA/SARIMAX orders are searched on the first CV split only
-7. ARIMA/SARIMAX tuning-time validation metrics (`mae_mean` etc. in the params files) come from pmdarima fits, not from `ARIMAForecaster`/`SARIMAXForecaster` (e.g. pmdarima enforces stationarity/invertibility, `SARIMAXForecaster` does not), so they are not directly comparable to experiment results
+6. ARIMA/SARIMAX candidate orders come from `auto_arima`'s stepwise AIC search on 6 search folds; orders it does not propose are not considered
+7. NeuralProphet, ARIMA and SARIMAX are searched on 6 of the 90 tune folds (run time); XGBoost and Prophet on all 90
 8. The rain/snow phase correction uses a fixed 2 °C threshold (the real transition spans roughly 0–4 °C) and moves amounts between rain (mm) and snow (cm) without unit conversion
 9. The partial last fold (h=48) covers lead times 1–24 only and is averaged with equal weight to the full folds; for NeuralProphet it is forecast by a model with `n_forecasts = 24`
 10. Fold metrics are averaged with equal weight per fold; a fold with few observed hours (partly imputed test window) counts as much as a fully observed one
