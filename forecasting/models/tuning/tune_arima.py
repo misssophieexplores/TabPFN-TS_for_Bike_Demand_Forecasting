@@ -3,11 +3,11 @@ ARIMA order tuning (non-seasonal, no covariates).
 
 Procedure (shared with tune_sarimax.py, see arima_search.py):
   1. pmdarima auto_arima (stepwise, AIC) on the training window of each of the
-     --search-folds search folds (default 6, spread evenly over the tune folds,
-     same folds as tune_neuralprophet.py) -> candidate orders
+     --search-folds candidate folds (default 6, spread evenly over the tune
+     folds) -> candidate orders
   2. every candidate is fitted with ARIMAForecaster (statsmodels, as in the
-     experiments) on every search fold and scored on the next tune_horizon
-     hours; the lowest mean MAE is selected
+     experiments) on ALL tune folds (same folds as XGBoost and Prophet) and
+     scored on the next tune_horizon hours; the lowest mean MAE is selected
 
 Usage:
     # Tune all cities:
@@ -114,7 +114,8 @@ def main():
     parser.add_argument('--city', type=str, choices=['seoul', 'london', 'washington'],
                         default=None, help='City to tune (default: all cities)')
     parser.add_argument('--search-folds', type=int, default=6,
-                        help='Search folds, spread evenly over the tune folds (default: 6)')
+                        help='Folds for auto_arima candidate orders, spread evenly over the tune '
+                             'folds (default: 6); candidates are scored on all tune folds')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
 

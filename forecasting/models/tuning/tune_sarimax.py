@@ -3,12 +3,12 @@ SARIMAX order tuning (seasonal, with weather covariates).
 
 Procedure (shared with tune_arima.py, see arima_search.py):
   1. pmdarima auto_arima (stepwise, AIC, seasonal period m) with the covariates
-     on the training window of each of the --search-folds search folds
-     (default 6, spread evenly over the tune folds, same folds as
-     tune_neuralprophet.py) -> candidate orders
+     on the training window of each of the --search-folds candidate folds
+     (default 6, spread evenly over the tune folds) -> candidate orders
   2. every candidate is fitted with SARIMAXForecaster (statsmodels, as in the
-     experiments, same covariates) on every search fold and scored on the next
-     tune_horizon hours; the lowest mean MAE is selected
+     experiments, same covariates) on ALL tune folds (same folds as XGBoost
+     and Prophet) and scored on the next tune_horizon hours; the lowest mean
+     MAE is selected
 
 Covariates are the experiment's columns for --scenario (WeatherProcessor):
     clean_only  (default): degradable covariates + holiday + season
@@ -138,7 +138,8 @@ def main():
                         default='clean_only', help='Covariate set (default: clean_only)')
     parser.add_argument('--seasonal-period', type=int, default=24, help='Seasonal period (default: 24)')
     parser.add_argument('--search-folds', type=int, default=6,
-                        help='Search folds, spread evenly over the tune folds (default: 6)')
+                        help='Folds for auto_arima candidate orders, spread evenly over the tune '
+                             'folds (default: 6); candidates are scored on all tune folds')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
 

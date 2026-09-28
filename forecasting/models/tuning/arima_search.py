@@ -3,21 +3,20 @@ Order search shared by tune_arima.py and tune_sarimax.py.
 
 Procedure
 ---------
-Search folds: --search-folds folds (default 6) spread evenly over the tune
-folds (TimeSeriesCV.tune_fold_indices / spread_fold_indices), i.e. the same
-folds as tune_neuralprophet.py.
-
 1. Candidates: pmdarima auto_arima (stepwise, AIC; d and D by its unit-root
-   tests; intercept chosen by pmdarima) on the training window of every search
-   fold. Each distinct (order, seasonal_order, with_intercept) is a candidate.
-2. Selection: every candidate is fitted on every search fold with the model
-   used in the experiments (ARIMAForecaster / SARIMAXForecaster, statsmodels,
-   trend from with_intercept via trend_from_intercept), with exactly the
-   experiment inputs (run_experiments.prepare_fold_inputs), and scored on the
-   next tune_horizon hours: MAE, imputed hours excluded. The candidate with the
-   lowest mean MAE is selected - the same criterion as for the other models.
+   tests; intercept chosen by pmdarima) on the training window of each of the
+   --search-folds candidate folds (default 6, spread evenly over the tune
+   folds). Each distinct (order, seasonal_order, with_intercept) is a candidate.
+2. Selection: every candidate is fitted on ALL tune folds (the same 90 folds
+   as XGBoost and Prophet) with the model used in the experiments
+   (ARIMAForecaster / SARIMAXForecaster, statsmodels, trend from
+   with_intercept via trend_from_intercept), with exactly the experiment
+   inputs (run_experiments.prepare_fold_inputs), and scored on the next
+   tune_horizon hours: MAE, imputed hours excluded. The candidate with the
+   lowest mean MAE is selected - the same criterion and folds as XGBoost and
+   Prophet.
 
-A candidate that fails on a search fold, or has no statsmodels trend
+A candidate that fails on a tune fold, or has no statsmodels trend
 equivalent, is not selectable (reason saved in the JSON).
 """
 import traceback
@@ -81,7 +80,7 @@ def search_orders(
 
     if verbose:
         print(f"Cutoff date (held-out test start): {cutoff_date}")
-        print(f"Tune folds: {len(tune_idx)} | search folds: {search_idx}")
+        print(f"Candidate folds (auto_arima): {search_idx} | scoring folds: all {len(tune_idx)} tune folds")
         print(f"Covariates ({len(covariates)}): {covariates}")
 
     # --- 1. Candidates from auto_arima on every search fold
@@ -106,7 +105,7 @@ def search_orders(
             print(f"  fold {i}: auto_arima -> order={order} seasonal={seasonal_order} "
                   f"intercept={key[2]} AIC={fitted.aic():.1f}")
 
-    # --- 2. Score every candidate with the experiment model on every search fold
+    # --- 2. Score every candidate with the experiment model on ALL tune folds
     for key, cand in candidates.items():
         order, seasonal_order, with_intercept = key
         try:
@@ -116,7 +115,7 @@ def search_orders(
             continue
         cand["trend"] = trend
         maes, rmses, non_converged = [], [], 0
-        for i in search_idx:
+        for i in tune_idx:
             train_df, test_df = splits[i]
             model = _make_model(seasonal, order, seasonal_order, trend)
             y_tr, X_tr, y_te, X_te = prepare_fold_inputs(
@@ -160,11 +159,12 @@ def search_orders(
         "trend": best["trend"],
         "covariates_used": list(covariates),
         "tuning": {
-            "search_type": "auto_arima candidates (stepwise AIC per search fold), "
-                           "selected by mean MAE of the experiment model",
+            "search_type": "auto_arima candidates (stepwise AIC per candidate fold), "
+                           "selected by mean MAE of the experiment model on all tune folds",
             "tune_folds": len(tune_idx),
-            "search_folds": len(search_idx),
-            "search_fold_indices": [int(i) for i in search_idx],
+            "scoring_folds": len(tune_idx),
+            "candidate_folds": len(search_idx),
+            "candidate_fold_indices": [int(i) for i in search_idx],
             "metric_optimized": "MAE",
             "best_tune_mae_mean": best["mae_mean"],
             "best_tune_rmse_mean": best["rmse_mean"],

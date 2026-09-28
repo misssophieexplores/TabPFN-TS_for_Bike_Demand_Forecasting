@@ -199,7 +199,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - Tuning data is selected with `df[date_col] <= TimeSeriesCV.get_cutoff_date(df)`. `<=` is correct: the cutoff timestamp is the last training hour of evaluation fold 0, not a test hour (test windows are `(test_start, test_end]`, so the held-out test period is `(cutoff, data_end]`). The held-out test period is never touched.
 - The tuning period (first and last timestamp of the tuning data, from `TimeSeriesCV.get_tuning_period()`) is saved in every tuning JSON as `tuning_period`; `last_timestamp` equals the cutoff date.
 - CV splits are built with `config.tune_horizon`; the tune folds are `TimeSeriesCV.tune_fold_indices(splits)`: the **last** `config.tune_folds` folds (`None` = all folds), without fully imputed test windows — one function for all tuning scripts
-- Scripts that search on a subset (NeuralProphet, ARIMA/SARIMAX) use `TimeSeriesCV.spread_fold_indices(tune_folds, n)`: n folds spread evenly over the tune folds, first and last included. With the default n = 6 these are the same 6 folds in all three scripts
+- `TimeSeriesCV.spread_fold_indices(tune_folds, n)`: n folds spread evenly over the tune folds, first and last included. Used for the NeuralProphet search (compute) and for the ARIMA/SARIMAX candidate orders; with the default n = 6 these are the same 6 folds
 - Run for all cities by default, or one city with `--city {seoul,london,washington}`; results are saved to `--output-dir` (default `results/tuning`)
 - The script prints the line to paste into the city config (e.g. `config.prophet_params_file = '...'`)
 - Every params JSON contains `provenance`: `{"git_commit": str, "git_dirty": bool, "library_versions": {...}}` (see Code Provenance)
@@ -212,9 +212,8 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - A failed fold aborts that trial (traceback printed) and the search continues
 
 **ARIMA/SARIMAX approach** (`arima_search.search_orders()`, shared by `tune_arima.py` and `tune_sarimax.py`):
-- Search folds: `--search-folds` (default 6) spread evenly over the tune folds — the same folds as NeuralProphet
-- 1. Candidates: pmdarima `auto_arima` (stepwise, AIC; `d`/`D` from its unit-root tests; `with_intercept` at pmdarima's default `'auto'`) on the training window of every search fold. Every distinct `(order, seasonal_order, with_intercept)` is a candidate
-- 2. Selection: every candidate is fitted with the experiment model (`ARIMAForecaster` / `SARIMAXForecaster`, statsmodels, `trend` from `trend_from_intercept()`) on every search fold, with the experiment inputs (`run_experiments.prepare_fold_inputs()`), and scored on the next `tune_horizon` hours (MAE, imputed hours excluded). The candidate with the lowest mean MAE is selected — the same criterion as for the other tuned models. A candidate without a statsmodels trend equivalent, or failing on a search fold, is not selectable (reason saved)
+- 1. Candidates: pmdarima `auto_arima` (stepwise, AIC; `d`/`D` from its unit-root tests; `with_intercept` at pmdarima's default `'auto'`) on the training window of each of the `--search-folds` candidate folds (default 6, spread evenly over the tune folds). Every distinct `(order, seasonal_order, with_intercept)` is a candidate
+- 2. Selection: every candidate is fitted with the experiment model (`ARIMAForecaster` / `SARIMAXForecaster`, statsmodels, `trend` from `trend_from_intercept()`) on **all** tune folds (the same 90 folds as XGBoost and Prophet), with the experiment inputs (`run_experiments.prepare_fold_inputs()`), and scored on the next `tune_horizon` hours (MAE, imputed hours excluded). The candidate with the lowest mean MAE is selected — the same criterion and folds as XGBoost and Prophet. At most 6 candidates × 90 folds = 540 fits per city. A candidate without a statsmodels trend equivalent, or failing on a tune fold, is not selectable (reason saved)
 - ARIMA: non-seasonal, `max_p=7`, `max_q=3`, `max_order=8`, no covariates
 - SARIMAX: seasonal with `m = --seasonal-period` (default 24), `max_p=5`, `max_q=3`, `max_P=2`, `max_Q=2`, `max_order=8`; covariates = the experiment's columns for `--scenario` (`WeatherProcessor.get_weather_columns`; `clean_only` default, or `all_weather`); covariates constant in the training window are dropped for the `auto_arima` search (same rule as `SARIMAXForecaster`, which applies it itself when scoring)
 - Non-converged `SARIMAXForecaster` fits are counted per candidate (`non_converged_folds`)
@@ -295,8 +294,9 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   "tuning": {
     "search_type": str,
     "tune_folds": int,
-    "search_folds": int,
-    "search_fold_indices": [int],
+    "scoring_folds": int,
+    "candidate_folds": int,
+    "candidate_fold_indices": [int],
     "metric_optimized": "MAE",
     "best_tune_mae_mean": float,
     "best_tune_rmse_mean": float,
@@ -568,12 +568,12 @@ Rationale:
 - Recursive and single-model forecasts (Seasonal Naive, ARIMA, SARIMAX, XGBoost, Prophet) give the same first `n` steps for `predict(n)` as for `predict(horizon)`. NeuralProphet is a direct multi-step model (`n_forecasts = n_steps`), so its partial fold uses a model with the shorter output length.
 
 ### ARIMA/SARIMAX Order Selection
-Candidate orders from `auto_arima` on 6 spread tune folds; selection by mean 24-h MAE of the experiment model (statsmodels) on those folds.
+Candidate orders from `auto_arima` on 6 spread tune folds; selection by mean 24-h MAE of the experiment model (statsmodels) on all 90 tune folds.
 
 Rationale:
 - Previously the order was chosen by AIC on `splits[0]` only. For London and Washington that split lies about 5 months before the 90 tune folds all other models use; for all cities it was a single 30-day window.
 - The previous validation re-fitted with pmdarima, which differs from the statsmodels models used in the experiments (e.g. stationarity/invertibility enforcement). Selection now uses the experiment models themselves.
-- Same folds and same criterion (24-h MAE on the tune folds) as the other tuned models.
+- Same folds and same criterion (24-h MAE on all 90 tune folds) as XGBoost and Prophet.
 
 ### No Post-Processing of Forecasts
 Forecasts are scored as each model produces them: no clipping of negative values or other post-processing, in tuning and in the experiments. TimesFM returns non-negative forecasts because of its own default inference setting (`infer_is_positive=True`), which is part of the model as published.
@@ -695,8 +695,8 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 3. NeuralProphet training cost grows with the horizon (one output per forecast step with `n_forecasts = horizon`), and the model is retrained on every `predict()` call
 4. NeuralProphet hyperparameters are tuned at `config.tune_horizon` only and reused for all evaluation horizons
 5. Season and holiday can only be used by SARIMAX (and NeuralProphet) in folds where they vary within the 30-day training window
-6. ARIMA/SARIMAX candidate orders come from `auto_arima`'s stepwise AIC search on 6 search folds; orders it does not propose are not considered
-7. NeuralProphet, ARIMA and SARIMAX are searched on 6 of the 90 tune folds (run time); XGBoost and Prophet on all 90
+6. ARIMA/SARIMAX candidate orders come from `auto_arima`'s stepwise AIC search on 6 folds; orders it does not propose are not considered
+7. NeuralProphet is searched on 6 of the 90 tune folds (run time); all other tuned models are selected on all 90
 8. The rain/snow phase correction uses a fixed 2 °C threshold (the real transition spans roughly 0–4 °C) and moves amounts between rain (mm) and snow (cm) without unit conversion
 9. The partial last fold (h=48) covers lead times 1–24 only and is averaged with equal weight to the full folds; for NeuralProphet it is forecast by a model with `n_forecasts = 24`
 10. Fold metrics are averaged with equal weight per fold; a fold with few observed hours (partly imputed test window) counts as much as a fully observed one
