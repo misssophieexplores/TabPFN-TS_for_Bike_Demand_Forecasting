@@ -6,14 +6,27 @@ Run with .timesfm_venv/bin/python. Never call directly — managed by
 TimesFMForecaster in timesfm_model.py.
 
 Protocol (newline-delimited):
-    stdin:  <in_path>|<out_path>
-    stdout: OK|<out_path>   or   ERROR|<message>
+    startup: READY|<timesfm version>
+    stdin:   <in_path>|<out_path>
+    stdout:  OK|<out_path>   or   ERROR|<message>
+
+Input parquet: column "y" (context values, then NaN for the horizon) and, for
+the covariate model, one column per covariate covering context + horizon.
+
+Forecast config: the TimesFM 2.5 configuration recommended by the authors
+(timesfm README), with max_horizon = 168 (longest experiment horizon) and
+return_backcast = True (required by forecast_with_covariates).
+Point forecast = median (quantile index 5).
 """
 import sys
+from importlib import metadata
 
 import numpy as np
 import pandas as pd
 import timesfm
+
+MAX_CONTEXT = 1024
+MAX_HORIZON = 168
 
 
 def load_model():
@@ -22,8 +35,13 @@ def load_model():
     )
     model.compile(
         timesfm.ForecastConfig(
-            max_context=1024,
-            max_horizon=168,
+            max_context=MAX_CONTEXT,
+            max_horizon=MAX_HORIZON,
+            normalize_inputs=True,
+            use_continuous_quantile_head=True,
+            force_flip_invariance=True,
+            infer_is_positive=True,
+            fix_quantile_crossing=True,
             return_backcast=True,
         )
     )
@@ -44,24 +62,31 @@ def run_inference(model, in_path, out_path):
     )
 
     if dynamic_covariates:
+        # In-context linear regression on the covariates ("xreg + timesfm"),
+        # TimesFM forecasts the residual. Returns the horizon only.
         timesfm_out, _ = model.forecast_with_covariates(
             inputs=[y_train],
             dynamic_numerical_covariates=dynamic_covariates,
         )
-        y_pred = np.array(timesfm_out[0])[:horizon]
+        y_pred = np.asarray(timesfm_out[0])
     else:
+        # With return_backcast=True, forecast() returns the in-sample backcast
+        # followed by the forecast: the forecast is the LAST `horizon` values.
         point_forecast, _ = model.forecast(
             inputs=[y_train],
             horizon=horizon,
         )
-        y_pred = point_forecast[0, :horizon]
+        y_pred = np.asarray(point_forecast[0])[-horizon:]
+
+    if len(y_pred) != horizon:
+        raise RuntimeError(f"TimesFM returned {len(y_pred)} values, expected {horizon}")
 
     pd.DataFrame({"y_pred": y_pred}).to_parquet(out_path, index=False)
 
 
 def main():
     model = load_model()
-    print("READY", flush=True)
+    print(f"READY|{metadata.version('timesfm')}", flush=True)
 
     for line in sys.stdin:
         line = line.strip()

@@ -21,12 +21,7 @@ import json
 # Add parent directory to path if needed
 sys.path.insert(0, str(Path(__file__).parent))
 
-from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster, trend_from_intercept
-from models.ml_models import XGBoostForecaster
-from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
-from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
-from run_experiments import ForecastingExperiment, load_and_prepare_data, compute_and_log_comparative_metrics
-from models.timesfm_model import TimesFMForecaster, TimesFMForecaster_NoWeather
+from run_experiments import ForecastingExperiment, load_and_prepare_data, build_models, compute_and_log_comparative_metrics  # noqa: F401 (main.py may import it from here)
 
 
 def main(config=None, no_confirm=False):
@@ -56,55 +51,9 @@ def main(config=None, no_confirm=False):
     if config.experiment_name is None or config.experiment_name.startswith("None"):
         config.experiment_name = f"{config.dataset_name}_{config.results_version}"
 
-    # Load tuned model parameters
-    with open(config.arima_params_file) as f:
-        arima_cfg = json.load(f)
-
-    with open(config.sarimax_params_file) as f:
-        sarimax_cfg = json.load(f)
-
-    with open(config.xgb_params_file) as f:
-        xgb_cfg = json.load(f)
-    xgb_params = xgb_cfg["xgb_params"]
-    n_lags = xgb_cfg["n_lags"]
-
-    with open(config.prophet_params_file) as f:
-        prophet_cfg = json.load(f)
-
-    with open(config.neuralprophet_params_file) as f:
-        np_cfg = json.load(f)
-
-    if config.neuralprophet_noweather_params_file is None:
-        raise ValueError(
-            "config.neuralprophet_noweather_params_file is not set. Run "
-            "tune_neuralprophet.py --scenario no_weather for this city first."
-        )
-    with open(config.neuralprophet_noweather_params_file) as f:
-        np_nw_cfg = json.load(f)
-
-    # Intercept/trend exactly as selected during tuning.
-    # A KeyError here means the params file predates this fix: re-run tuning.
-    arima_order = tuple(arima_cfg["order"])
-    arima_trend = trend_from_intercept(arima_cfg["with_intercept"], arima_order)
-
-    sarimax_order = tuple(sarimax_cfg["order"])
-    sarimax_seasonal_order = tuple(sarimax_cfg["seasonal_order"])
-    sarimax_trend = trend_from_intercept(sarimax_cfg["with_intercept"], sarimax_order, sarimax_seasonal_order)
-
-    # All models
-    all_models = [
-        SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
-        ARIMAForecaster(order=arima_order, trend=arima_trend),
-        SARIMAXForecaster(order=sarimax_order, seasonal_order=sarimax_seasonal_order, trend=sarimax_trend),
-        XGBoostForecaster(n_lags=n_lags, **xgb_params),
-        ProphetForecaster(**prophet_cfg["prophet_params"]),
-        NeuralProphetForecaster(n_lags=np_cfg["n_lags"], **np_cfg["neuralprophet_params"]),
-        NeuralProphetForecaster_NoWeather(n_lags=np_nw_cfg["n_lags"], **np_nw_cfg["neuralprophet_params"]),
-        TabPFNPipelineForecaster(),
-        TabPFNPipelineForecaster_NoWeather(),
-        TimesFMForecaster(),
-        TimesFMForecaster_NoWeather(),
-    ]
+    # All models, with the tuned parameters from the params files in the city
+    # config (same construction as run_experiments.main() and the tests)
+    all_models = build_models(config)
 
     # Scenarios to run
     scenarios = [

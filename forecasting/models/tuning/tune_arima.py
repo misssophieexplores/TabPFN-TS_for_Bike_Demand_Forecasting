@@ -1,8 +1,13 @@
 """
-ARIMA Hyperparameter Tuning using auto_arima
+ARIMA order tuning (non-seasonal, no covariates).
 
-Uses pmdarima's auto_arima for automatic parameter search.
-Non-seasonal ARIMA only (no covariates).
+Procedure (shared with tune_sarimax.py, see arima_search.py):
+  1. pmdarima auto_arima (stepwise, AIC) on the training window of each of the
+     --search-folds search folds (default 6, spread evenly over the tune folds,
+     same folds as tune_neuralprophet.py) -> candidate orders
+  2. every candidate is fitted with ARIMAForecaster (statsmodels, as in the
+     experiments) on every search fold and scored on the next tune_horizon
+     hours; the lowest mean MAE is selected
 
 Usage:
     # Tune all cities:
@@ -16,159 +21,62 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # forecasting/
+sys.path.insert(0, str(Path(__file__).resolve().parent))      # models/tuning/
 
-import pandas as pd
-import numpy as np
-from pathlib import Path
 import argparse
 import json
 from datetime import datetime
-import warnings
+
+import pandas as pd
 
 from config import ForecastConfig
-from evaluation.cv import TimeSeriesCV
-from evaluation.metrics import MetricsCalculator
 from run_experiments import load_and_prepare_data
+from provenance import get_provenance
+from arima_search import search_orders
 
-try:
-    from pmdarima import auto_arima
-except ImportError:
-    print("ERROR: pmdarima not installed")
-    print("Install with: pip install pmdarima")
-    sys.exit(1)
+AUTO_ARIMA_KWARGS = dict(
+    seasonal=False,
+    stepwise=True,
+    suppress_warnings=True,
+    error_action='ignore',
+    max_p=7, max_q=3,
+    max_order=8,
+    information_criterion='aic',
+)
 
 
 def tune_arima(
     df: pd.DataFrame,
     config: ForecastConfig,
     city: str,
-    verbose: bool = True
+    search_folds: int = 6,
+    verbose: bool = True,
 ) -> dict:
-    cv = TimeSeriesCV(config)
-    calc = MetricsCalculator()
+    if verbose:
+        print("=" * 70)
+        print(f"ARIMA TUNING | city={city} | horizon={config.tune_horizon}h")
+        print("=" * 70)
 
-    # Only tune on pre-cutoff data — never touch the held-out test period
-    cutoff_date = cv.get_cutoff_date(df)
-    tune_df = df[df[config.date_col] <= cutoff_date].copy()
+    result = search_orders(
+        df, config, seasonal=False, scenario="clean_only",
+        auto_arima_kwargs={**AUTO_ARIMA_KWARGS, "trace": False},
+        search_folds=search_folds, verbose=verbose,
+    )
 
     if verbose:
-        print("="*70)
-        print(f"ARIMA AUTO-TUNING (pmdarima) | city={city} | horizon={config.tune_horizon}h")
-        print("="*70)
-        print(f"Cutoff date (held-out test start): {cutoff_date}")
-        print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
-        print(f"n_train_samples: {config.n_train_samples}")
-        print(f"Validation folds: {'all available' if config.tune_folds is None else config.tune_folds}")
-        print("="*70)
-
-    splits = cv.split(tune_df, config.tune_horizon)
-    train_df, test_df = splits[0]
-    y_train = train_df[config.target_col].values
-
-    if verbose:
-        print(f"\nSearching optimal parameters on {len(y_train)} observations...")
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore')
-        model = auto_arima(
-            y_train,
-            seasonal=False,
-            stepwise=True,
-            suppress_warnings=True,
-            error_action='ignore',
-            max_p=7, max_q=3,
-            max_order=8,
-            trace=verbose,
-            information_criterion='aic',
-            n_jobs=-1
-        )
-
-    order = model.order
-    with_intercept = bool(model.with_intercept)
-    aic = model.aic()
-    bic = model.bic()
-
-    if verbose:
-        print("\n" + "="*70)
-        print("BEST PARAMETERS FOUND")
-        print("="*70)
-        print(f"order: {order}")
-        print(f"AIC: {aic:.2f}")
-        print(f"BIC: {bic:.2f}")
-
-    if config.tune_folds is None:
-        fold_range = range(len(splits))
-    else:
-        n = min(config.tune_folds, len(splits))
-        fold_range = range(len(splits) - n, len(splits))
-    # Skip folds whose test window is fully imputed (nothing to score)
-    fold_range = [
-        i for i in fold_range
-        if calc.observed_mask(splits[i][1], config.functioning_day_col).any()
-    ]
-
-    if verbose:
-        print(f"\nValidating on {len(fold_range)} folds...")
-
-    mae_values = []
-    rmse_values = []
-
-    for fold_idx in fold_range:
-        train_df, test_df = splits[fold_idx]
-        y_train_fold = train_df[config.target_col].values
-        y_test_fold = test_df[config.target_col].values
-
-        try:
-            model_fold = auto_arima(
-                y_train_fold,
-                start_p=order[0], start_q=order[2],
-                max_p=order[0], max_q=order[2],
-                d=order[1],
-                with_intercept=with_intercept,
-                seasonal=False,
-                suppress_warnings=True,
-                error_action='ignore'
-            )
-            y_pred = model_fold.predict(n_periods=config.tune_horizon)
-            # Imputed hours (Functioning Day == 'No') are excluded from scoring
-            metrics = calc.calculate_all(
-                y_test_fold, y_pred, y_train_fold,
-                test_mask=calc.observed_mask(test_df, config.functioning_day_col),
-                train_mask=calc.observed_mask(train_df, config.functioning_day_col),
-            )
-            mae_values.append(metrics['MAE'])
-            rmse_values.append(metrics['RMSE'])
-            if verbose:
-                print(f"  Fold {fold_idx}: MAE={metrics['MAE']:.1f}, RMSE={metrics['RMSE']:.1f}")
-        except Exception as e:
-            if verbose:
-                print(f"  Fold {fold_idx}: FAILED - {str(e)[:50]}")
-            continue
-
-    if mae_values:
-        mae_mean, mae_std = np.mean(mae_values), np.std(mae_values)
-        rmse_mean, rmse_std = np.mean(rmse_values), np.std(rmse_values)
-    else:
-        mae_mean = mae_std = rmse_mean = rmse_std = np.nan
-
-    if verbose:
-        print(f"\nValidation results:")
-        print(f"  MAE: {mae_mean:.2f} ± {mae_std:.2f}")
-        print(f"  RMSE: {rmse_mean:.2f} ± {rmse_std:.2f}")
+        print("\n" + "=" * 70)
+        print(f"SELECTED: order={result['order']} with_intercept={result['with_intercept']} "
+              f"(trend={result['trend']}) | search MAE={result['tuning']['best_tune_mae_mean']:.2f}")
+        print("=" * 70)
 
     return {
         'city': city,
         'n_train_samples': config.n_train_samples,
-        'tuning_period': cv.get_tuning_period(tune_df),
-        'order': order,
-        'with_intercept': with_intercept,
-        'aic': float(aic),
-        'bic': float(bic),
-        'mae_mean': float(mae_mean),
-        'mae_std': float(mae_std),
-        'rmse_mean': float(rmse_mean),
-        'rmse_std': float(rmse_std),
-        'validation_folds': len(mae_values)
+        'tuning_period': result['tuning_period'],
+        'order': result['order'],
+        'with_intercept': result['with_intercept'],
+        'trend': result['trend'],
+        'tuning': result['tuning'],
     }
 
 
@@ -179,7 +87,7 @@ def save_results(params: dict, output_dir: str = '.') -> Path:
     city, n_train = params['city'], params['n_train_samples']
     output_file = output_dir / f'arima_best_params_{city}_{n_train}_{timestamp}.json'
     with open(output_file, 'w') as f:
-        json.dump(params, f, indent=2)
+        json.dump({**params, "provenance": get_provenance()}, f, indent=2)
     print(f"\nResults saved to: {output_file}")
     return output_file
 
@@ -196,15 +104,17 @@ def run_city(city: str, args) -> None:
     df, _ = load_and_prepare_data(config)
     print(f"Loaded {len(df)} observations for {city}")
 
-    params = tune_arima(df=df, config=config, city=city, verbose=True)
+    params = tune_arima(df=df, config=config, city=city, search_folds=args.search_folds, verbose=True)
     output_file = save_results(params, args.output_dir)
     print(f"  --> config.arima_params_file = '{output_file}'")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Tune ARIMA using auto_arima')
+    parser = argparse.ArgumentParser(description='Tune ARIMA order (auto_arima candidates, MAE selection)')
     parser.add_argument('--city', type=str, choices=['seoul', 'london', 'washington'],
                         default=None, help='City to tune (default: all cities)')
+    parser.add_argument('--search-folds', type=int, default=6,
+                        help='Search folds, spread evenly over the tune folds (default: 6)')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
 

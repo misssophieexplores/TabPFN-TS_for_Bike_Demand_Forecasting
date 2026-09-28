@@ -40,6 +40,7 @@ from config import ForecastConfig
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from run_experiments import load_and_prepare_data
+from provenance import get_provenance
 
 # Silence Prophet / cmdstanpy sampler output
 logging.getLogger("prophet").setLevel(logging.WARNING)
@@ -134,16 +135,8 @@ def tune_prophet(
     if len(splits) == 0:
         raise RuntimeError("No CV splits available for the given horizon/config.")
 
-    if config.tune_folds is None:
-        fold_range = range(len(splits))
-    else:
-        n = min(config.tune_folds, len(splits))
-        fold_range = range(len(splits) - n, len(splits))
-    # Skip folds whose test window is fully imputed (nothing to score)
-    fold_range = [
-        i for i in fold_range
-        if MetricsCalculator.observed_mask(splits[i][1], config.functioning_day_col).any()
-    ]
+    # Last config.tune_folds folds, without fully imputed test windows
+    fold_range = cv.tune_fold_indices(splits)
 
     if len(fold_range) == 0:
         raise RuntimeError(
@@ -290,7 +283,7 @@ def save_results(params: dict, output_dir: str) -> Path:
     city, n_train = params["city"], params["n_train_samples"]
     output_file = out_dir / f"prophet_best_params_{city}_{n_train}_{timestamp}.json"
     with open(output_file, "w") as f:
-        json.dump(params, f, indent=2)
+        json.dump({**params, "provenance": get_provenance()}, f, indent=2)
     print(f"\nResults saved to: {output_file}")
     return output_file
 

@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 from typing import List, Tuple
 from config import ForecastConfig
+from evaluation.metrics import MetricsCalculator
 
 
 class TimeSeriesCV:
@@ -30,6 +31,7 @@ class TimeSeriesCV:
         self._first_fold_date = None
         self._actual_n_folds = None
         self._imputed_fold_info = []
+        self._incomplete_folds = []
 
     def get_cutoff_date(self, df: pd.DataFrame) -> pd.Timestamp:
         """
@@ -71,6 +73,33 @@ class TimeSeriesCV:
         the last fold is partial (eval_hours % horizon test hours).
         """
         return int(np.ceil(self.get_eval_hours() / horizon))
+
+    def tune_fold_indices(self, splits: List[Tuple[pd.DataFrame, pd.DataFrame]]) -> List[int]:
+        """
+        Tuning folds, used by every tuning script: indices into `splits`
+        (from split(tune_df, tune_horizon)) of the last config.tune_folds folds
+        (all folds if None), without folds whose test window is fully imputed
+        (nothing to score).
+        """
+        n = len(splits)
+        start = 0 if self.config.tune_folds is None else n - min(self.config.tune_folds, n)
+        return [
+            i for i in range(start, n)
+            if MetricsCalculator.observed_mask(splits[i][1], self.config.functioning_day_col).any()
+        ]
+
+    @staticmethod
+    def spread_fold_indices(fold_indices: List[int], n: int) -> List[int]:
+        """
+        n folds spread evenly over fold_indices (first and last included), for
+        searches that cannot afford all tune folds (NeuralProphet, ARIMA/SARIMAX
+        order search). Same n -> same folds in every script.
+        """
+        if not fold_indices or n < 1:
+            return []
+        n = min(n, len(fold_indices))
+        pos = np.unique(np.round(np.linspace(0, len(fold_indices) - 1, n)).astype(int))
+        return [fold_indices[p] for p in pos]
 
     def get_tuning_period(self, tune_df: pd.DataFrame) -> dict:
         """
@@ -141,6 +170,7 @@ class TimeSeriesCV:
         self._first_fold_date = first_fold_date
         self._actual_n_folds = None  # set after loop
         self._imputed_fold_info = []
+        self._incomplete_folds = []  # (train_start, test_end) of folds dropped because of gaps
         
         if self.config.verbose:
             print(f"CV Info for horizon={horizon}h:")
@@ -178,28 +208,33 @@ class TimeSeriesCV:
             
             train_df = df[train_mask].copy()
             test_df = df[test_mask].copy()
-            
-            # Check for imputed data in this fold
-            train_imputed = 0
-            test_imputed = 0
-            fday = self.config.functioning_day_col
-            if fday and fday in train_df.columns:
-                train_imputed = (train_df[fday] == 'No').sum()
-                test_imputed = (test_df[fday] == 'No').sum()
-            
-            # Store imputation info
-            self._imputed_fold_info.append({
-                'fold': fold,
-                'train_imputed': train_imputed,
-                'test_imputed': test_imputed,
-                'train_total': len(train_df),
-                'test_total': len(test_df)
-            })
-            
+
             # Verify training size and valid test size (horizon hours, or the
             # remaining hours for a partial last fold)
             if len(train_df) >= self.config.n_train_samples and len(test_df) == n_test_hours:
+                # Imputation info, one entry per KEPT fold ('fold' = index in splits)
+                train_imputed = 0
+                test_imputed = 0
+                fday = self.config.functioning_day_col
+                if fday and fday in train_df.columns:
+                    train_imputed = int((train_df[fday] == 'No').sum())
+                    test_imputed = int((test_df[fday] == 'No').sum())
+                self._imputed_fold_info.append({
+                    'fold': len(splits),
+                    'train_imputed': train_imputed,
+                    'test_imputed': test_imputed,
+                    'train_total': len(train_df),
+                    'test_total': len(test_df)
+                })
                 splits.append((train_df, test_df))
+            elif train_start + pd.Timedelta(hours=1) >= data_start:
+                # The windows lie fully inside the data, so rows are missing
+                # (gap in the hourly timestamps). Dropping the fold silently
+                # would change the fold set; always report it.
+                self._incomplete_folds.append((train_start, test_end))
+                print(f"WARNING: fold with test window ({test_start}, {test_end}] dropped: "
+                      f"{len(train_df)}/{self.config.n_train_samples} training rows, "
+                      f"{len(test_df)}/{n_test_hours} test rows (missing hourly timestamps)")
 
             fold += 1
 

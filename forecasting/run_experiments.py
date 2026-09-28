@@ -29,6 +29,7 @@ from evaluation.metrics import MetricsCalculator
 from weather.weather_processor import WeatherProcessor
 from features import add_time_features
 from models.timesfm_model import TimesFMForecaster, TimesFMForecaster_NoWeather
+from provenance import get_code_version, get_library_versions
 
 
 # Load environment variables
@@ -36,6 +37,118 @@ load_dotenv()
 
 # Name used as baseline for skill_score / win_rate comparisons
 BASELINE_MODEL = "Seasonal_Naive"
+
+# Model keys accepted by build_models(), in paper order
+MODEL_KEYS = [
+    "seasonal_naive", "arima", "sarimax", "xgboost", "prophet",
+    "neuralprophet", "neuralprophet_noweather",
+    "tabpfn", "tabpfn_noweather", "timesfm", "timesfm_noweather",
+]
+
+
+def _load_params(path: Optional[str], field: str, how_to_create: str) -> dict:
+    if path is None:
+        raise ValueError(f"config.{field} is not set. {how_to_create}")
+    with open(path) as f:
+        return json.load(f)
+
+
+def build_models(config: ForecastConfig, keys: Optional[List[str]] = None) -> List[BaseForecaster]:
+    """
+    Build the forecasters with the tuned parameters from the params files named
+    in the city config. Single source of truth for run_weather_baseline.py,
+    run_experiments.main() and the tests. keys=None builds all MODEL_KEYS;
+    only the params files of the requested models are read.
+    """
+    keys = list(MODEL_KEYS) if keys is None else list(keys)
+    unknown = [k for k in keys if k not in MODEL_KEYS]
+    if unknown:
+        raise ValueError(f"Unknown model keys {unknown}; available: {MODEL_KEYS}")
+
+    models = []
+    for key in keys:
+        if key == "seasonal_naive":
+            models.append(SeasonalNaiveForecaster(seasonal_period=config.seasonal_period))
+        elif key == "arima":
+            cfg = _load_params(config.arima_params_file, "arima_params_file", "Run tune_arima.py.")
+            order = tuple(cfg["order"])
+            # Intercept selected during tuning -> statsmodels trend. A params
+            # file without with_intercept raises KeyError: re-run tuning.
+            trend = trend_from_intercept(cfg["with_intercept"], order, (0, 0, 0, 0))
+            models.append(ARIMAForecaster(order=order, trend=trend))
+        elif key == "sarimax":
+            cfg = _load_params(config.sarimax_params_file, "sarimax_params_file", "Run tune_sarimax.py.")
+            order, seasonal_order = tuple(cfg["order"]), tuple(cfg["seasonal_order"])
+            trend = trend_from_intercept(cfg["with_intercept"], order, seasonal_order)
+            models.append(SARIMAXForecaster(order=order, seasonal_order=seasonal_order, trend=trend))
+        elif key == "xgboost":
+            cfg = _load_params(config.xgb_params_file, "xgb_params_file", "Run tune_xgboost.py.")
+            models.append(XGBoostForecaster(n_lags=cfg["n_lags"], **cfg["xgb_params"]))
+        elif key == "prophet":
+            cfg = _load_params(config.prophet_params_file, "prophet_params_file", "Run tune_prophet.py.")
+            models.append(ProphetForecaster(**cfg["prophet_params"]))
+        elif key == "neuralprophet":
+            cfg = _load_params(config.neuralprophet_params_file, "neuralprophet_params_file",
+                               "Run tune_neuralprophet.py.")
+            models.append(NeuralProphetForecaster(n_lags=cfg["n_lags"], **cfg["neuralprophet_params"]))
+        elif key == "neuralprophet_noweather":
+            cfg = _load_params(config.neuralprophet_noweather_params_file,
+                               "neuralprophet_noweather_params_file",
+                               "Run tune_neuralprophet.py --scenario no_weather for this city first.")
+            models.append(NeuralProphetForecaster_NoWeather(n_lags=cfg["n_lags"], **cfg["neuralprophet_params"]))
+        elif key == "tabpfn":
+            models.append(TabPFNPipelineForecaster())
+        elif key == "tabpfn_noweather":
+            models.append(TabPFNPipelineForecaster_NoWeather())
+        elif key == "timesfm":
+            models.append(TimesFMForecaster())
+        elif key == "timesfm_noweather":
+            models.append(TimesFMForecaster_NoWeather())
+    return models
+
+
+def prepare_fold_inputs(
+    config: ForecastConfig,
+    model: BaseForecaster,
+    weather_proc: WeatherProcessor,
+    train_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    weather_scenario: str,
+    horizon: int,
+    fold_idx: int,
+):
+    """
+    Model inputs for one fold, exactly as in the experiments:
+    (y_train, X_train, y_test, X_test).
+    - covariates from WeatherProcessor (train: clean; test: degraded in 'degraded')
+    - calendar features appended for use_time_features models (XGBoost)
+    - real DatetimeIndex for needs_datetime models (Prophet, NeuralProphet, TabPFN);
+      an empty frame with that index if the model has no covariates
+    """
+    y_train = train_df[config.target_col].values
+    y_test = test_df[config.target_col].values
+
+    X_train = None
+    X_test = None
+    if model.use_covariates:
+        X_train = weather_proc.prepare_weather_data(
+            train_df, weather_scenario, horizon, fold_idx, split="train"
+        )
+        X_test = weather_proc.prepare_weather_data(
+            test_df, weather_scenario, horizon, fold_idx, split="test"
+        )
+
+    if model.use_time_features:
+        X_train = prepare_xgboost_features(train_df, config.date_col, X_train)
+        X_test = prepare_xgboost_features(test_df, config.date_col, X_test)
+
+    if getattr(model, "needs_datetime", False):
+        train_dates = pd.DatetimeIndex(train_df[config.date_col].values)
+        test_dates = pd.DatetimeIndex(test_df[config.date_col].values)
+        X_train = pd.DataFrame(index=train_dates) if X_train is None else X_train.set_index(train_dates)
+        X_test = pd.DataFrame(index=test_dates) if X_test is None else X_test.set_index(test_dates)
+
+    return y_train, X_train, y_test, X_test
 
 class ForecastingExperiment:
     """Manages and runs forecasting experiments with W&B logging"""
@@ -57,6 +170,10 @@ class ForecastingExperiment:
         self.output_dir.mkdir(exist_ok=True)
 
         
+        # Git commit of the code, written to every results row
+        self.code_version = get_code_version()
+        self.library_versions = get_library_versions()
+
         # Initialize W&B with credentials from .env
         self.run_name = experiment_name or f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         wandb.init(
@@ -68,6 +185,8 @@ class ForecastingExperiment:
                 "horizons": config.horizons,
                 "n_folds": config.n_folds,
                 "n_train_samples": config.n_train_samples,
+                **self.code_version,
+                "library_versions": self.library_versions,
             }
         )
         
@@ -84,7 +203,17 @@ class ForecastingExperiment:
         if self.checkpoint_file.exists():
             with open(self.checkpoint_file, 'r') as f:
                 data = json.load(f)
-                return set(tuple(x) for x in data.get('completed', []))
+            # A checkpoint from older code would silently skip experiments
+            if 'code_version' not in data:
+                raise RuntimeError(
+                    f"{self.checkpoint_file} was written by older code (no code_version). "
+                    f"Move it away (with the results files) or use a new results_version."
+                )
+            if data['code_version'].get('git_commit') != self.code_version['git_commit']:
+                print(f"WARNING: resuming checkpoint from commit "
+                      f"{data['code_version'].get('git_commit')}; current commit "
+                      f"{self.code_version['git_commit']}. Completed experiments keep their old commit.")
+            return set(tuple(x) for x in data.get('completed', []))
         return set()
     
     def _save_checkpoint(self, model_name: str, horizon: int, scenario: str):
@@ -93,7 +222,8 @@ class ForecastingExperiment:
         with open(self.checkpoint_file, 'w') as f:
             json.dump({
                 'completed': [list(x) for x in self.completed_experiments],
-                'last_updated': datetime.now().isoformat()
+                'last_updated': datetime.now().isoformat(),
+                'code_version': self.code_version,
             }, f, indent=2)
     
 
@@ -162,37 +292,10 @@ class ForecastingExperiment:
         fold_results = []
 
         for fold_idx, (train_df, test_df) in enumerate(splits):
-            y_train = train_df[self.config.target_col].values
-            y_test = test_df[self.config.target_col].values
-
-            # Prepare weather data using WeatherProcessor
-            X_train = None
-            X_test = None
-            if model.use_covariates:
-                X_train = weather_proc.prepare_weather_data(
-                    train_df, weather_scenario, horizon, fold_idx, split="train"
-                )
-                X_test = weather_proc.prepare_weather_data(
-                    test_df, weather_scenario, horizon, fold_idx, split="test"
-                )
-
-            # Append calendar time features for models that need them (e.g. XGBoost).
-            if model.use_time_features:
-                X_train = prepare_xgboost_features(train_df, self.config.date_col, X_train)
-                X_test = prepare_xgboost_features(test_df, self.config.date_col, X_test)
-
-            # Attach real DatetimeIndex for models that need timestamps (Prophet, TabPFN).
-            if getattr(model, "needs_datetime", False):
-                train_dates = pd.DatetimeIndex(train_df[self.config.date_col].values)
-                test_dates  = pd.DatetimeIndex(test_df[self.config.date_col].values)
-                if X_train is None:
-                    X_train = pd.DataFrame(index=train_dates)
-                else:
-                    X_train = X_train.set_index(train_dates)
-                if X_test is None:
-                    X_test = pd.DataFrame(index=test_dates)
-                else:
-                    X_test = X_test.set_index(test_dates)
+            y_train, X_train, y_test, X_test = prepare_fold_inputs(
+                self.config, model, weather_proc, train_df, test_df,
+                weather_scenario, horizon, fold_idx,
+            )
 
             try:
                 model.reset()
@@ -221,6 +324,7 @@ class ForecastingExperiment:
                 metrics['dataset'] = self.config.dataset_name
                 metrics['run_name'] = self.run_name
                 metrics['version'] = self.config.results_version
+                metrics.update(self.code_version)
                 metrics['timestamp'] = datetime.now().isoformat()
                 metrics['fold'] = fold_idx
                 metrics['model'] = model.name
@@ -265,6 +369,12 @@ class ForecastingExperiment:
         if len(fold_results) == 0:
             print(f" [FAILED] All folds failed")
             return None
+        n_failed_folds = expected_folds - len(fold_results)
+        if n_failed_folds > 0:
+            # Always printed: the aggregated metrics then cover fewer folds than
+            # the other models, so this model/horizon/scenario is not comparable.
+            print(f"\n[WARN] {model.name} | h={horizon} | {weather_scenario}: "
+                  f"{n_failed_folds}/{expected_folds} folds failed (see errors log)")
 
         # Aggregate fold results. Folds whose test window is fully imputed
         # have NaN metrics; pandas mean/std skip them (skipna).
@@ -273,6 +383,8 @@ class ForecastingExperiment:
             'dataset': self.config.dataset_name,
             'run_name': self.run_name,
             'version': self.config.results_version,
+            **self.code_version,
+            'library_versions': json.dumps(self.library_versions, sort_keys=True),
             'timestamp': datetime.now().isoformat(),
             'model': model.name,
             'horizon': horizon,
@@ -281,6 +393,7 @@ class ForecastingExperiment:
             'degradation_seed': self.config.degradation_seed,
             'num_weather_vars': results_df['num_weather_vars'].iloc[0] if len(results_df) > 0 else 0,
             'n_folds': len(fold_results),
+            'n_failed_folds': n_failed_folds,
             'MAE_mean': results_df['MAE'].mean(),
             'MAE_std': results_df['MAE'].std(),
             'RMSE_mean': results_df['RMSE'].mean(),
@@ -367,6 +480,16 @@ class ForecastingExperiment:
         if filename_agg.exists():
             existing = pd.read_csv(filename_agg)
             self.results = existing.to_dict('records')
+            # Rows from other code versions must not be mixed into one paper run
+            if 'git_commit' not in existing.columns:
+                raise RuntimeError(
+                    f"{filename_agg} has no git_commit column (written by older code). "
+                    f"Move it and its checkpoint/detailed files away, or use a new results_version."
+                )
+            other = sorted(set(existing['git_commit'].dropna()) - {self.code_version['git_commit']})
+            if other:
+                print(f"WARNING: {filename_agg} contains rows from other commits: {other}. "
+                      f"Current commit: {self.code_version['git_commit']}")
 
         
         # Calculate total experiments (accounting for skipped combinations)
@@ -588,61 +711,7 @@ def main(config: Optional[ForecastConfig] = None):
     if config.experiment_name is None or config.experiment_name.startswith("None"):
         config.experiment_name = f"{config.dataset_name}_{config.results_version}"
 
-    with open(config.arima_params_file) as f:
-        arima_cfg = json.load(f)
-
-    with open(config.sarimax_params_file) as f:
-        sarimax_cfg = json.load(f)
-
-    with open(config.xgb_params_file) as f:
-        xgb_cfg = json.load(f)
-    xgb_params = xgb_cfg["xgb_params"]
-    n_lags = xgb_cfg["n_lags"]
-
-    with open(config.prophet_params_file) as f:
-        prophet_cfg = json.load(f)
-    prophet_params = prophet_cfg["prophet_params"]
-
-    with open(config.neuralprophet_params_file) as f:
-        np_cfg = json.load(f)
-    np_lags = np_cfg["n_lags"]
-    np_params = np_cfg["neuralprophet_params"]
-
-    if config.neuralprophet_noweather_params_file is None:
-        raise ValueError(
-            "config.neuralprophet_noweather_params_file is not set. Run "
-            "tune_neuralprophet.py --scenario no_weather for this city first."
-        )
-    with open(config.neuralprophet_noweather_params_file) as f:
-        np_nw_cfg = json.load(f)
-    np_nw_lags = np_nw_cfg["n_lags"]
-    np_nw_params = np_nw_cfg["neuralprophet_params"]
-
-    # Intercept selected during tuning -> statsmodels trend (same as
-    # run_weather_baseline.py). A params file without with_intercept raises
-    # KeyError: re-run tuning.
-    arima_order = tuple(arima_cfg["order"])
-    arima_trend = trend_from_intercept(arima_cfg["with_intercept"], arima_order, (0, 0, 0, 0))
-    sarimax_order = tuple(sarimax_cfg["order"])
-    sarimax_seasonal_order = tuple(sarimax_cfg["seasonal_order"])
-    sarimax_trend = trend_from_intercept(
-        sarimax_cfg["with_intercept"], sarimax_order, sarimax_seasonal_order
-    )
-
-    models = [
-        SeasonalNaiveForecaster(seasonal_period=config.seasonal_period),
-        ARIMAForecaster(order=arima_order, trend=arima_trend),
-        SARIMAXForecaster(order=sarimax_order, seasonal_order=sarimax_seasonal_order, trend=sarimax_trend),
-        XGBoostForecaster(n_lags=n_lags, **xgb_params),
-        ProphetForecaster(**prophet_params),
-        NeuralProphetForecaster(n_lags=np_lags, **np_params),
-        NeuralProphetForecaster_NoWeather(n_lags=np_nw_lags, **np_nw_params),
-        TabPFNPipelineForecaster(),
-        TabPFNPipelineForecaster_NoWeather(),
-        TimesFMForecaster(),
-        TimesFMForecaster_NoWeather(),
-        
-    ]
+    models = build_models(config)
 
     experiment = ForecastingExperiment(
         config=config,

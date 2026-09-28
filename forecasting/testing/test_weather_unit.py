@@ -141,6 +141,8 @@ class TestWeatherDegradation:
         }
         config.holiday_col = None
         config.season_col = None
+        config.rain_col = 'Rainfall'
+        config.snow_col = 'Snowfall'
         return WeatherProcessor(config)
 
     def _make_test_df(self, n_rows=24):
@@ -195,6 +197,10 @@ class TestWeatherDegradation:
         wins = 0
         n_trials = 10
         for fold_idx in range(n_trials):
+            # The train split provides the degradation parameters (solar cap)
+            processor.prepare_weather_data(
+                df, 'degraded', horizon=horizon, fold_idx=fold_idx, split='train'
+            )
             X_clean = processor.prepare_weather_data(
                 df, 'clean_only', horizon=horizon, fold_idx=fold_idx, split='test'
             )
@@ -212,6 +218,88 @@ class TestWeatherDegradation:
         assert wins >= 7, (
             f"Expected noise to grow with lead time in ≥7/10 trials, got {wins}/10"
         )
+    # ------------------------------------------------------------------
+    # Regression tests for fixes that change results
+    # ------------------------------------------------------------------
+    def test_degraded_test_requires_train_split(self):
+        """The test split cannot be degraded before the train split of the fold."""
+        processor = self._make_weather_processor()
+        with pytest.raises(RuntimeError):
+            processor.prepare_weather_data(
+                self._make_test_df(), 'degraded', horizon=24, fold_idx=0, split='test'
+            )
+
+    def test_solar_cap_from_training_fold(self):
+        """Degraded solar radiation is capped at the 99.5th percentile of the
+        clean TRAINING fold, not of the test window."""
+        processor = self._make_weather_processor()
+        train = self._make_test_df(n_rows=720)
+        train['Solar Radiation'] = np.linspace(0, 1.0, 720)
+        test = self._make_test_df(n_rows=168)
+        test['Solar Radiation'] = 3.0          # far above the training cap
+        processor.prepare_weather_data(train, 'degraded', horizon=168, fold_idx=0, split='train')
+        cap = np.percentile(train['Solar Radiation'], 99.5)
+        assert processor.degradation_params['solar_cap'] == pytest.approx(cap)
+        X_deg = processor.prepare_weather_data(test, 'degraded', horizon=168, fold_idx=0, split='test')
+        assert X_deg['Solar Radiation'].max() <= cap + 1e-12
+
+    def test_seeds_unique_across_horizons(self):
+        """fold 18 at h=6 and fold 0 at h=24 had the same seed with the old
+        formula (base_seed + fold_idx + horizon); they must differ now."""
+        processor = self._make_weather_processor()
+        df = self._make_test_df(n_rows=6)
+        out = []
+        for horizon, fold_idx in [(6, 18), (24, 0)]:
+            processor.prepare_weather_data(df, 'degraded', horizon=horizon, fold_idx=fold_idx, split='train')
+            X = processor.prepare_weather_data(df, 'degraded', horizon=horizon, fold_idx=fold_idx, split='test')
+            out.append(X['Temperature'].values - df['Temperature'].values)
+        assert not np.allclose(out[0], out[1])
+
+    def test_dry_window_with_phase_correction(self):
+        """Cold, dry test window: precipitation columns come out as all-zero
+        before the phase correction moves false-alarm rain into snow. Must not
+        fail on dtype (pandas >= 3 rejects floats in an int column)."""
+        processor = self._make_weather_processor()
+        df = self._make_test_df(n_rows=6)
+        df['Temperature'] = -5.0
+        for fold_idx in range(50):
+            processor.prepare_weather_data(df, 'degraded', horizon=6, fold_idx=fold_idx, split='train')
+            X = processor.prepare_weather_data(df, 'degraded', horizon=6, fold_idx=fold_idx, split='test')
+            assert X['Rainfall'].dtype.kind == 'f' and X['Snowfall'].dtype.kind == 'f'
+
+    def test_fold_idx_out_of_range(self):
+        processor = self._make_weather_processor()
+        df = self._make_test_df()
+        processor.prepare_weather_data(df, 'degraded', horizon=24, fold_idx=0, split='train')
+        with pytest.raises(ValueError):
+            processor.prepare_weather_data(df, 'degraded', horizon=24, fold_idx=10000, split='test')
+
+    def test_rain_snow_phase_correction_uses_config_columns(self):
+        """Phase correction with non-Seoul column names (London/Washington)."""
+        config = ForecastConfig()
+        config.dataset_name = "test"
+        config.weather_covariates = ['temperature_c', 'solar_radiation_wm2', 'rainfall_mm', 'snowfall_cm']
+        config.weather_degradation_mapping = {
+            'temperature_c': 'temperature', 'solar_radiation_wm2': 'solar_radiation',
+            'rainfall_mm': 'precipitation', 'snowfall_cm': 'precipitation',
+        }
+        config.holiday_col = None
+        config.season_col = None
+        config.rain_col = 'rainfall_mm'
+        config.snow_col = 'snowfall_cm'
+        config.degradation_seed = 42
+        processor = WeatherProcessor(config)
+        n = 48
+        df = pd.DataFrame({'temperature_c': np.full(n, 20.0),      # warm: snow must become rain
+                           'solar_radiation_wm2': np.full(n, 100.0),
+                           'rainfall_mm': np.zeros(n), 'snowfall_cm': np.full(n, 5.0)})
+        processor.prepare_weather_data(df, 'degraded', horizon=n, fold_idx=0, split='train')
+        X = processor.prepare_weather_data(df, 'degraded', horizon=n, fold_idx=0, split='test')
+        warm = X['temperature_c'] > 2
+        assert warm.any()
+        assert (X.loc[warm, 'snowfall_cm'] == 0).all()
+
+
 if __name__ == "__main__":
     # Run tests
     pytest.main([__file__, "-v"])

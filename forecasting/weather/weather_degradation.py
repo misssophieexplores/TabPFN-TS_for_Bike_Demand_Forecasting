@@ -437,7 +437,10 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
                     degraded_values.append(
                         degrade_weather_forecast(val, var_type, lt, rng=rng)
                     )
-            df_degraded[col] = degraded_values
+            # float dtype: degrade_weather_forecast returns int 0 for dry /
+            # night rows; an all-int column would reject the float amounts
+            # moved in by the rain/snow correction (TypeError in pandas >= 3)
+            df_degraded[col] = np.asarray(degraded_values, dtype=float)
         elif var_type == 'solar_radiation':
             df_degraded[col] = df[col].apply(
                 lambda x: degrade_weather_forecast(
@@ -445,13 +448,13 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
                     solar_cap=degradation_params['solar_cap'],
                     rng=rng
                 )
-            )
+            ).astype(float)
         else:
             df_degraded[col] = df[col].apply(
                 lambda x: degrade_weather_forecast(
                     x, var_type, horizon_hours, rng=rng
                 )
-            )
+            ).astype(float)
     
     # Pass 2: Fix precipitation types based on degraded temperature
     # This MUST happen after temperature degradation

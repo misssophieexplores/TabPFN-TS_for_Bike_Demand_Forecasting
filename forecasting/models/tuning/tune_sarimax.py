@@ -1,9 +1,20 @@
 """
-SARIMAX Hyperparameter Tuning using auto_arima
+SARIMAX order tuning (seasonal, with weather covariates).
 
-Uses pmdarima's auto_arima for automatic parameter search with:
-- Seasonal components
-- Exogenous variables (weather covariates)
+Procedure (shared with tune_arima.py, see arima_search.py):
+  1. pmdarima auto_arima (stepwise, AIC, seasonal period m) with the covariates
+     on the training window of each of the --search-folds search folds
+     (default 6, spread evenly over the tune folds, same folds as
+     tune_neuralprophet.py) -> candidate orders
+  2. every candidate is fitted with SARIMAXForecaster (statsmodels, as in the
+     experiments, same covariates) on every search fold and scored on the next
+     tune_horizon hours; the lowest mean MAE is selected
+
+Covariates are the experiment's columns for --scenario (WeatherProcessor):
+    clean_only  (default): degradable covariates + holiday + season
+    all_weather          : all weather_covariates
+Covariates constant in a training window are dropped (same rule as
+SARIMAXForecaster).
 
 Usage:
     # Tune all cities:
@@ -19,50 +30,32 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # forecasting/
+sys.path.insert(0, str(Path(__file__).resolve().parent))      # models/tuning/
 
-import pandas as pd
-import numpy as np
-from pathlib import Path
 import argparse
 import json
-import traceback
 from datetime import datetime
-import warnings
+
+import pandas as pd
 
 from config import ForecastConfig
-from evaluation.cv import TimeSeriesCV
-from evaluation.metrics import MetricsCalculator
 from run_experiments import load_and_prepare_data
-
-try:
-    from pmdarima import auto_arima
-except ImportError:
-    print("ERROR: pmdarima not installed")
-    print("Install with: pip install pmdarima")
-    sys.exit(1)
+from provenance import get_provenance
+from arima_search import search_orders
 
 
-def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -> list:
-    if scenario == "all_weather":
-        return [c for c in config.weather_covariates if c in df.columns]
-    else:  # clean_only
-        covariates = [c for c in config.weather_degradation_mapping.keys() if c in df.columns]
-        for col in [config.holiday_col, config.season_col]:
-            if col and col in df.columns:
-                covariates.append(col)
-        return covariates
-
-
-def drop_constant_covariates(X_train: np.ndarray, X_test: np.ndarray = None):
-    """
-    Drop covariates that are constant in the training window (same rule as
-    SARIMAXForecaster): their effect cannot be estimated and a constant column
-    duplicates the intercept. Returns (X_train, X_test), None if nothing is left.
-    """
-    keep = np.array([len(np.unique(X_train[:, j])) > 1 for j in range(X_train.shape[1])], dtype=bool)
-    if not keep.any():
-        return None, None
-    return X_train[:, keep], (X_test[:, keep] if X_test is not None else None)
+def auto_arima_kwargs(m: int) -> dict:
+    return dict(
+        seasonal=True,
+        m=m,
+        stepwise=True,
+        suppress_warnings=True,
+        error_action='ignore',
+        max_p=5, max_q=3,
+        max_P=2, max_Q=2,
+        max_order=8,
+        information_criterion='aic',
+    )
 
 
 def tune_sarimax(
@@ -70,152 +63,40 @@ def tune_sarimax(
     config: ForecastConfig,
     city: str,
     scenario: str = "clean_only",
-    seasonal: bool = True,
     m: int = 24,
+    search_folds: int = 6,
     verbose: bool = True
 ) -> dict:
-    covariates = select_covariates(config, df, scenario)
-    cv = TimeSeriesCV(config)
-    calc = MetricsCalculator()
+    if verbose:
+        print("=" * 70)
+        print(f"SARIMAX TUNING | city={city} | horizon={config.tune_horizon}h | scenario={scenario} | m={m}")
+        print("=" * 70)
 
-    # Only tune on pre-cutoff data — never touch the held-out test period
-    cutoff_date = cv.get_cutoff_date(df)
-    tune_df = df[df[config.date_col] <= cutoff_date].copy()
+    result = search_orders(
+        df, config, seasonal=True, scenario=scenario,
+        auto_arima_kwargs={**auto_arima_kwargs(m), "trace": False},
+        search_folds=search_folds, verbose=verbose,
+    )
 
     if verbose:
-        print("="*70)
-        print(f"SARIMAX AUTO-TUNING (pmdarima) | city={city} | horizon={config.tune_horizon}h | scenario={scenario}")
-        print("="*70)
-        print(f"Covariates ({len(covariates)}): {covariates}")
-        print(f"Seasonal: {seasonal}, m={m}")
-        print(f"Cutoff date (held-out test start): {cutoff_date}")
-        print(f"Tuning on {len(tune_df)} observations (pre-cutoff)")
-        print(f"n_train_samples: {config.n_train_samples}")
-        print(f"Validation folds: {'all available' if config.tune_folds is None else config.tune_folds}")
-        print("="*70)
-
-    splits = cv.split(tune_df, config.tune_horizon)
-    train_df, test_df = splits[0]
-    y_train = train_df[config.target_col].values
-    X_train, _ = drop_constant_covariates(train_df[covariates].values)
-
-    if verbose:
-        print(f"\nSearching optimal parameters on {len(y_train)} observations...")
-
-    with warnings.catch_warnings():
-        warnings.filterwarnings('ignore')
-        model = auto_arima(
-            y_train,
-            X=X_train,
-            seasonal=seasonal,
-            m=m,
-            stepwise=True,
-            suppress_warnings=True,
-            error_action='ignore',
-            max_p=5, max_q=3,
-            max_P=2, max_Q=2,
-            max_order=8,
-            trace=verbose,
-            information_criterion='aic',
-            n_jobs=-1
-        )
-
-    order = model.order
-    seasonal_order = model.seasonal_order
-    with_intercept = bool(model.with_intercept)
-    aic = model.aic()
-    bic = model.bic()
-
-    if verbose:
-        print("\n" + "="*70)
-        print("BEST PARAMETERS FOUND")
-        print("="*70)
-        print(f"order: {order}")
-        print(f"seasonal_order: {seasonal_order}")
-        print(f"AIC: {aic:.2f}")
-        print(f"BIC: {bic:.2f}")
-
-    if config.tune_folds is None:
-        fold_range = range(len(splits))
-    else:
-        n = min(config.tune_folds, len(splits))
-        fold_range = range(len(splits) - n, len(splits))
-    # Skip folds whose test window is fully imputed (nothing to score)
-    fold_range = [
-        i for i in fold_range
-        if calc.observed_mask(splits[i][1], config.functioning_day_col).any()
-    ]
-
-    if verbose:
-        print(f"\nValidating on {len(fold_range)} folds...")
-
-    mae_values = []
-    rmse_values = []
-
-    for fold_idx in fold_range:
-        train_df, test_df = splits[fold_idx]
-        y_train_fold = train_df[config.target_col].values
-        y_test_fold = test_df[config.target_col].values
-        X_train_fold, X_test_fold = drop_constant_covariates(
-            train_df[covariates].values, test_df[covariates].values
-        )
-
-        try:
-            model_fold = auto_arima(
-                y_train_fold,
-                X=X_train_fold,
-                start_p=order[0], start_q=order[2], start_P=seasonal_order[0], start_Q=seasonal_order[2],
-                max_p=order[0], max_q=order[2], max_P=seasonal_order[0], max_Q=seasonal_order[2],
-                d=order[1], D=seasonal_order[1],
-                with_intercept=with_intercept,
-                seasonal=seasonal,
-                m=m,
-                suppress_warnings=True,
-                error_action='ignore'
-            )
-            y_pred = model_fold.predict(n_periods=config.tune_horizon, X=X_test_fold)
-            # Imputed hours (Functioning Day == 'No') are excluded from scoring
-            metrics = calc.calculate_all(
-                y_test_fold, y_pred, y_train_fold,
-                test_mask=calc.observed_mask(test_df, config.functioning_day_col),
-                train_mask=calc.observed_mask(train_df, config.functioning_day_col),
-            )
-            mae_values.append(metrics['MAE'])
-            rmse_values.append(metrics['RMSE'])
-            if verbose:
-                print(f"  Fold {fold_idx}: MAE={metrics['MAE']:.1f}, RMSE={metrics['RMSE']:.1f}")
-        except Exception as e:
-            traceback.print_exc()
-            continue
-
-    if mae_values:
-        mae_mean, mae_std = np.mean(mae_values), np.std(mae_values)
-        rmse_mean, rmse_std = np.mean(rmse_values), np.std(rmse_values)
-    else:
-        mae_mean = mae_std = rmse_mean = rmse_std = np.nan
-
-    if verbose:
-        print(f"\nValidation results:")
-        print(f"  MAE: {mae_mean:.2f} ± {mae_std:.2f}")
-        print(f"  RMSE: {rmse_mean:.2f} ± {rmse_std:.2f}")
+        print("\n" + "=" * 70)
+        print(f"SELECTED: order={result['order']} seasonal_order={result['seasonal_order']} "
+              f"with_intercept={result['with_intercept']} (trend={result['trend']}) | "
+              f"search MAE={result['tuning']['best_tune_mae_mean']:.2f}")
+        print("=" * 70)
 
     return {
         'city': city,
         'scenario': scenario,
         'n_train_samples': config.n_train_samples,
-        'tuning_period': cv.get_tuning_period(tune_df),
-        'order': order,
-        'seasonal_order': seasonal_order,
-        'with_intercept': with_intercept,
-        'aic': float(aic),
-        'bic': float(bic),
-        'mae_mean': float(mae_mean),
-        'mae_std': float(mae_std),
-        'rmse_mean': float(rmse_mean),
-        'rmse_std': float(rmse_std),
-        'validation_folds': len(mae_values),
-        'covariates_used': list(covariates),
-        'm': m
+        'tuning_period': result['tuning_period'],
+        'order': result['order'],
+        'seasonal_order': result['seasonal_order'],
+        'with_intercept': result['with_intercept'],
+        'trend': result['trend'],
+        'covariates_used': result['covariates_used'],
+        'm': m,
+        'tuning': result['tuning'],
     }
 
 
@@ -226,7 +107,7 @@ def save_results(params: dict, output_dir: str = '.') -> Path:
     city, scenario, n_train = params['city'], params['scenario'], params['n_train_samples']
     output_file = output_dir / f'sarimax_best_params_{city}_{scenario}_{n_train}_{timestamp}.json'
     with open(output_file, 'w') as f:
-        json.dump(params, f, indent=2)
+        json.dump({**params, "provenance": get_provenance()}, f, indent=2)
     print(f"\nResults saved to: {output_file}")
     return output_file
 
@@ -244,18 +125,20 @@ def run_city(city: str, args) -> None:
     print(f"Loaded {len(df)} observations for {city}")
 
     params = tune_sarimax(df=df, config=config, city=city, scenario=args.scenario,
-                          seasonal=True, m=args.seasonal_period, verbose=True)
+                          m=args.seasonal_period, search_folds=args.search_folds, verbose=True)
     output_file = save_results(params, args.output_dir)
     print(f"  --> config.sarimax_params_file = '{output_file}'")
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Tune SARIMAX using auto_arima')
+    parser = argparse.ArgumentParser(description='Tune SARIMAX order (auto_arima candidates, MAE selection)')
     parser.add_argument('--city', type=str, choices=['seoul', 'london', 'washington'],
                         default=None, help='City to tune (default: all cities)')
     parser.add_argument('--scenario', type=str, choices=['clean_only', 'all_weather'],
                         default='clean_only', help='Covariate set (default: clean_only)')
     parser.add_argument('--seasonal-period', type=int, default=24, help='Seasonal period (default: 24)')
+    parser.add_argument('--search-folds', type=int, default=6,
+                        help='Search folds, spread evenly over the tune folds (default: 6)')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
 

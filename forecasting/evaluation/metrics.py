@@ -114,9 +114,10 @@ class MetricsCalculator:
     def smape(y_true: np.ndarray, y_pred: np.ndarray) -> float:
         """
         Symmetric Mean Absolute Percentage Error.
-        
-        Handles zero values better than MAPE.
-        Returns percentage in range [0, 100].
+
+        Per step: |y - yhat| / ((|y| + |yhat|) / 2), averaged, times 100.
+        Range [0, 200]: a step with y = 0 and yhat != 0 contributes 200;
+        a step with y = yhat = 0 contributes 0.
         
         Parameters:
         -----------
@@ -134,11 +135,12 @@ class MetricsCalculator:
         
         # Avoid division by zero
         mask = denominator != 0
-        smape_values = np.where(
-            mask,
-            np.abs(y_true - y_pred) / denominator,
-            0
-        )
+        with np.errstate(divide="ignore", invalid="ignore"):
+            smape_values = np.where(
+                mask,
+                np.abs(y_true - y_pred) / denominator,
+                0
+            )
         
         return float(100 * np.mean(smape_values))
 
@@ -395,9 +397,15 @@ class MetricsCalculator:
             Dictionary with all metric values; all NaN if no test step is
             observed.
         """
-        y_true = np.asarray(y_true, dtype=float)
-        y_pred = np.asarray(y_pred, dtype=float)
+        y_true = np.asarray(y_true, dtype=float).ravel()
+        y_pred = np.asarray(y_pred, dtype=float).ravel()
         y_train = np.asarray(y_train, dtype=float)
+        # A wrong-length or NaN forecast must fail loudly: NaN metrics are
+        # reserved for fully imputed test windows and are skipped in the means.
+        if y_pred.shape != y_true.shape:
+            raise ValueError(f"y_pred has {y_pred.size} values, y_true has {y_true.size}")
+        if not np.all(np.isfinite(y_pred)):
+            raise ValueError(f"y_pred contains {int((~np.isfinite(y_pred)).sum())} non-finite values")
         if test_mask is not None:
             test_mask = np.asarray(test_mask, dtype=bool)
             y_true = y_true[test_mask]
@@ -433,8 +441,15 @@ class MetricsCalculator:
         # One error per (task, model). A task is (dataset, horizon,
         # weather_scenario): the aggregated grain, with folds already
         # summarized into MASE_mean. Bootstrap resamples these tasks.
-        # The aggregated file has exactly one row per (task, model), so
-        # aggfunc='mean' is just a guard and never pools across scenarios.
+        # Duplicate rows (e.g. from two runs in one results file) would be
+        # averaged silently by the pivot, so they are rejected.
+        dup = results_df.duplicated(subset=task_cols + ['model'], keep=False)
+        if dup.any():
+            raise ValueError(
+                f"{int(dup.sum())} rows share (task, model) in the results file; "
+                f"expected exactly one row each. Duplicates:\n"
+                f"{results_df.loc[dup, task_cols + ['model']].to_string(index=False)}"
+            )
         pivot = results_df.pivot_table(
             index=task_cols,
             columns='model',
@@ -457,12 +472,16 @@ class MetricsCalculator:
             match_cols = task_cols  # no scenario dim; match on full key
 
         # baseline error per (dataset, horizon), taken from the rows where the
-        # baseline actually ran (any scenario; collapse if it ran in several).
-        baseline_lookup = (
-            results_df[results_df['model'] == baseline_model]
-            .groupby(match_cols)[error_column]
-            .mean()
-        )
+        # baseline actually ran. If it ran in several scenarios the errors must
+        # be identical (it ignores covariates); otherwise something is wrong.
+        base_rows = results_df[results_df['model'] == baseline_model]
+        spread = base_rows.groupby(match_cols)[error_column].agg(lambda s: s.max() - s.min())
+        if (spread > 1e-9).any():
+            raise ValueError(
+                f"Baseline '{baseline_model}' has different {error_column} across "
+                f"scenarios for: {spread[spread > 1e-9].index.tolist()}"
+            )
+        baseline_lookup = base_rows.groupby(match_cols)[error_column].first()
 
         # Fail loudly if the baseline is missing any (dataset, horizon) that a
         # model was evaluated on — those comparisons would silently drop.

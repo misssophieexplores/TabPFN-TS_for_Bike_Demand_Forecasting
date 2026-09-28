@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import pandas as pd
 import numpy as np
 from weather.weather_degradation import prepare_degradation_parameters, degrade_weather_dataset
+from run_experiments import load_and_prepare_data
 
 parser = argparse.ArgumentParser(description="Apply maximum degradation and save for inspection.")
 parser.add_argument(
@@ -37,25 +38,30 @@ city_configs = {
 config = city_configs[args.city]()
 COLUMN_MAPPING = config.weather_degradation_mapping
 
-# Load data
-data_path = Path("data") / config.data_filename
-print(f"Loading data from {data_path}...")
-df = pd.read_csv(data_path)
+# Load data exactly as the experiments do (scale factors, holiday/season encoding)
+print(f"Loading data from {Path('data') / config.data_filename}...")
+df, _ = load_and_prepare_data(config)
 print(f"Loaded {len(df)} rows")
 
-# Prepare degradation parameters (solar cap from training data)
+# Degradation parameters. For this inspection the solar cap comes from the
+# whole dataset; the experiments take it from each training fold.
 print("\nComputing degradation parameters...")
 params = prepare_degradation_parameters(df, COLUMN_MAPPING)
-print(f"Solar cap: {params['solar_cap']:.2f} MJ/m²")
+print(f"Solar cap: {params['solar_cap']:.2f} (units of the solar column)")
 
-# Apply worst-case degradation (168h horizon)
+# Apply worst-case degradation (168h lead time on every row), including the
+# rain/snow phase correction used in the experiments
+temp_cols = [c for c, t in COLUMN_MAPPING.items() if t == "temperature"]
 print("\nApplying 168h degradation (worst case)...")
 df_degraded = degrade_weather_dataset(
     df=df,
     horizon_hours=168,
     degradation_params=params,
     column_mapping=COLUMN_MAPPING,
-    seed=config.degradation_seed
+    seed=config.degradation_seed,
+    temp_col=temp_cols[0],
+    rain_col=config.rain_col,
+    snow_col=config.snow_col,
 )
 
 # Save degraded dataset alongside the original, with a descriptive suffix

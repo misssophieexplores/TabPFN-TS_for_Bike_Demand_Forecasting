@@ -10,9 +10,10 @@ The model is set up exactly as in evaluation (models/prophet_models.py):
   - epochs=None (NeuralProphet picks the number of epochs)
   - neuralprophet.set_random_seed(42) before every model is created
 
-Search: random search on the last --search-folds folds (default 10).
-Validation: the best parameters are re-evaluated on the last config.tune_folds
-folds (all folds if None).
+Search: random search on --search-folds folds (default 6), spread evenly over
+the last config.tune_folds folds (all folds if None), so the search covers the
+whole tuning period. There is no separate validation re-run (NeuralProphet is
+slow; the evaluation period is the out-of-sample test).
 
 Covariate set, selected by --scenario:
     clean_only  : degradable covariates (keys of weather_degradation_mapping)
@@ -48,6 +49,7 @@ from config import ForecastConfig
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from run_experiments import load_and_prepare_data
+from provenance import get_provenance
 
 
 # Fixed seed applied immediately before every NeuralProphet model is created.
@@ -228,7 +230,7 @@ def tune_neuralprophet(
     trials: int = 20,
     seed: int = 42,
     n_lags_options: Optional[List[int]] = None,
-    search_folds: int = 10,
+    search_folds: int = 6,
     verbose: bool = True,
 ) -> Dict:
     if not n_lags_options:
@@ -245,22 +247,14 @@ def tune_neuralprophet(
     if len(splits) == 0:
         raise RuntimeError("No CV splits available for the given horizon/config.")
 
-    n_avail = len(splits)
-    n_search = min(search_folds, n_avail)
-    search_fold_range = range(n_avail - n_search, n_avail)
+    # Last config.tune_folds folds, without fully imputed test windows
+    tune_fold_range = cv.tune_fold_indices(splits)
+    if not tune_fold_range:
+        raise RuntimeError("No scored tune folds available.")
 
-    if config.tune_folds is None:
-        validation_fold_range = range(n_avail)
-    else:
-        validation_fold_range = range(
-            n_avail - min(config.tune_folds, n_avail), n_avail
-        )
-
-    # Skip folds whose test window is fully imputed (nothing to score)
-    def _has_scored(i: int) -> bool:
-        return MetricsCalculator.observed_mask(splits[i][1], config.functioning_day_col).any()
-    search_fold_range = [i for i in search_fold_range if _has_scored(i)]
-    validation_fold_range = [i for i in validation_fold_range if _has_scored(i)]
+    # Search folds spread evenly over the tune folds (first and last included);
+    # the ARIMA/SARIMAX order search uses the same folds
+    search_fold_range = cv.spread_fold_indices(tune_fold_range, search_folds)
 
     rng = np.random.default_rng(seed)
 
@@ -272,8 +266,8 @@ def tune_neuralprophet(
         )
         print("=" * 70)
         print(f"Trials: {trials}")
-        print(f"Search folds: {len(search_fold_range)} (last {n_search} of {n_avail})")
-        print(f"Validation folds: {len(validation_fold_range)}")
+        print(f"Search folds: {len(search_fold_range)} spread over {len(tune_fold_range)} "
+              f"tune folds: {search_fold_range}")
         print(f"n_lags_options: {n_lags_options}")
         print(f"Cutoff date: {cutoff_date}")
         print(f"Tune obs: {len(tune_df)}")
@@ -329,33 +323,6 @@ def tune_neuralprophet(
         print("=" * 70)
         print(f"Search MAE={best_mae:.2f}  RMSE={best_rmse:.2f}")
         print(json.dumps(best_params, indent=2))
-        print(f"\nValidating on {len(validation_fold_range)} folds...")
-
-    # --- VALIDATION PHASE ---
-    mae_values, rmse_values = [], []
-    for fold_idx in validation_fold_range:
-        train_df_, test_df_ = splits[fold_idx]
-        try:
-            mae, rmse = evaluate_params_on_fold(
-                train_df_, test_df_, config, best_params, covariate_cols
-            )
-            mae_values.append(mae)
-            rmse_values.append(rmse)
-            if verbose:
-                print(f"  Fold {fold_idx}: MAE={mae:.1f}, RMSE={rmse:.1f}")
-        except Exception:
-            print(f"  Fold {fold_idx}: FAILED")
-            traceback.print_exc()
-
-    mae_mean = float(np.mean(mae_values)) if mae_values else float("nan")
-    mae_std = float(np.std(mae_values)) if mae_values else float("nan")
-    rmse_mean = float(np.mean(rmse_values)) if rmse_values else float("nan")
-    rmse_std = float(np.std(rmse_values)) if rmse_values else float("nan")
-
-    if verbose:
-        print(f"\nValidation results:")
-        print(f"  MAE:  {mae_mean:.2f} ± {mae_std:.2f}")
-        print(f"  RMSE: {rmse_mean:.2f} ± {rmse_std:.2f}")
 
     return {
         "city": city,
@@ -368,7 +335,8 @@ def tune_neuralprophet(
             "search_type": "random_search",
             "trials": int(trials),
             "search_folds": len(search_fold_range),
-            "validation_folds": len(validation_fold_range),
+            "search_fold_indices": [int(i) for i in search_fold_range],
+            "tune_folds": len(tune_fold_range),
             "seed": int(seed),
             "np_seed": NP_SEED,
             "metric_optimized": "MAE",
@@ -376,11 +344,6 @@ def tune_neuralprophet(
             "best_tune_rmse_mean": float(best_rmse),
             "n_lags_options": list(map(int, n_lags_options)),
         },
-        "mae_mean": mae_mean,
-        "mae_std": mae_std,
-        "rmse_mean": rmse_mean,
-        "rmse_std": rmse_std,
-        "validation_folds": len(mae_values),
         "covariates_used": covariate_cols,
     }
 
@@ -394,7 +357,7 @@ def save_results(params: dict, output_dir: str) -> Path:
         out_dir / f"neuralprophet_best_params_{city}_{scenario}_{n_train}_{timestamp}.json"
     )
     with open(output_file, "w") as f:
-        json.dump(params, f, indent=2)
+        json.dump({**params, "provenance": get_provenance()}, f, indent=2)
     print(f"\nResults saved to: {output_file}")
     return output_file
 
@@ -450,8 +413,8 @@ def main() -> None:
     parser.add_argument("--output-dir", type=str, default="results/tuning")
     parser.add_argument("--n-lags-options", type=str, default="12,24,48,168",
                         help="Comma-separated n_lags candidates (default: 12,24,48,168)")
-    parser.add_argument("--search-folds", type=int, default=10,
-                        help="Last N folds used during search (default: 10)")
+    parser.add_argument("--search-folds", type=int, default=6,
+                        help="Number of search folds, spread evenly over the tune folds (default: 6)")
     args = parser.parse_args()
 
     cities = [args.city] if args.city else ["seoul", "london", "washington"]

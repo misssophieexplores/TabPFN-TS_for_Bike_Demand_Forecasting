@@ -42,8 +42,9 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 from config import ForecastConfig
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
-from features import add_time_features
+from features import TIME_FEATURES, prepare_xgboost_features
 from run_experiments import load_and_prepare_data
+from provenance import get_provenance
 
 EARLY_STOPPING_ROUNDS = 50
 MAX_ESTIMATORS = 3000
@@ -111,12 +112,11 @@ def evaluate_params_on_fold(
 ) -> Tuple[float, float, int]:
     """Returns (MAE, RMSE, best_n_estimators)."""
     y_train = train_df[config.target_col].values
-    X_train = train_df[config.weather_covariates].reset_index(drop=True)
     y_test = test_df[config.target_col].values
-    X_test = test_df[config.weather_covariates].reset_index(drop=True)
 
-    X_train = pd.concat([X_train, add_time_features(train_df, config.date_col)], axis=1)
-    X_test = pd.concat([X_test, add_time_features(test_df, config.date_col)], axis=1)
+    # Same feature builder as run_experiments.py: covariates + calendar features
+    X_train = prepare_xgboost_features(train_df, config.date_col, train_df[config.weather_covariates])
+    X_test = prepare_xgboost_features(test_df, config.date_col, test_df[config.weather_covariates])
 
     if max_train_size is not None and len(y_train) > max_train_size:
         y_train = y_train[-max_train_size:]
@@ -178,15 +178,8 @@ def tune_xgboost(
     if len(splits) == 0:
         raise RuntimeError("No CV splits available for the given horizon/config.")
 
-    tune_split_indices = (
-        range(len(splits)) if config.tune_folds is None
-        else range(len(splits) - min(config.tune_folds, len(splits)), len(splits))
-    )
-    # Skip folds whose test window is fully imputed (nothing to score)
-    tune_split_indices = [
-        i for i in tune_split_indices
-        if MetricsCalculator.observed_mask(splits[i][1], config.functioning_day_col).any()
-    ]
+    # Last config.tune_folds folds, without fully imputed test windows
+    tune_split_indices = cv.tune_fold_indices(splits)
     val_split_indices = tune_split_indices
 
     if not n_lags_options:
@@ -342,7 +335,7 @@ def tune_xgboost(
         "validation_folds": int(len(mae_values)),
         "max_train_size": int(max_train_size),
         "covariates_used": list(config.weather_covariates),
-        "time_features_used": ["hour", "dayofweek", "month", "is_weekend"],
+        "time_features_used": list(TIME_FEATURES),
     }
 
 
@@ -353,7 +346,7 @@ def save_results(params: dict, output_dir: str) -> Path:
     city, scenario, n_train = params['city'], params['scenario'], params['n_train_samples']
     output_file = out_dir / f"xgboost_best_params_{city}_{scenario}_{n_train}_{timestamp}.json"
     with open(output_file, "w") as f:
-        json.dump(params, f, indent=2)
+        json.dump({**params, "provenance": get_provenance()}, f, indent=2)
     print(f"\nResults saved to: {output_file}")
     return output_file
 
