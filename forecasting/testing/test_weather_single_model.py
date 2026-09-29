@@ -52,8 +52,8 @@ def test_single_model_scenario(config, model_key: str, scenario: str, n_folds: i
     print(f"Folds: {n_folds}")
     print(f"{'='*60}\n")
 
-    if not model.use_covariates and scenario == "degraded":
-        print("[SKIP] Model doesn't use covariates, skipping degraded scenario")
+    if not model.use_covariates and config.is_degraded(scenario):
+        print(f"[SKIP] Model doesn't use covariates, skipping degraded scenario {scenario}")
         print("This is expected behavior!")
         return
 
@@ -129,7 +129,7 @@ if __name__ == "__main__":
                         help="City dataset to use.")
     parser.add_argument('--model', type=str, required=True, choices=MODEL_KEYS)
     parser.add_argument('--scenario', type=str, required=True,
-                        choices=['all_weather', 'clean_only', 'degraded'])
+                        choices=seoul_config().weather_scenarios)  # same for every city (config.py)
     parser.add_argument('--folds', type=int, default=3)
     args = parser.parse_args()
 

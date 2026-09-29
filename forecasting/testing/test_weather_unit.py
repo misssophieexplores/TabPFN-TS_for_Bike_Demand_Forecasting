@@ -15,7 +15,9 @@ from config import ForecastConfig
 from weather.weather_degradation import (
     degrade_weather_forecast,
     prepare_degradation_parameters,
-    degrade_weather_dataset  
+    degrade_weather_dataset,
+    precipitation_detection_rates,
+    precipitation_event_statistics,
 )
 from weather.weather_processor import WeatherProcessor
 
@@ -63,21 +65,76 @@ class TestWeatherDegradation:
         assert deg1 != deg2, "Different seeds should produce different results"
     
     def test_precipitation_event_detection(self):
-        """Test precipitation can have false alarms and misses"""
+        """Dry hours get false alarms with P(false alarm | dry), wet hours are
+        missed with the miss rate (single-value function)."""
+        wet_fraction = 0.06
+        miss_rate, fa_prob = precipitation_detection_rates(24, wet_fraction)
         rng = np.random.default_rng(seed=42)
-        
-        # Test actual = 0 (potential false alarm)
-        # Run multiple times to see if false alarm occurs
-        false_alarms = []
-        for i in range(100):
-            rng_i = np.random.default_rng(seed=42 + i)
-            degraded = degrade_weather_forecast(0.0, 'precipitation', 24, rng=rng_i)
-            if degraded > 0:
-                false_alarms.append(degraded)
-        
-        # Should have some false alarms (but not all)
-        assert 5 < len(false_alarms) < 95, f"Expected some false alarms, got {len(false_alarms)}/100"
-    
+        n = 20000
+        dry = np.array([degrade_weather_forecast(0.0, 'precipitation', 24, rng=rng,
+                                                 wet_fraction=wet_fraction) for _ in range(n)])
+        wet = np.array([degrade_weather_forecast(2.0, 'precipitation', 24, rng=rng,
+                                                 wet_fraction=wet_fraction) for _ in range(n)])
+        assert (dry > 0).mean() == pytest.approx(fa_prob, abs=0.005)
+        assert (wet == 0).mean() == pytest.approx(miss_rate, abs=0.015)
+
+    def test_precipitation_requires_wet_fraction(self):
+        with pytest.raises(ValueError):
+            degrade_weather_forecast(0.0, 'precipitation', 24, rng=np.random.default_rng(0))
+
+    def test_event_statistics_hit_cited_values(self):
+        """Miss rate and FAR pass through the cited Sukovich et al. (2014)
+        values: Day 1 (24 h) 35 %, Day 2 (48 h) 45 %, 50 % cap from 60 h
+        (Day 3: 45-55 %)."""
+        for h, expected in [(24, 0.35), (48, 0.45), (60, 0.50), (72, 0.50), (168, 0.50)]:
+            miss_rate, far = precipitation_event_statistics(h)
+            assert miss_rate == pytest.approx(expected)
+            assert far == pytest.approx(expected)
+
+    def test_false_alarm_probability_formula(self):
+        """P(false alarm | dry) = FAR / (1 - FAR) * POD * p / (1 - p), with FAR
+        the false alarm RATIO of Sukovich et al. (2014)."""
+        h, p = 24, 0.06
+        miss_rate_src, far = precipitation_event_statistics(h)
+        pod = 1 - miss_rate_src
+        miss_rate, fa_prob = precipitation_detection_rates(h, p)
+        assert miss_rate == pytest.approx(1 - pod)
+        assert fa_prob == pytest.approx(far / (1 - far) * pod * p / (1 - p))
+        assert fa_prob < 0.05                      # a few percent, not ~35%
+        assert precipitation_detection_rates(h, 0.0)[1] == 0.0
+        assert precipitation_detection_rates(h, 1.0)[1] == 0.0
+        with pytest.raises(ValueError):
+            precipitation_detection_rates(h, 1.5)
+
+    def test_simulated_forecasts_reproduce_source_far_and_pod(self):
+        """The degraded series must reproduce the published statistics
+        (Day 1: FAR 0.35, POD 0.65; Day 2: FAR 0.45, POD 0.55):
+        FAR = false alarms / forecast events, POD = hits / observed events."""
+        rng = np.random.default_rng(1)
+        n, p = 100_000, 0.06
+        rain = np.where(rng.random(n) < p, rng.gamma(0.7, 1.5, n) + 0.1, 0.0)
+        df = pd.DataFrame({'Rainfall': rain})
+        mapping = {'Rainfall': 'precipitation'}
+        params = {'solar_cap': 1.0, 'wet_fraction': float((rain > 0).mean())}
+        obs = rain > 0
+        for h, far_source, pod_source in [(24, 0.35, 0.65), (48, 0.45, 0.55)]:
+            deg = degrade_weather_dataset(df, h, params, mapping, seed=h)['Rainfall'].to_numpy()
+            fc = deg > 0
+            hits, false_alarms = (obs & fc).sum(), (~obs & fc).sum()
+            assert false_alarms / (false_alarms + hits) == pytest.approx(far_source, abs=0.02)
+            assert hits / obs.sum() == pytest.approx(pod_source, abs=0.02)
+
+    def test_wet_fraction_from_training_data(self):
+        """Wet hour = rain OR snow > 0 (one precipitation variable)."""
+        df = pd.DataFrame({
+            'Solar Radiation': np.ones(10),
+            'Rainfall': [0, 1, 0, 0, 0, 2, 0, 0, 0, 0],
+            'Snowfall': [0, 1, 0, 3, 0, 0, 0, 0, 0, 0],
+        })
+        mapping = {'Solar Radiation': 'solar_radiation',
+                   'Rainfall': 'precipitation', 'Snowfall': 'precipitation'}
+        assert prepare_degradation_parameters(df, mapping)['wet_fraction'] == pytest.approx(0.3)
+
     def test_prepare_degradation_parameters(self):
         """Test degradation parameter computation"""
         column_mapping = {
@@ -171,16 +228,18 @@ class TestWeatherDegradation:
         X_train_clean = processor.prepare_weather_data(
             df, 'clean_only', horizon=24, fold_idx=0, split='train'
         )
-        X_train_deg = processor.prepare_weather_data(
-            df, 'degraded', horizon=24, fold_idx=0, split='train'
-        )
+        # every degraded scenario, including the noise-magnitude sensitivity ones
+        for scenario in processor.config.degradation_scales:
+            X_train_deg = processor.prepare_weather_data(
+                df, scenario, horizon=24, fold_idx=0, split='train'
+            )
 
-        pd.testing.assert_frame_equal(
-            X_train_clean.reset_index(drop=True),
-            X_train_deg.reset_index(drop=True),
-            check_like=True,
-            obj="Training data should be identical for clean_only and degraded scenarios"
-        )
+            pd.testing.assert_frame_equal(
+                X_train_clean.reset_index(drop=True),
+                X_train_deg.reset_index(drop=True),
+                check_like=True,
+                obj=f"Training data should be identical for clean_only and {scenario}"
+            )
 
     def test_noise_grows_with_lead_time(self):
         """Test error magnitude increases from first to last row of the test window.
@@ -266,6 +325,97 @@ class TestWeatherDegradation:
             processor.prepare_weather_data(df, 'degraded', horizon=6, fold_idx=fold_idx, split='train')
             X = processor.prepare_weather_data(df, 'degraded', horizon=6, fold_idx=fold_idx, split='test')
             assert X['Rainfall'].dtype.kind == 'f' and X['Snowfall'].dtype.kind == 'f'
+
+    def test_one_false_alarm_draw_per_hour(self):
+        """Dry test window, rain AND snow columns: the share of hours with
+        forecast precipitation equals P(false alarm | dry) once, not
+        1 - (1 - P)^2 from separate draws per column. The wet-hour share
+        comes from the training fold."""
+        processor = self._make_weather_processor()
+        horizon, n_folds = 24, 400
+        train = self._make_test_df(n_rows=720)
+        train['Rainfall'] = np.where(np.arange(720) % 20 == 0, 1.0, 0.0)   # 5 % wet hours
+        test = self._make_test_df(n_rows=horizon)                         # completely dry
+        shares = []
+        for fold_idx in range(n_folds):
+            processor.prepare_weather_data(train, 'degraded', horizon=horizon, fold_idx=fold_idx, split='train')
+            X = processor.prepare_weather_data(test, 'degraded', horizon=horizon, fold_idx=fold_idx, split='test')
+            shares.append(((X['Rainfall'] > 0) | (X['Snowfall'] > 0)).mean())
+        assert processor.degradation_params['wet_fraction'] == pytest.approx(0.05)
+        expected = np.mean([precipitation_detection_rates(lt, 0.05)[1] for lt in range(1, horizon + 1)])
+        assert np.mean(shares) == pytest.approx(expected, abs=0.006)
+
+    def test_dry_training_fold_gives_no_false_alarms(self):
+        """No wet hour in the training fold: wet-hour share 0, no false alarms."""
+        processor = self._make_weather_processor()
+        df = self._make_test_df(n_rows=48)
+        for fold_idx in range(20):
+            processor.prepare_weather_data(df, 'degraded', horizon=48, fold_idx=fold_idx, split='train')
+            X = processor.prepare_weather_data(df, 'degraded', horizon=48, fold_idx=fold_idx, split='test')
+            assert (X['Rainfall'] == 0).all() and (X['Snowfall'] == 0).all()
+
+    # ------------------------------------------------------------------
+    # Noise-magnitude sensitivity (degraded scenarios with noise_scale)
+    # ------------------------------------------------------------------
+    def test_degraded_scenarios_in_config(self):
+        """'degraded' is the calibrated model (1.0); every degraded scenario is
+        in weather_scenarios and recognised by is_degraded()."""
+        config = ForecastConfig()
+        assert config.degradation_scales['degraded'] == 1.0
+        for scenario in config.degradation_scales:
+            assert config.is_degraded(scenario)
+            assert scenario in config.weather_scenarios
+        assert not config.is_degraded('clean_only')
+        assert not config.is_degraded('all_weather')
+
+    def test_degraded_is_unscaled_model(self):
+        """'degraded' passes noise_scale=1.0: its output equals
+        degrade_weather_dataset with the default noise_scale (the calibrated
+        error model, same seed)."""
+        processor = self._make_weather_processor()
+        horizon, fold_idx = 24, 5
+        df = self._make_test_df(n_rows=horizon)
+        df['Rainfall'] = np.tile([0.0, 2.0], horizon // 2)
+        processor.prepare_weather_data(df, 'degraded', horizon=horizon, fold_idx=fold_idx, split='train')
+        X = processor.prepare_weather_data(df, 'degraded', horizon=horizon, fold_idx=fold_idx, split='test')
+        expected = degrade_weather_dataset(
+            df[X.columns], horizon, processor.degradation_params,
+            processor.config.weather_degradation_mapping,
+            seed=processor.config.degradation_seed + 10000 * horizon + fold_idx,
+            lead_times=np.arange(1, horizon + 1),
+            temp_col='Temperature', rain_col='Rainfall', snow_col='Snowfall',
+        )
+        pd.testing.assert_frame_equal(X, expected)
+
+    def test_noise_scales_share_random_numbers(self):
+        """All degraded scenarios of a (horizon, fold) use the same random
+        numbers; only the error magnitude differs. Temperature errors
+        (additive Gaussian, no clipping) are proportional to the scale, and
+        the wet/dry pattern of precipitation (event detection, not scaled) is
+        the same in every scenario."""
+        processor = self._make_weather_processor()
+        horizon = 48
+        df = self._make_test_df(n_rows=horizon)
+        df['Temperature'] = 25.0                          # far from the 2 °C rain/snow threshold
+        df['Rainfall'] = np.tile([0.0, 2.0], horizon // 2)
+        out = {}
+        for scenario in processor.config.degradation_scales:
+            processor.prepare_weather_data(df, scenario, horizon=horizon, fold_idx=3, split='train')
+            out[scenario] = processor.prepare_weather_data(
+                df, scenario, horizon=horizon, fold_idx=3, split='test'
+            )
+        err_1 = out['degraded']['Temperature'] - df['Temperature']
+        wet_1 = (out['degraded']['Rainfall'] + out['degraded']['Snowfall']) > 0
+        for scenario, scale in processor.config.degradation_scales.items():
+            err = out[scenario]['Temperature'] - df['Temperature']
+            np.testing.assert_allclose(err, scale * err_1, rtol=1e-9, atol=1e-9)
+            wet = (out[scenario]['Rainfall'] + out[scenario]['Snowfall']) > 0
+            assert (wet == wet_1).all(), f"{scenario}: precipitation events differ from 'degraded'"
+
+    def test_negative_noise_scale_raises(self):
+        with pytest.raises(ValueError):
+            degrade_weather_forecast(15.0, 'temperature', 24,
+                                     rng=np.random.default_rng(0), noise_scale=-0.5)
 
     def test_fold_idx_out_of_range(self):
         processor = self._make_weather_processor()

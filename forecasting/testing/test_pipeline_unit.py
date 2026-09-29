@@ -216,5 +216,42 @@ def test_xgboost_tuning_equals_experiment(config):
     np.testing.assert_allclose(pred, captured["pred"], rtol=0, atol=1e-9)
 
 
+# ----------------------------------------------------------------------
+# ARIMA / SARIMAX intercept (pmdarima with_intercept -> statsmodels trend)
+# ----------------------------------------------------------------------
+def test_intercept_with_one_difference_is_a_drift():
+    """pmdarima's intercept with d = 1 is a constant drift. Both experiment
+    models must forecast a straight line (constant step), not a curve."""
+    pytest.importorskip("statsmodels")
+    from models.statistical import ARIMAForecaster, SARIMAXForecaster, trend_from_intercept
+
+    rng = np.random.default_rng(0)
+    y = np.cumsum(2.0 + rng.normal(0, 1, 720))  # random walk with drift 2
+    order = (0, 1, 0)
+
+    arima = ARIMAForecaster(order=order, trend=trend_from_intercept(True, order))
+    sarimax = SARIMAXForecaster(order=order, seasonal_order=(0, 0, 0, 0),
+                                trend=trend_from_intercept(True, order, (0, 0, 0, 0), sarimax=True))
+    arima.fit(y)
+    sarimax.fit(y, None)
+    for pred in (arima.predict(168), sarimax.predict(168, pd.DataFrame(index=range(168)))):
+        steps = np.diff(pred)
+        assert np.ptp(steps) < 1e-6                      # constant drift, not a growing slope
+        assert steps.mean() == pytest.approx(2.0, abs=0.2)
+
+
+def test_trend_from_intercept_mapping():
+    pytest.importorskip("statsmodels")
+    from models.statistical import trend_from_intercept
+    assert trend_from_intercept(False, (1, 1, 1), (1, 1, 1, 24), sarimax=True) == "n"
+    assert trend_from_intercept(True, (2, 0, 1), sarimax=False) == "c"
+    assert trend_from_intercept(True, (2, 1, 1), sarimax=False) == "t"
+    assert trend_from_intercept(True, (2, 0, 1), (1, 0, 1, 24), sarimax=True) == "c"
+    assert trend_from_intercept(True, (2, 1, 1), (1, 0, 1, 24), sarimax=True) == "c"
+    assert trend_from_intercept(True, (2, 0, 1), (1, 1, 1, 24), sarimax=True) == "c"
+    with pytest.raises(ValueError):
+        trend_from_intercept(True, (2, 2, 1), sarimax=False)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

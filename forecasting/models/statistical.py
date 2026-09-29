@@ -10,18 +10,33 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from models.base import BaseForecaster
 
 
-def trend_from_intercept(with_intercept: bool, order: tuple, seasonal_order: tuple = (0, 0, 0, 0)) -> str:
+def trend_from_intercept(
+    with_intercept: bool,
+    order: tuple,
+    seasonal_order: tuple = (0, 0, 0, 0),
+    sarimax: bool = False,
+) -> str:
     """
     Translate pmdarima's `with_intercept` into the equivalent statsmodels `trend`.
 
-    pmdarima's intercept is a constant in the (seasonally) differenced series:
-    - no differencing (d + D == 0): a plain constant  -> trend="c"
-    - one difference  (d + D == 1): a drift            -> trend="t"
+    pmdarima fits every model with statsmodels SARIMAX and passes trend="c"
+    when with_intercept=True, whatever d and D are. The two statsmodels classes
+    used in the experiments place the trend differently:
+    - SARIMAX (SARIMAXForecaster, sarimax=True): the trend enters the
+      (seasonally) differenced equation, so pmdarima's model is exactly
+      trend="c" (a constant for d + D = 0, a drift for d + D = 1). trend="t"
+      there would be a linear trend in the differenced series, i.e. a
+      quadratic trend in levels.
+    - ARIMA (ARIMAForecaster, sarimax=False): trend terms are regressors in the
+      levels equation, so the same model is "c" for d + D = 0 and "t" (linear
+      trend in levels = constant drift after differencing) for d + D = 1.
     Without an intercept, "n" is passed explicitly, because statsmodels ARIMA
     otherwise adds a constant by default when d == 0.
     """
     if not with_intercept:
         return "n"
+    if sarimax:
+        return "c"
     n_diff = order[1] + seasonal_order[1]
     if n_diff == 0:
         return "c"

@@ -7,14 +7,97 @@ machine learning model evaluation under operational conditions.
 Error growth functions are calibrated to published NWP verification statistics.
 See weather_methodology.md for detailed documentation and validation evidence.
 
-Version: 1.1.0
+Version: 1.3.0
 """
 
 import numpy as np
+import pandas as pd
 
 
-def degrade_weather_forecast(actual_value, variable_type, horizon_hours, 
-                            solar_cap=None, rng=None):
+def precipitation_event_statistics(horizon_hours):
+    """
+    Miss rate (1 - POD) and false alarm ratio (FAR) for one lead time.
+
+    Sukovich et al. (2014): Day 1 POD ~0.65 (miss ~35%), FAR ~0.35; Day 2
+    POD ~0.55 (miss ~45%), FAR ~0.45; Day 3 miss and FAR ~45-55%. Both rates
+    follow the straight line through the Day-1 (24 h) and Day-2 (48 h) values,
+    0.25 + 0.10 * h / 24, capped at 0.50 (reached at 60 h, within the Day-3
+    range). Below 24 h the line is extrapolated.
+
+    Returns
+    -------
+    tuple (miss_rate, false_alarm_ratio)
+    """
+    rate = min(0.25 + 0.10 * horizon_hours / 24, 0.50)
+    return rate, rate
+
+
+def precipitation_detection_rates(horizon_hours, wet_fraction):
+    """
+    Precipitation event-detection error rates for one lead time.
+
+    Sukovich et al. (2014) report the probability of detection (POD) and the
+    false alarm RATIO (FAR = false alarms / all forecast events, i.e.
+    P(no precipitation | precipitation forecast)). The simulation needs the
+    probability that a DRY hour receives forecast precipitation, i.e.
+    P(precipitation forecast | no precipitation). With hits H = POD * N_wet
+    and FAR = F / (F + H), the number of false alarms is
+    F = FAR / (1 - FAR) * POD * N_wet, so per dry hour:
+
+        P(false alarm | dry) = FAR / (1 - FAR) * POD * p / (1 - p)
+
+    where p is the share of wet hours. With this probability the simulated
+    forecasts reproduce the published FAR.
+
+    Parameters
+    ----------
+    horizon_hours : int
+        Forecast lead time in hours
+    wet_fraction : float
+        Share of hours with precipitation (p), taken from the training fold
+
+    Returns
+    -------
+    tuple (miss_rate, false_alarm_prob)
+        miss_rate = 1 - POD = P(no forecast | precipitation)
+        false_alarm_prob = P(forecast | no precipitation)
+    """
+    miss_rate, false_alarm_ratio = precipitation_event_statistics(horizon_hours)
+    pod = 1.0 - miss_rate
+
+    p = float(wet_fraction)
+    if not 0.0 <= p <= 1.0:
+        raise ValueError(f"wet_fraction must be in [0, 1], got {wet_fraction}")
+    if p == 0.0 or p == 1.0:
+        # No wet hours in the training fold: no base rate, no false alarms.
+        # All hours wet: there are no dry hours to receive false alarms.
+        return miss_rate, 0.0
+    false_alarm_prob = false_alarm_ratio / (1.0 - false_alarm_ratio) * pod * p / (1.0 - p)
+    return miss_rate, min(false_alarm_prob, 1.0)
+
+
+def _false_alarm_amount(rng):
+    """Precipitation amount of a false alarm: lognormal, median 0.5 (mean 0.57)."""
+    return rng.lognormal(mean=np.log(0.5), sigma=0.5)
+
+
+def _precipitation_multiplier(horizon_hours, rng, noise_scale=1.0):
+    """
+    Mean-preserving lognormal multiplier for a correctly detected event
+    (lognormal model: Jolliffe & Stephenson). CV = 30% + 0.15%/h is an
+    assumption: no published verification of the magnitude error of
+    correctly detected hourly precipitation by lead time was found.
+    noise_scale multiplies the CV (noise-magnitude sensitivity).
+    """
+    cv = noise_scale * (30 + 0.15 * horizon_hours) / 100
+    sigma_log = np.sqrt(np.log(1 + cv**2))
+    mu_log = -0.5 * sigma_log**2  # Mean-preserving
+    return rng.lognormal(mean=mu_log, sigma=sigma_log)
+
+
+def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
+                            solar_cap=None, rng=None, wet_fraction=None,
+                            noise_scale=1.0):
     """
     Apply forecast uncertainty to observed weather variables based on lead time.
     
@@ -38,9 +121,22 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
     solar_cap : float, optional
         Maximum physically plausible solar radiation (same units as actual_value).
         Compute as: np.percentile(training_data['solar_radiation'], 99.5)
+    wet_fraction : float, optional
+        Share of wet hours in the training data; required for
+        'precipitation' (converts the false alarm ratio into a probability per
+        dry hour, see precipitation_detection_rates()). For several
+        precipitation columns (rain and snow) use degrade_weather_dataset(),
+        which makes one detection draw per hour for all of them.
     rng : np.random.Generator, optional
         Random number generator for reproducibility. If None, creates new Generator.
         For reproducibility: rng = np.random.default_rng(seed=42)
+    noise_scale : float, default=1.0
+        Factor applied to the error magnitude (Gaussian sigma, solar relative
+        MAE, precipitation magnitude CV, visibility CV). 1.0 = calibrated error
+        model. Precipitation event detection (miss rate, false-alarm
+        probability, false-alarm amount) is not scaled. The random draws do
+        not depend on noise_scale, so the same rng state gives errors that
+        differ only in magnitude. Must be >= 0.
     
     Returns
     -------
@@ -65,10 +161,14 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
       
     - **Precipitation (detection)**: VALIDATED - Sukovich et al. (2014)
       Day 1: POD≈65%, FAR≈35%; Day 2: POD≈55%, FAR≈45%
-      
-    - **Precipitation (magnitude)**: CONSERVATIVE ESTIMATE - ensemble spread theory
-      CV growth: 0.15%/h (half the theoretical bound)
-      
+      Miss rate = FAR = 0.25 + 0.10·h/24 (line through Day 1 and Day 2),
+      capped at 50% from 60 h (precipitation_event_statistics())
+      FAR is the false alarm RATIO; it is converted to a probability per dry
+      hour with the wet-hour share (precipitation_detection_rates())
+
+    - **Precipitation (magnitude)**: ASSUMPTION (no published source)
+      CV = 30% + 0.15%/h
+
     - **Visibility**: ECMWF Forecast User Guide (Owens & Hewson, 2018), Section 9.4
       Constant CV = 25%; horizon-independent (skill non-monotonic with lead time)
     
@@ -83,7 +183,10 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
     
     - Magnitude errors only; timing/spatial displacement not modeled
     - Independent errors across variables (actual forecasts are correlated)
+    - Independent errors from hour to hour (actual forecast errors persist)
     - Linear error growth (slight nonlinearity beyond 5-7 days not captured)
+    - Below the shortest verified lead time of the sources (12-24 h) the
+      error formulas are extrapolated
     
     For detailed methodology, validation evidence, and references, see:
     weather_methodology.md
@@ -120,10 +223,13 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
     
     h = horizon_hours
     
+    if noise_scale < 0:
+        raise ValueError(f"noise_scale must be >= 0, got {noise_scale}")
+
     if variable_type == 'temperature':
         # ECMWF TM 918 (2024) + meteoblue (2017)
         # σ(24h) ≈ 1.2°C, σ(168h) ≈ 3.8°C
-        sigma = 0.77 + 0.0181 * h  # °C
+        sigma = noise_scale * (0.77 + 0.0181 * h)  # °C
         noise = rng.normal(0, sigma)
         return actual_value + noise
     
@@ -131,7 +237,7 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
         # Kartsios et al. (2024), Acta Geophysica: GFS 2m RH RMSE over Africa
         # 12h→180h: 13.58%→16.94% (NCEP/GFS, June 2018-May 2020)
         # Formula calibrated to match observed range
-        sigma = 13.0 + 0.023 * h  # %-points
+        sigma = noise_scale * (13.0 + 0.023 * h)  # %-points
         noise = rng.normal(0, sigma)
         degraded = actual_value + noise
         # Enforce physical bounds
@@ -140,7 +246,7 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
     elif variable_type == 'wind_speed':
         # meteoblue (2017) + ECMWF TM 918
         # σ(24h) ≈ 2.0 m/s, σ(168h) ≈ 3.5 m/s
-        sigma = 1.8 + 0.010 * h  # m/s
+        sigma = noise_scale * (1.8 + 0.010 * h)  # m/s
         noise = rng.normal(0, sigma)
         degraded = actual_value + noise
         # Truncate at zero (minor negative bias but avoids large positive bias)
@@ -158,7 +264,7 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
         
         # Convert relative MAE to absolute σ for Gaussian noise
         # Normal distribution: σ ≈ 1.253 × MAE
-        sigma = 1.253 * (relative_mae_pct / 100) * actual_value
+        sigma = noise_scale * 1.253 * (relative_mae_pct / 100) * actual_value
         
         noise = rng.normal(0, sigma)
         degraded = actual_value + noise
@@ -172,38 +278,30 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
         return np.clip(degraded, 0, solar_cap)
     
     elif variable_type == 'precipitation':
-        # Event detection error rates from Sukovich et al. (2014) CONUS QPF:
-        # Day 1: POD≈0.65 (miss≈35%), FAR≈0.35
-        # Day 2: POD≈0.55 (miss≈45%), FAR≈0.45
-        # Linear interpolation with 50% cap at week-ahead
-        miss_rate = min(0.30 + 0.0015 * h, 0.50)      # 30% @ 6h → 50% @ 168h
-        false_alarm_rate = min(0.35 + 0.0010 * h, 0.50)  # 35% @ 6h → 50% @ 168h
-        
+        # Event detection errors (Sukovich et al., 2014), with the false alarm
+        # ratio converted to a probability per dry hour via the wet-hour share.
+        # Not scaled by noise_scale: the rates are probabilities, not error
+        # magnitudes, and fixed rates give the same branches, hence the same
+        # random draws, for every noise_scale (common random numbers).
+        if wet_fraction is None:
+            raise ValueError(
+                "wet_fraction required for precipitation. "
+                "Compute with prepare_degradation_parameters() on the training data."
+            )
+        miss_rate, false_alarm_prob = precipitation_detection_rates(h, wet_fraction)
+
         if actual_value == 0:
-            # False alarm: forecast rain when there is none
-            if rng.random() < false_alarm_rate:
-                # Small false alarm (most are light precipitation)
-                return rng.lognormal(mean=np.log(0.5), sigma=0.5)
-            else:
-                return 0  # Correctly forecast no rain
-        
-        else:
-            # Missed detection: forecast no rain when there is rain
-            if rng.random() < miss_rate:
-                return 0  # Missed the rain event
-            
-            # Detected correctly: apply magnitude error
-            # Multiplicative lognormal noise (Jolliffe & Stephenson)
-            # CV growth rate: 0.15%/h (conservative estimate from ensemble
-            # spread theory - half the theoretical bound of 0.30%/h)
-            relative_error_pct = 30 + 0.15 * h
-            cv = relative_error_pct / 100
-            
-            sigma_log = np.sqrt(np.log(1 + cv**2))
-            mu_log = -0.5 * sigma_log**2  # Mean-preserving
-            
-            multiplier = rng.lognormal(mean=mu_log, sigma=sigma_log)
-            return actual_value * multiplier
+            # False alarm: forecast precipitation when there is none
+            if rng.random() < false_alarm_prob:
+                return _false_alarm_amount(rng)
+            return 0  # Correctly forecast no precipitation
+
+        # Missed detection: forecast no precipitation when there is some
+        if rng.random() < miss_rate:
+            return 0
+
+        # Detected correctly: multiplicative lognormal magnitude error
+        return actual_value * _precipitation_multiplier(h, rng, noise_scale)
     
     elif variable_type == 'visibility':
         # Lognormal multiplicative noise.
@@ -218,7 +316,7 @@ def degrade_weather_forecast(actual_value, variable_type, horizon_hours,
         # typical mean visibility of ~7-8km. Raw NWP errors are higher
         # (Gultepe et al., 2006); 25% is therefore a conservative lower bound.
         # Source: Owens & Hewson (2018), ECMWF Forecast User Guide, Sec. 9.4
-        cv = 0.25
+        cv = 0.25 * noise_scale
         sigma_log = np.sqrt(np.log(1 + cv**2))
         mu_log = -0.5 * sigma_log**2  # Mean-preserving: E[multiplier] = 1
         multiplier = rng.lognormal(mean=mu_log, sigma=sigma_log)
@@ -252,7 +350,11 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
     dict
         Dictionary containing:
         - 'solar_cap': 99.5th percentile of observed solar radiation
-    
+        - 'wet_fraction': share of hours with precipitation in any
+          precipitation column (rain or snow > 0); only if column_mapping
+          has precipitation columns present in training_data. Converts the
+          false alarm ratio into a probability per dry hour.
+
     Examples
     --------
     >>> import pandas as pd
@@ -281,7 +383,16 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
     params = {
         'solar_cap': np.percentile(training_data[solar_col], 99.5)
     }
-    
+
+    # Share of wet hours (any precipitation column > 0): base rate for the
+    # false-alarm probability (see precipitation_detection_rates())
+    precip_cols = [
+        c for c, t in (column_mapping or {}).items()
+        if t == 'precipitation' and c in training_data.columns
+    ]
+    if precip_cols:
+        params['wet_fraction'] = float((training_data[precip_cols] > 0).any(axis=1).mean())
+
     return params
 
 
@@ -349,16 +460,54 @@ def fix_precipitation_type(df_degraded, temp_col='Temperature',
     return df
 
 
+def _degrade_precipitation_hours(precip, lead_times, wet_fraction, rng, false_alarm_col,
+                                 noise_scale=1.0):
+    """
+    Event-detection and magnitude errors for all precipitation columns
+    together (e.g. rain and snow): one draw per hour.
+
+    - Dry hour (all columns 0): false alarm with probability
+      P(false alarm | dry) from precipitation_detection_rates(); the amount
+      goes to false_alarm_col (the rain/snow correction assigns the phase).
+    - Wet hour (any column > 0): missed with probability miss_rate (all
+      columns 0); otherwise every column is multiplied by the same
+      mean-preserving lognormal multiplier.
+    - noise_scale multiplies the magnitude CV only. The detection draws do
+      not depend on it, so every noise_scale uses the same random numbers.
+
+    Returns a float DataFrame with the same index and columns as precip.
+    """
+    values = precip.to_numpy(dtype=float)
+    out = np.zeros_like(values)
+    fa_idx = list(precip.columns).index(false_alarm_col)
+    for i, lt in enumerate(lead_times):
+        miss_rate, false_alarm_prob = precipitation_detection_rates(int(lt), wet_fraction)
+        row = values[i]
+        if np.all(row == 0):
+            if rng.random() < false_alarm_prob:
+                out[i, fa_idx] = _false_alarm_amount(rng)
+        elif rng.random() >= miss_rate:
+            out[i] = row * _precipitation_multiplier(int(lt), rng, noise_scale)
+        # else: missed event, forecast stays 0
+    return pd.DataFrame(out, index=precip.index, columns=precip.columns)
+
+
 def degrade_weather_dataset(df, horizon_hours, degradation_params,
                             column_mapping=None, seed=42, lead_times=None,
-                            temp_col=None, rain_col=None, snow_col=None):
+                            temp_col=None, rain_col=None, snow_col=None,
+                            noise_scale=1.0):
     """
     Apply forecast degradation to all weather variables in a dataset.
     
     Degradation is applied in two passes:
-    1. All variables degraded independently
+    1. All variables degraded independently. All precipitation columns
+       (rain and snow) together are one precipitation variable: one
+       event-detection draw per hour and, for a detected event, one
+       magnitude multiplier applied to every non-zero precipitation column.
+       A false-alarm amount is written to rain_col (or to the first
+       precipitation column if rain_col is not given).
     2. Precipitation types corrected based on degraded temperature
-    
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -367,7 +516,8 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
         Forecast lead time used when lead_times is None (6, 24, 48, or 168).
         Ignored when lead_times is provided.
     degradation_params : dict
-        Parameters from prepare_degradation_parameters()
+        Parameters from prepare_degradation_parameters() of the training
+        data ('solar_cap'; 'wet_fraction' if there are precipitation columns)
     column_mapping : dict, optional
         Maps actual column names to variable types.
         Example: {'Temperature': 'temperature', 'Rainfall': 'precipitation'}
@@ -383,6 +533,10 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
     temp_col, rain_col, snow_col : str, optional
         Column names for the rain/snow phase correction (pass 2). If any of
         them is None, the correction is skipped.
+    noise_scale : float, default=1.0
+        Factor applied to the error magnitudes (see degrade_weather_forecast).
+        The random draws do not depend on it: the same seed gives errors that
+        differ only in magnitude.
 
     Returns
     -------
@@ -412,50 +566,52 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
     
     # Create reproducible seed
     rng = np.random.default_rng(seed=seed)
-    
+
     df_degraded = df.copy()
+
+    # Lead time per row: the given per-row lead times, or horizon_hours for all rows
+    if lead_times is None:
+        lead_times = np.full(len(df), int(horizon_hours))
+    lead_times = np.asarray(lead_times, dtype=int)
+    if len(lead_times) != len(df):
+        raise ValueError(f"lead_times has {len(lead_times)} entries, df has {len(df)} rows")
+
+    precip_cols = [c for c, t in column_mapping.items() if t == 'precipitation' and c in df.columns]
+    precip_done = False
 
     # Pass 1: Degrade all variables independently
     for col, var_type in column_mapping.items():
         if col not in df.columns:
             continue
-        
-        if lead_times is not None:
-            # Per-row degradation: each step uses its own lead time
-            degraded_values = []
-            for i, val in enumerate(df[col]):
-                lt = int(lead_times[i])
-                if var_type == 'solar_radiation':
-                    degraded_values.append(
-                        degrade_weather_forecast(
-                            val, var_type, lt,
-                            solar_cap=degradation_params['solar_cap'],
-                            rng=rng
-                        )
+
+        if var_type == 'precipitation':
+            # All precipitation columns at once (one detection draw per hour)
+            if not precip_done:
+                if 'wet_fraction' not in degradation_params:
+                    raise ValueError(
+                        "degradation_params has no 'wet_fraction': compute it with "
+                        "prepare_degradation_parameters(training_data, column_mapping)"
                     )
-                else:
-                    degraded_values.append(
-                        degrade_weather_forecast(val, var_type, lt, rng=rng)
-                    )
-            # float dtype: degrade_weather_forecast returns int 0 for dry /
-            # night rows; an all-int column would reject the float amounts
-            # moved in by the rain/snow correction (TypeError in pandas >= 3)
-            df_degraded[col] = np.asarray(degraded_values, dtype=float)
-        elif var_type == 'solar_radiation':
-            df_degraded[col] = df[col].apply(
-                lambda x: degrade_weather_forecast(
-                    x, var_type, horizon_hours, 
-                    solar_cap=degradation_params['solar_cap'],
-                    rng=rng
+                fa_col = rain_col if rain_col in precip_cols else precip_cols[0]
+                degraded_precip = _degrade_precipitation_hours(
+                    df[precip_cols], lead_times, degradation_params['wet_fraction'],
+                    rng, false_alarm_col=fa_col, noise_scale=noise_scale,
                 )
-            ).astype(float)
-        else:
-            df_degraded[col] = df[col].apply(
-                lambda x: degrade_weather_forecast(
-                    x, var_type, horizon_hours, rng=rng
-                )
-            ).astype(float)
-    
+                for c in precip_cols:
+                    df_degraded[c] = degraded_precip[c].to_numpy(dtype=float)
+                precip_done = True
+            continue
+
+        kwargs = {'solar_cap': degradation_params['solar_cap']} if var_type == 'solar_radiation' else {}
+        degraded_values = [
+            degrade_weather_forecast(val, var_type, int(lt), rng=rng,
+                                     noise_scale=noise_scale, **kwargs)
+            for val, lt in zip(df[col], lead_times)
+        ]
+        # float dtype: degrade_weather_forecast returns int 0 for night rows
+        # (solar); keep every degraded column float
+        df_degraded[col] = np.asarray(degraded_values, dtype=float)
+
     # Pass 2: Fix precipitation types based on degraded temperature
     # This MUST happen after temperature degradation
     if temp_col and rain_col and snow_col:

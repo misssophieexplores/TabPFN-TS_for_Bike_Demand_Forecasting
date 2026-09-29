@@ -109,7 +109,7 @@ def search_orders(
     for key, cand in candidates.items():
         order, seasonal_order, with_intercept = key
         try:
-            trend = trend_from_intercept(with_intercept, order, seasonal_order)
+            trend = trend_from_intercept(with_intercept, order, seasonal_order, sarimax=seasonal)
         except ValueError as e:
             cand["status"] = f"not selectable: {e}"
             continue
@@ -126,7 +126,9 @@ def search_orders(
                     warnings.simplefilter("always")
                     model.fit(y_tr, X_tr)
                     y_pred = model.predict(len(test_df), X_te)
-                non_converged += any("did not converge" in str(w.message) for w in caught)
+                # "converge" matches both SARIMAXForecaster's own warning and
+                # statsmodels' ConvergenceWarning (ARIMA), as in run_experiments.py
+                non_converged += any("converge" in str(w.message).lower() for w in caught)
                 m = calc.calculate_all(
                     y_te, y_pred, y_tr,
                     test_mask=calc.observed_mask(test_df, fday),

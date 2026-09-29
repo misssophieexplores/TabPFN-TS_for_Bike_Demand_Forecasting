@@ -54,37 +54,41 @@ For correctly detected precipitation events, a lognormal multiplicative noise mo
 
 **CV(h) = 30 + 0.15·h** (percent)
 
-This growth rate represents a conservative estimate based on ensemble spread theory. The theoretical upper bound can be derived from:
-- **Climatological baseline:** Daily precipitation CV ≈ 100-150% (Katz & Parlange, 1998)
-- **Skill decay:** Ensemble CRPSS decreases from ~0.33 (Day 1) to ~0.0 (Day 6) (Hersbach, 2000)
-- **Theoretical relationship:** CV(t) = CV_obs × (1 - CRPSS(t)) yields ~0.30%/h growth rate for extratropics
-
-The implemented rate of 0.15%/h represents a conservative lower bound appropriate for conditional (detected events only) application, as it excludes dry/near-zero cases that inflate ensemble spread. This yields CV values of 33.6% at 24 hours and 55.2% at 168 hours, compared to theoretical bounds of 78% and 120% respectively.
-
-**References:**
-- Katz, R.W. & Parlange, M.B. (1998). Overdispersion phenomenon in stochastic modeling of precipitation. *Journal of Climate*, 11(4), 591-601.
-- Hersbach, H. (2000). Decomposition of the continuous ranked probability score for ensemble prediction systems. *Weather and Forecasting*, 15(5), 559-570.
+These values are an assumption: no published verification of the magnitude error of correctly detected hourly precipitation by lead time was found. The formula yields CV values of 33.6% at 24 hours and 55.2% at 168 hours. The magnitude error only affects hours in which precipitation is observed and correctly forecast.
 
 #### Event Detection Errors
 
-In addition to magnitude errors, precipitation forecasts exhibit significant event detection errors (false alarms and missed events). Based on Sukovich et al. (2014) quantitative precipitation forecast verification over the contiguous United States from 2001-2011, miss rates and false alarm rates were estimated from reported probability of detection (POD) and false alarm ratio (FAR) metrics:
+In addition to magnitude errors, precipitation forecasts exhibit significant event detection errors (false alarms and missed events). Based on Sukovich et al. (2014) quantitative precipitation forecast verification over the contiguous United States from 2001-2011, miss rates and false alarm ratios were estimated from reported probability of detection (POD) and false alarm ratio (FAR) metrics:
 
-**Event Error Rates:**
-- **6h:** 31% miss rate, 36% false alarm rate
-- **24h:** 34% miss rate, 37% false alarm rate  
-- **48h:** 37% miss rate, 40% false alarm rate
-- **168h:** 50% miss rate, 50% false alarm rate
+**Event Error Statistics:**
+- **6h:** 27.5% miss rate, FAR 27.5%
+- **24h:** 35% miss rate, FAR 35%
+- **48h:** 45% miss rate, FAR 45%
+- **≥60h (incl. 168h):** 50% miss rate, FAR 50%
 
-These values are derived from Sukovich et al. (2014) reporting Day 1 POD ≈ 0.65 (miss ≈ 35%) and FAR ≈ 0.35, Day 2 POD ≈ 0.55 (miss ≈ 45%) and FAR ≈ 0.45, with linear interpolation for hourly forecasts at growth rates of 0.0015/hour (miss rate) and 0.0010/hour (false alarm rate), capped at 50% for week-ahead forecasts.
+Sukovich et al. (2014) report Day 1 POD ≈ 0.65 (miss ≈ 35%) and FAR ≈ 0.35, Day 2 POD ≈ 0.55 (miss ≈ 45%) and FAR ≈ 0.45, and Day 3 miss rate and FAR ≈ 45–55%. Miss rate and FAR both follow the straight line through the Day-1 (24 h) and Day-2 (48 h) values:
+
+**miss rate(h) = FAR(h) = 0.25 + 0.10 · h / 24**, capped at 50%
+
+The cap is reached at 60 h, within the Day-3 range. Below 24 h the line is extrapolated (25.4% at 1 h).
+
+**From false alarm ratio to false-alarm probability per dry hour:**
+
+The miss rate (1 − POD) is conditional on an observed event, P(no forecast | precipitation), and is applied directly to wet hours. The false alarm ratio is conditional on a *forecast* event: FAR = false alarms / (false alarms + hits) = P(no precipitation | precipitation forecast). To simulate forecasts for dry hours, the probability P(precipitation forecast | no precipitation) is needed. With hits H = POD · N_wet and FAR = F / (F + H), the number of false alarms is F = FAR / (1 − FAR) · POD · N_wet, so per dry hour:
+
+**P(false alarm | dry) = FAR / (1 − FAR) · POD · p / (1 − p)**
+
+where *p* is the share of wet hours (rain or snow > 0), computed from the clean training window of each fold (in the same way as the solar cap). With this probability the simulated forecasts reproduce the source statistics: the simulated FAR equals the reported FAR and the simulated POD equals the reported POD. For a wet-hour share of 6%, P(false alarm | dry) is 2.2% at 24 h. A training window without any precipitation gives *p* = 0 and therefore no false alarms in that fold.
 
 **Implementation:**
-- **False alarms** (actual = 0, forecast > 0): Generated with probability = false_alarm_rate. When triggered, a small precipitation amount is sampled from lognormal(mean=0.5mm, σ=0.5), representing typical light false alarm precipitation.
+- **One precipitation variable:** Rainfall and snowfall are treated as one precipitation variable. An hour is wet if rain or snow > 0. Each hour receives one event-detection draw.
+- **False alarms** (actual = 0, forecast > 0): Generated with probability P(false alarm | dry). When triggered, a small precipitation amount is sampled from a lognormal distribution with median 0.5 mm (σ_log = 0.5, mean 0.57 mm), representing typical light false alarm precipitation. The amount is written to the rain column; the phase correction (below) converts it to snow when the degraded temperature is below 2 °C.
   
 - **Missed events** (actual > 0, forecast = 0): Occur with probability = miss_rate. When triggered, forecast returns 0 regardless of actual amount.
   
-- **Detected events** (actual > 0, forecast > 0): Magnitude error applied using lognormal multiplicative model as described above.
+- **Detected events** (actual > 0, forecast > 0): Magnitude error applied using lognormal multiplicative model as described above; one multiplier per hour is applied to all non-zero precipitation columns.
 
-**Note:** The 50% cap at 168h reflects near-random skill for week-ahead precipitation event detection, consistent with operational NWP performance.
+**Note:** The 50% cap (from 60 h) reflects near-random skill for event detection beyond Day 2, consistent with the Day-3 values of Sukovich et al. (2014).
 
 ### Visibility
 
@@ -110,9 +114,11 @@ This reflects the operational reality: a model is fitted on historical observati
 
 Within a test window of length *h*, each row receives noise calibrated to its own lead time rather than the maximum horizon. Row *i* (0-indexed) represents the forecast for step *i + 1* hours ahead, so it is degraded using σ(i + 1):
 
-- **Row 0** → σ(1 h): near-zero noise  
+- **Row 0** → σ(1 h): the smallest noise of the window  
 - **Row h/2** → σ(h/2): mid-range noise  
 - **Row h − 1** → σ(h): full-horizon noise
+
+The noise at 1 h is not zero: every error formula has an intercept. At 1 h the errors are σ = 0.79 °C (temperature), 13.0 %-points (humidity), 1.81 m/s (wind), 15% relative MAE (solar radiation), CV 25% (visibility), and a 25% miss rate and FAR (precipitation). The shortest lead time verified in the sources is 12 h (temperature, humidity) or 24 h (wind, solar radiation, precipitation, visibility); below that, the formulas are extrapolated (see Limitations).
 
 This is physically correct because a horizon-*h* NWP forecast covers *h* consecutive future hours, and error grows continuously with lead time. The previous implementation applied the maximum-horizon noise uniformly to every row, which overestimated degradation for all but the final prediction step.
 
@@ -121,7 +127,7 @@ This is physically correct because a horizon-*h* NWP forecast covers *h* consecu
 Weather degradation is applied in two sequential phases to maintain physical consistency:
 
 **Phase 1: Independent Variable Degradation**
-All weather variables are degraded independently according to their respective error models, using per-row lead times as described above.
+All weather variables are degraded independently according to their respective error models, using per-row lead times as described above. Rainfall and snowfall are degraded together as one precipitation variable (one event-detection draw per hour).
 
 **Phase 2: Physical Consistency Correction**
 After independent degradation, precipitation types (rain vs. snow) are corrected based on degraded temperature to prevent physically impossible combinations (e.g., snowfall at 15°C or rainfall at -5°C).
@@ -189,17 +195,23 @@ For production pipelines, the default reproducible behavior is recommended.
 
 2. **Independent errors across variables**: Errors were treated as independent across weather variables, except for the temperature-precipitation type coupling. Actual NWP forecast errors exhibit substantial cross-variable correlations—for example, temperature and humidity errors are coupled through thermodynamic relationships, and wind errors correlate with temperature gradients. This independence assumption may underestimate error in derived quantities or physically coupled processes.
 
-3. **Linear error growth**: Error growth was modeled as linear in forecast lead time. Actual verification curves show modest nonlinearity, with error growth accelerating slightly beyond 5-7 days as predictability limits are approached, and asymptotic behavior at very long ranges (>10 days) where forecast skill approaches climatology.
+3. **Independent errors from hour to hour**: Each hour of a test window receives an independent error draw. Actual NWP forecast errors persist over many hours (e.g. a forecast that is too warm stays too warm for most of a day). The per-hour error magnitude matches the error formulas, but the temporal structure of the errors is not represented.
 
-4. **Simplified precipitation phase transition**: The 2°C threshold for rain/snow conversion is a simplification. Real precipitation phase transitions occur over a range (typically 0-4°C) with mixed precipitation possible. This threshold represents typical operational practice but does not capture the full complexity of precipitation phase physics.
+4. **Extrapolation below the shortest verified lead time**: The shortest lead time verified in the sources is 12 h (temperature, humidity) or 24 h (wind speed, solar radiation, precipitation, visibility). Below that, the error formulas are extrapolated to their intercepts; at 1 h the errors are σ = 0.79 °C (temperature), 13.0 %-points (humidity), 1.81 m/s (wind), 15% relative MAE (solar radiation), CV 25% (visibility), and 25% miss rate and FAR (precipitation). All lead times of the 6 h horizon and the first hours of every longer horizon rely on this extrapolation.
 
-5. **Assumption-based parameters**: Precipitation magnitude CV growth rate (0.15%/h) is a conservative estimate derived from ensemble spread theory rather than direct empirical measurement. Solar radiation linear growth (0.15%/h) interpolates between verified 1-day and 7-day endpoints. These parameters represent defensible estimates but have not been independently validated against held-out verification datasets.
+5. **Linear error growth**: Error growth was modeled as linear in forecast lead time. Actual verification curves show modest nonlinearity, with error growth accelerating slightly beyond 5-7 days as predictability limits are approached, and asymptotic behavior at very long ranges (>10 days) where forecast skill approaches climatology.
 
-6. **Geographic and seasonal specificity**: Temperature and wind error growth parameters are derived from global or European verification statistics, while humidity errors are based on GFS verification over sub-Saharan Africa, and precipitation skill characteristics reflect mid-latitude performance. Parameters may not fully represent forecast error characteristics for all locations or seasons. Seasonal variations in forecast skill (e.g., summer convection vs. winter synoptic patterns) are not explicitly captured. Humidity errors from African verification may not generalize to all climate regimes.
+6. **Simplified precipitation phase transition**: The 2°C threshold for rain/snow conversion is a simplification. Real precipitation phase transitions occur over a range (typically 0-4°C) with mixed precipitation possible. This threshold represents typical operational practice but does not capture the full complexity of precipitation phase physics.
 
-7. **Single-model representation**: Parameters represent a composite of operational NWP systems and may not accurately reflect errors from other forecast systems or ensemble spread characteristics.
+7. **Assumption-based parameters**: Precipitation magnitude CV (30% + 0.15%/h) is an assumption; no published verification of the magnitude error of correctly detected hourly precipitation by lead time was found. Solar radiation linear growth (0.15%/h) interpolates between verified 1-day and 7-day endpoints. These parameters represent defensible estimates but have not been independently validated against held-out verification datasets.
 
-8. **Wind speed truncation bias**: Truncation at zero introduces minor negative bias for low wind speeds (approximately -0.2 m/s), though this is significantly smaller than the positive bias from reflection. At 168h, mean bias is approximately +0.57 m/s (33% of original mean), which is acceptable but non-zero.
+8. **Geographic and seasonal specificity**: Temperature and wind error growth parameters are derived from global or European verification statistics, while humidity errors are based on GFS verification over sub-Saharan Africa, and precipitation skill characteristics reflect mid-latitude performance. Parameters may not fully represent forecast error characteristics for all locations or seasons. Seasonal variations in forecast skill (e.g., summer convection vs. winter synoptic patterns) are not explicitly captured. Humidity errors from African verification may not generalize to all climate regimes.
+
+9. **Single-model representation**: Parameters represent a composite of operational NWP systems and may not accurately reflect errors from other forecast systems or ensemble spread characteristics.
+
+10. **Event detection statistics from extreme events**: The POD and FAR values of Sukovich et al. (2014) were verified for the top 1% of 24-hour precipitation events on a 32-km grid. They are applied here to all hourly precipitation events. Detection skill for ordinary hourly precipitation may differ.
+
+11. **Wind speed truncation bias**: Truncation at zero introduces minor negative bias for low wind speeds (approximately -0.2 m/s), though this is significantly smaller than the positive bias from reflection. At 168h, mean bias is approximately +0.57 m/s (33% of original mean), which is acceptable but non-zero.
 
 Despite these limitations, the degradation methodology provides a realistic and conservative estimate of operational forecast uncertainty appropriate for evaluating machine learning model robustness under forecast input conditions.
 
@@ -209,15 +221,11 @@ Bari, D. & Ouagabi, A. (2020). Machine-learning regression applied to diagnose h
 
 European Centre for Medium-Range Weather Forecasts (2024). *Evaluation of ECMWF forecasts, including the 2023-2024 upgrade*. ECMWF Technical Memorandum No. 918. Reading, UK.
 
-Hersbach, H. (2000). Decomposition of the continuous ranked probability score for ensemble prediction systems. *Weather and Forecasting*, 15(5), 559-570.
-
 Gultepe, I., Müller, M. D., & Boybeyi, Z. (2006). A new visibility parameterization for warm-fog applications in numerical weather prediction models. Journal of Applied Meteorology and Climatology, 45(11), 1469–1480.
 
 Jolliffe, I. T., & Stephenson, D. B. (Eds.). (2003). *Forecast Verification: A Practitioner's Guide in Atmospheric Science*. John Wiley & Sons, Chichester, UK.
 
 Kartsios, S., Tsarsitalidou, C., Pytharoulis, I., Tegoulias, I., Kotsopoulos, S., Zanis, P., & Katragkou, E. (2024). Verification of the NCEP GFS, ECMWF and BoM ACCESS-G numerical weather prediction model forecasts over Eastern Africa. *Acta Geophysica*, 72, 669-688. https://doi.org/10.1007/s11600-023-01136-y
-
-Katz, R.W. & Parlange, M.B. (1998). Overdispersion phenomenon in stochastic modeling of precipitation. *Journal of Climate*, 11(4), 591-601.
 
 Kleissl, J. (Ed.). (2013). *Solar Energy Forecasting and Resource Assessment*. Academic Press, Oxford, UK.
 
@@ -295,15 +303,16 @@ Sukovich, E. M., Ralph, F. M., Barthold, F. E., Reynolds, D. W., & Novak, D. R. 
 
 #### Event Detection Errors
 
-| Horizon | Miss Rate (%) | False Alarm Rate (%) |
-|---------|---------------|----------------------|
-| 6h      | 31            | 36                   |
-| 24h     | 34            | 37                   |
-| 48h     | 37            | 40                   |
-| 72h     | 41            | 42                   |
-| 168h    | 50            | 50                   |
+| Horizon | Miss Rate (%) | FAR (%) | P(false alarm \| dry) (%), p = 3% | p = 6% | p = 10% |
+|---------|---------------|---------|-----------------------------------|--------|---------|
+| 1h      | 25.4          | 25.4    | 0.8                               | 1.6    | 2.8     |
+| 6h      | 27.5          | 27.5    | 0.9                               | 1.8    | 3.1     |
+| 24h     | 35.0          | 35.0    | 1.1                               | 2.2    | 3.9     |
+| 48h     | 45.0          | 45.0    | 1.4                               | 2.9    | 5.0     |
+| 72h     | 50.0          | 50.0    | 1.5                               | 3.2    | 5.6     |
+| 168h    | 50.0          | 50.0    | 1.5                               | 3.2    | 5.6     |
 
-*Note: Miss rate = probability of missing actual precipitation (forecast = 0 when actual > 0). False alarm rate = probability of forecasting precipitation when none occurs (forecast > 0 when actual = 0). Rates based on Sukovich et al. (2014) with linear interpolation at 0.0015/hour (miss) and 0.0010/hour (FAR), capped at 50%.*
+*Note: Miss rate = 1 − POD = probability of missing actual precipitation (forecast = 0 when actual > 0). FAR = false alarm ratio = share of forecast precipitation events that do not occur (actual = 0 when forecast > 0). P(false alarm | dry) = FAR / (1 − FAR) · POD · p / (1 − p) = probability of forecasting precipitation for a dry hour, where p is the wet-hour share of the training window. Miss rate and FAR = 0.25 + 0.10 · h / 24 (line through the Day-1 and Day-2 values of Sukovich et al., 2014), capped at 50% from 60 h.*
 
 ### Visibility Error Growth
 

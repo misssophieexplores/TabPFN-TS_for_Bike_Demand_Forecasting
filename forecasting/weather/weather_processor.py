@@ -21,10 +21,12 @@ class WeatherProcessor:
     """
     Orchestrates weather data preparation for different scenarios.
     
-    Handles three scenarios:
+    Handles these scenarios:
     - all_weather: All 8 variables, no degradation
     - clean_only: 7 degradable variables (exclude Dew point), no degradation
     - degraded: 7 degradable variables (exclude Dew point), with degradation
+    - degraded_x050 / degraded_x150: as degraded, error magnitudes x0.5 / x1.5
+      (every key of config.degradation_scales is a degraded scenario)
     
     Parameters
     ----------
@@ -58,7 +60,7 @@ class WeatherProcessor:
         Parameters
         ----------
         scenario : str
-            One of: 'all_weather', 'clean_only', 'degraded'
+            'all_weather', 'clean_only' or a degraded scenario (config.degradation_scales)
             
         Returns
         -------
@@ -69,13 +71,13 @@ class WeatherProcessor:
         -----
         - all_weather: All (8) variables from config.weather_covariates
         - clean_only: Only the 7 degradable variables (excludes Dew point)
-        - degraded: Same 7 degradable variables as clean_only
+        - degraded scenarios: Same 7 degradable variables as clean_only
         """
         if scenario == "all_weather":
             # Return all 8 weather variables
             return self.config.weather_covariates.copy()
         
-        elif scenario in ["clean_only", "degraded"]:
+        elif scenario == "clean_only" or self.config.is_degraded(scenario):
             # Return only degradable variables (7 vars, exclude Dew point)
             # These are the ones in weather_degradation_mapping
             degradable_vars = list(self.config.weather_degradation_mapping.keys())
@@ -115,7 +117,7 @@ class WeatherProcessor:
         df : pd.DataFrame
             Full dataframe (train or test) with all columns
         scenario : str
-            One of: 'all_weather', 'clean_only', 'degraded'
+            'all_weather', 'clean_only' or a degraded scenario (config.degradation_scales)
         horizon : int
             Forecast horizon in hours (6, 24, 48, 168)
         fold_idx : int
@@ -168,22 +170,28 @@ class WeatherProcessor:
         # Extract weather data
         weather_df = df[weather_cols].copy()
 
-        # Degradation parameters (solar cap) come from the clean training fold,
+        # Degraded scenarios: 'degraded' and the noise-magnitude sensitivity
+        # scenarios (keys of config.degradation_scales)
+        degraded = self.config.is_degraded(scenario)
+
+        # Degradation parameters (solar cap, wet-hour share) come from the clean training fold,
         # which is always prepared before the test fold.
-        if scenario == "degraded" and split == "train":
+        if degraded and split == "train":
             self.degradation_params = prepare_degradation_parameters(
                 weather_df,
                 self.config.weather_degradation_mapping
             )
 
-        # Apply degradation only to test split in the 'degraded' scenario.
+        # Apply degradation only to test split in the degraded scenarios,
+        # scaled by the scenario's factor.
         # Training data always uses clean (observed) weather so that the
         # experiment measures degradation at inference time, not during fitting.
-        if scenario == "degraded" and split == "test":
+        if degraded and split == "test":
             weather_df = self.degrade_dataframe(
                 weather_df,
                 horizon,
-                fold_idx
+                fold_idx,
+                noise_scale=self.config.degradation_scales[scenario]
             )
         
         return weather_df
@@ -192,7 +200,8 @@ class WeatherProcessor:
         self,
         df: pd.DataFrame,
         horizon: int,
-        fold_idx: int
+        fold_idx: int,
+        noise_scale: float = 1.0
     ) -> pd.DataFrame:
         """
         Apply degradation to weather dataframe with row-varying lead times.
@@ -206,6 +215,9 @@ class WeatherProcessor:
             rows in df for a single test window.
         fold_idx : int
             CV fold index for seed generation
+        noise_scale : float, default=1.0
+            Factor applied to the error magnitudes (config.degradation_scales
+            of the scenario; 1.0 = calibrated error model)
             
         Returns
         -------
@@ -216,16 +228,21 @@ class WeatherProcessor:
         -----
         Seed calculation:
         - seed = base_seed + 10000 * horizon + fold_idx
+        - The seed does not depend on noise_scale, so all degraded scenarios
+          of a (horizon, fold) use the same random numbers; only the error
+          magnitude differs (common random numbers).
         - Unique per (horizon, fold) as long as fold_idx < 10000 (at most
           980 folds, for h=6). The previous base_seed + fold_idx + horizon
           gave duplicates across horizons (e.g. fold 18 at h=6 and fold 0
           at h=24 both got base_seed + 24).
 
         Lead-time assignment:
-        - Row i (0-indexed) represents the forecast for 1 hour ahead at
-          step i, so it receives noise calibrated to lead time (i+1) hours.
-        - This means the first test step gets near-zero noise (1 h lead) and
-          the last step gets full horizon noise — physically correct behaviour.
+        - Row i (0-indexed) is the forecast for (i+1) hours ahead, so it
+          receives noise calibrated to lead time (i+1) hours.
+        - The first test step gets the smallest noise of the window (1 h
+          lead), which is not zero: every error formula has an intercept
+          (e.g. temperature 0.79 °C, humidity 13.0 %-points at 1 h). The
+          last step gets full-horizon noise.
         """
         # Seed unique per (horizon, fold): fold_idx < 10000 for all horizons
         if not 0 <= fold_idx < 10000:
@@ -242,7 +259,7 @@ class WeatherProcessor:
         if self.degradation_params is None:
             raise RuntimeError(
                 "degradation_params not set: prepare the train split of this fold "
-                "(scenario='degraded') before the test split"
+                "(degraded scenario) before the test split"
             )
 
         # Columns for the rain/snow phase correction
@@ -263,7 +280,8 @@ class WeatherProcessor:
             lead_times=lead_times,
             temp_col=temp_cols[0],
             rain_col=self.config.rain_col,
-            snow_col=self.config.snow_col
+            snow_col=self.config.snow_col,
+            noise_scale=noise_scale
         )
         
         return df_degraded
@@ -280,7 +298,8 @@ class WeatherProcessor:
         Returns
         -------
         dict
-            Summary with keys: scenario, num_vars, variables, degraded
+            Summary with keys: scenario, num_vars, variables, degraded,
+            noise_scale (None if the scenario is not degraded)
             
         Examples
         --------
@@ -300,5 +319,6 @@ class WeatherProcessor:
             'scenario': scenario,
             'num_vars': len(weather_cols),
             'variables': weather_cols,
-            'degraded': scenario == "degraded"
+            'degraded': self.config.is_degraded(scenario),
+            'noise_scale': self.config.degradation_scales.get(scenario)
         }

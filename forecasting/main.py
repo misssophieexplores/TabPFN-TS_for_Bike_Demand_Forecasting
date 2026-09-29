@@ -96,7 +96,7 @@ def main():
         print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Computing comparative metrics (pooled across cities)")
         try:
             comp = compute_and_log_comparative_metrics(first_config, log_wandb=False)
-            print(comp[['model', 'n_tasks', 'win_rate', 'skill_score']].to_string(index=False))
+            print(comp[['model', 'weather_scenario', 'n_tasks', 'win_rate', 'skill_score']].to_string(index=False))
         except ValueError as e:
             print(f"[FAILED] comparative metrics: {e}")
 

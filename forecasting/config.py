@@ -28,7 +28,7 @@ class ForecastConfig:
     season_mapping: Optional[Dict] = None
     weather_covariates: Optional[List[str]] = None
     weather_degradation_mapping: Optional[Dict[str, str]] = None
-    rain_col: Optional[str] = None   # used for rain/snow phase correction in the 'degraded' scenario
+    rain_col: Optional[str] = None   # used for rain/snow phase correction in the degraded scenarios
     snow_col: Optional[str] = None
     column_scale_factors: Dict[str, float] = field(default_factory=dict)
 
@@ -55,10 +55,22 @@ class ForecastConfig:
 
     # --- Weather degradation (shared) ---
     degradation_seed: int = 42
+    # Degraded scenarios -> factor applied to the calibrated error magnitudes
+    # (Gaussian sigmas, solar relative MAE, precipitation and visibility CVs;
+    # precipitation event detection is not scaled). 'degraded' is the
+    # calibrated error model; degraded_x050 / degraded_x150 are the
+    # noise-magnitude sensitivity scenarios. All use the same seeds.
+    degradation_scales: Dict[str, float] = field(default_factory=lambda: {
+        "degraded": 1.0,
+        "degraded_x050": 0.5,
+        "degraded_x150": 1.5,
+    })
     weather_scenarios: List[str] = field(default_factory=lambda: [
         "all_weather",
         "clean_only",
-        "degraded"
+        "degraded",
+        "degraded_x050",
+        "degraded_x150",
     ])
 
     # --- Output (shared) ---
@@ -77,3 +89,7 @@ class ForecastConfig:
     def __post_init__(self):
         if self.experiment_name is None:
             self.experiment_name = f"{self.dataset_name}_{self.results_version}"
+
+    def is_degraded(self, scenario: str) -> bool:
+        """True if the scenario degrades the test covariates (a key of degradation_scales)."""
+        return scenario in self.degradation_scales

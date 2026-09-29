@@ -102,7 +102,7 @@ def build_models(config: ForecastConfig, keys: Optional[List[str]] = None) -> Li
         elif key == "sarimax":
             cfg = _load_params(config.sarimax_params_file, "sarimax_params_file", "Run tune_sarimax.py.")
             order, seasonal_order = tuple(cfg["order"]), tuple(cfg["seasonal_order"])
-            trend = trend_from_intercept(cfg["with_intercept"], order, seasonal_order)
+            trend = trend_from_intercept(cfg["with_intercept"], order, seasonal_order, sarimax=True)
             models.append(SARIMAXForecaster(order=order, seasonal_order=seasonal_order, trend=trend))
         elif key == "xgboost":
             cfg = _load_params(config.xgb_params_file, "xgb_params_file", "Run tune_xgboost.py.")
@@ -143,7 +143,8 @@ def prepare_fold_inputs(
     """
     Model inputs for one fold, exactly as in the experiments:
     (y_train, X_train, y_test, X_test).
-    - covariates from WeatherProcessor (train: clean; test: degraded in 'degraded')
+    - covariates from WeatherProcessor (train: clean; test: degraded in the
+      degraded scenarios, see config.degradation_scales)
     - calendar features appended for use_time_features models (XGBoost)
     - real DatetimeIndex for needs_datetime models (Prophet, NeuralProphet, TabPFN);
       an empty frame with that index if the model has no covariates
@@ -270,7 +271,8 @@ class ForecastingExperiment:
         horizon : int
             Forecast horizon in hours
         weather_scenario : str, default='all_weather'
-            Weather scenario: 'all_weather', 'clean_only', or 'degraded'
+            Weather scenario: 'all_weather', 'clean_only', or a degraded
+            scenario (a key of config.degradation_scales)
         verbose : bool, default=True
             Print progress messages
             
@@ -281,7 +283,8 @@ class ForecastingExperiment:
         """
 
         # Skip if model doesn't use covariates and scenario is degraded
-        if not model.use_covariates and weather_scenario == "degraded":
+        # ('degraded' or a noise-magnitude sensitivity scenario)
+        if not model.use_covariates and self.config.is_degraded(weather_scenario):
             if verbose:
                 print(f"[SKIP] {model.name} | h={horizon} | {weather_scenario} "
                     f"(model doesn't use covariates, equivalent to clean_only)")
@@ -532,7 +535,7 @@ class ForecastingExperiment:
         for scenario in scenarios:
             for model in models:
                 # Count only if model will run
-                if not (not model.use_covariates and scenario == "degraded"):
+                if not (not model.use_covariates and self.config.is_degraded(scenario)):
                     total += len(self.config.horizons)
         
         completed = len(self.completed_experiments)
@@ -547,8 +550,8 @@ class ForecastingExperiment:
         
         for scenario in scenarios:
             for model in models:
-                # Skip models without covariates for degraded scenario
-                if not model.use_covariates and scenario == "degraded":
+                # Skip models without covariates for the degraded scenarios
+                if not model.use_covariates and self.config.is_degraded(scenario):
                     if verbose:
                         print(f"[SKIP] {model.name} for {scenario} (no covariates)\n")
                     continue
@@ -693,7 +696,8 @@ def compute_and_log_comparative_metrics(config, log_wandb=True):
     """Compute + save comparative metrics from the AGGREGATED results file.
 
     Tasks are (dataset, horizon, weather_scenario), pooled across all
-    datasets. Run this ONCE after all cities have finished.
+    datasets; one comparison per (model, weather_scenario). Run this ONCE
+    after all cities have finished.
     """
     filename_agg = Path(config.output_dir) / f"results_master_{config.results_version}.csv"
     comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
@@ -702,17 +706,19 @@ def compute_and_log_comparative_metrics(config, log_wandb=True):
     if log_wandb and wandb.run is not None:
         wandb.log({"comparative_metrics": wandb.Table(dataframe=comparative_df)})
         for _, row in comparative_df.iterrows():
+            # scenario in the key: one comparison per (model, scenario)
+            key = f"{row['model']}_{row['weather_scenario']}_vs_{row['baseline']}"
             wandb.log({
-                f"{row['model']}_vs_{row['baseline']}_win_rate": row['win_rate'],
-                f"{row['model']}_vs_{row['baseline']}_win_rate_ci_lower": row['win_rate_ci_lower'],
-                f"{row['model']}_vs_{row['baseline']}_win_rate_ci_upper": row['win_rate_ci_upper'],
-                f"{row['model']}_vs_{row['baseline']}_skill_score": row['skill_score'],
-                f"{row['model']}_vs_{row['baseline']}_skill_score_ci_lower": row['skill_score_ci_lower'],
-                f"{row['model']}_vs_{row['baseline']}_skill_score_ci_upper": row['skill_score_ci_upper'],
+                f"{key}_win_rate": row['win_rate'],
+                f"{key}_win_rate_ci_lower": row['win_rate_ci_lower'],
+                f"{key}_win_rate_ci_upper": row['win_rate_ci_upper'],
+                f"{key}_skill_score": row['skill_score'],
+                f"{key}_skill_score_ci_lower": row['skill_score_ci_lower'],
+                f"{key}_skill_score_ci_upper": row['skill_score_ci_upper'],
             })
     if config.verbose:
         print("\nComparative metrics vs", BASELINE_MODEL)
-        print(comparative_df[['model', 'n_tasks', 'win_rate', 'skill_score']].to_string(index=False))
+        print(comparative_df[['model', 'weather_scenario', 'n_tasks', 'win_rate', 'skill_score']].to_string(index=False))
     return comparative_df
 
 
