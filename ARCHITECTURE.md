@@ -53,6 +53,7 @@ results/                                           # Output directory
 ├── tuning/                                        # Tuning results (JSON)
 ├── results_master_{version}.csv                   # Aggregated results (all datasets)
 ├── detailed_results_master_{version}.csv          # Fold-level results (all datasets)
+├── forecasts_{dataset_name}_{version}.csv         # Hourly forecasts, one row per forecast hour (one file per dataset)
 ├── checkpoint_{dataset_name}_{version}.json       # Per-run recovery checkpoints (file name = checkpoint_{experiment_name}.json)
 └── errors_{version}.log                           # Fold-, city- and run-level error tracebacks
 ```
@@ -70,7 +71,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 7. **Predict**: `model.predict(n_steps, X_test)` generates forecasts, with `n_steps = len(test_df)`: the horizon, or fewer hours for a partial last fold. Wall-clock time of `predict()` is recorded as `predict_time_s`; `runtime_s = fit_time_s + predict_time_s` (see Runtime Measurement)
 8. **Evaluate**: `MetricsCalculator.calculate_all(y_test, y_pred, y_train, test_mask, train_mask)` computes metrics on observed hours only; imputed hours (`functioning_day_col == 'No'`) are excluded from scoring (masks from `MetricsCalculator.observed_mask()`). Imputed hours stay in the model inputs (training data)
 9. **Log**: W&B logs aggregated metrics and a per-fold table
-10. **Save**: after each model-horizon-scenario run, the fold-level rows are appended to `detailed_results_master_{version}.csv` and the aggregated row to `results_master_{version}.csv` (header must match, otherwise `RuntimeError`); only then is the checkpoint updated
+10. **Save**: after each model-horizon-scenario run, the hourly forecasts are appended to `forecasts_{dataset_name}_{version}.csv`, the fold-level rows to `detailed_results_master_{version}.csv` and the aggregated row to `results_master_{version}.csv` (header must match, otherwise `RuntimeError`); only then is the checkpoint updated
 11. **Compare** (once, after all cities): `compute_and_log_comparative_metrics()` computes win rate and skill score vs `Seasonal_Naive`, pooled across cities, one comparison per (model, scenario)
 
 **Weather Data Flow:**
@@ -462,7 +463,7 @@ Runs all datasets sequentially without manual intervention.
 - Checkpoint save/load for recovery — checkpoint keys include `dataset_name` so Seoul and Washington runs never conflict
 - Code provenance: `git_commit`/`git_dirty` are written to every fold row, every aggregated row, the checkpoint and the W&B config; `library_versions` (JSON string) to every aggregated row and the W&B config. A checkpoint without `code_version` or a `results_master_{version}.csv` without `git_commit` (written by older code) raises `RuntimeError`; resuming from another commit prints a warning (see Code Provenance)
 - Runs all model-horizon-scenario combinations
-- Saves aggregated and detailed results; on resume, reloads previously completed results from `results_master_{version}.csv`
+- Saves aggregated and detailed results and the hourly forecasts; on resume, reloads previously completed results from `results_master_{version}.csv`
 - `save_results()` merges with the existing aggregated CSV and drops duplicates on (`dataset`, `model`, `horizon`, `weather_scenario`, `run_name`), keeping the latest; the detailed CSV is not touched (already written after every experiment)
 - Automatic skip logic: models with `use_covariates=False` skip every degraded scenario (`config.is_degraded`)
 - Coverage check: `run_single_experiment()` raises `RuntimeError` unless the splits number `expected_n_folds(horizon)` and their test windows add up to exactly `get_eval_hours()` hours (catches missing hourly timestamps), so no evaluation hours are dropped for any horizon
@@ -636,7 +637,7 @@ Ensures a consistent lookback window across all folds.
 Rationale:
 - Every number in the paper maps to one code version; old params files and results can be told apart from current ones without relying on file dates.
 - Paper runs must use committed code (`git_dirty = False`); a warning is printed otherwise.
-- A checkpoint or results CSV written by older code (no provenance fields) is rejected, because resuming from it would silently skip experiments or append rows under a different header. Before a full re-run, move the old `results_master_{version}.csv`, `detailed_results_master_{version}.csv` and `checkpoint_*.json` away, or use a new `results_version`.
+- A checkpoint or results CSV written by older code (no provenance fields) is rejected, because resuming from it would silently skip experiments or append rows under a different header. Before a full re-run, move the old `results_master_{version}.csv`, `detailed_results_master_{version}.csv`, `forecasts_*_{version}.csv` and `checkpoint_*.json` away, or use a new `results_version`.
 
 ### Checkpoint Recovery
 Saves completed `(dataset_name, model, horizon, scenario)` tuples to JSON after each experiment, after its aggregated and fold-level rows are on disk (previously fold-level rows were written only at the end of a city's run, so an interrupted run lost them and the resume skipped the experiments).
@@ -716,6 +717,16 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 - Runtime in seconds (wall-clock, over successful folds): `fit_time_mean_s`, `predict_time_mean_s`, `runtime_mean_s`, `runtime_std_s` (per fold), and `fit_time_total_s`, `predict_time_total_s`, `runtime_total_s` (summed over folds)
 
 **Additional columns in detailed_results_master_{version}.csv (per fold):** `MAE`, `RMSE`, `MASE`, `sMAPE` (observed hours only), `fold`, `test_imputed`, `train_imputed`, `test_hours`, `test_scored`, `fit_time_s`, `predict_time_s`, `runtime_s` (seconds)
+
+**forecasts_{dataset_name}_{version}.csv (one row per forecast hour, one file per dataset):**
+- `dataset`, `model`, `horizon`, `weather_scenario`, `fold`: same keys as the detailed CSV
+- `lead_time`: hours ahead, 1 … `test_hours` of the fold
+- `datetime`: the hour being forecast (from `config.date_col`)
+- `y_true`, `y_pred`: actual value and point forecast, exactly as scored
+- `observed`: `False` for imputed hours (`functioning_day_col == 'No'`), same mask as in scoring; imputed hours are kept, not dropped
+- `version`, `git_commit`
+- Written for successful folds only (a failed fold has no rows in either file). Every evaluation hour appears once per (model, horizon, scenario): 5,880 rows each, about 1.8 million rows over the three cities (roughly 250–300 MB)
+- Output only: nothing in the pipeline reads it, and the other results files are unchanged by it. The MAE of a fold recomputed from its `observed` rows equals the fold's `MAE`
 
 
 ## Known Limitations

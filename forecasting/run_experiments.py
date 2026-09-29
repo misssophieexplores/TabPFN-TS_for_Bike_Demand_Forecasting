@@ -316,6 +316,7 @@ class ForecastingExperiment:
                 f"Check the data for missing hourly timestamps."
             )
         fold_results = []
+        fold_forecasts = []  # hourly forecasts, one DataFrame per successful fold
 
         for fold_idx, (train_df, test_df) in enumerate(splits):
             y_train, X_train, y_test, X_test = prepare_fold_inputs(
@@ -382,6 +383,25 @@ class ForecastingExperiment:
                 metrics['fit_time_s'] = fit_time
                 metrics['predict_time_s'] = predict_time
                 metrics['runtime_s'] = fit_time + predict_time
+
+                # Hourly forecasts of this fold, for forecasts_{dataset}_{version}.csv.
+                # Only written, never used for scoring. Imputed hours are kept and
+                # flagged with the same mask the metrics use (observed=False).
+                # calculate_all() has already checked len(y_pred) == n_steps.
+                fold_forecasts.append(pd.DataFrame({
+                    'dataset': self.config.dataset_name,
+                    'model': model.name,
+                    'horizon': horizon,
+                    'weather_scenario': weather_scenario,
+                    'fold': fold_idx,
+                    'lead_time': np.arange(1, n_steps + 1),
+                    'datetime': test_df[self.config.date_col].values,
+                    'y_true': y_test,
+                    'y_pred': np.asarray(y_pred, dtype=float).ravel(),
+                    'observed': np.asarray(test_observed, dtype=bool),
+                    'version': self.config.results_version,
+                    'git_commit': self.code_version['git_commit'],
+                }))
 
                 fold_results.append(metrics)
 
@@ -467,10 +487,15 @@ class ForecastingExperiment:
 
         # Write results after every experiment, BEFORE the checkpoint: an
         # interrupted run (e.g. cluster time limit) then loses nothing, and a
-        # checkpointed experiment always has its rows on disk.
+        # checkpointed experiment always has its rows on disk. The forecasts
+        # file is written first, so a failure there leaves the results files
+        # untouched.
         self.results.append(aggregated)
         filename_agg = self.output_dir / f"results_master_{self.config.results_version}.csv"
         filename_detailed = self.output_dir / f"detailed_results_master_{self.config.results_version}.csv"
+        filename_forecasts = (self.output_dir /
+                              f"forecasts_{self.config.dataset_name}_{self.config.results_version}.csv")
+        _append_rows(filename_forecasts, pd.concat(fold_forecasts, ignore_index=True))
         _append_rows(filename_detailed, pd.DataFrame(fold_results))
         _append_rows(filename_agg, pd.DataFrame([aggregated]))
         self._save_checkpoint(model.name, horizon, weather_scenario)
