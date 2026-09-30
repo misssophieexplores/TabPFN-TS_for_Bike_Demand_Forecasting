@@ -9,6 +9,7 @@ What this does:
 - Covariate selection is driven by --scenario (default: clean_only):
     clean_only   : degradable covariates (keys of weather_degradation_mapping) + holiday + season
     all_weather  : all weather_covariates from config
+    no_weather   : no covariates (lags + calendar features only) -> XGBoostForecaster_NoWeather
 - Saves best config to results/tuning/xgboost_best_params_<city>_<scenario>_<n_train>_<timestamp>.json
 
 Run:
@@ -20,6 +21,9 @@ Run:
 
     # Override scenario or other options:
     python forecasting/models/tuning/tune_xgboost.py --city seoul --scenario clean_only --trials 100
+
+    # XGBoost without weather (all cities):
+    python forecasting/models/tuning/tune_xgboost.py --scenario no_weather
 """
 
 import sys
@@ -53,6 +57,8 @@ MIN_EVAL_SIZE = 24
 
 
 def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -> List[str]:
+    if scenario == "no_weather":
+        return []
     if scenario == "all_weather":
         return [c for c in config.weather_covariates if c in df.columns]
     else:  # clean_only
@@ -115,8 +121,10 @@ def evaluate_params_on_fold(
     y_test = test_df[config.target_col].values
 
     # Same feature builder as run_experiments.py: covariates + calendar features
-    X_train = prepare_xgboost_features(train_df, config.date_col, train_df[config.weather_covariates])
-    X_test = prepare_xgboost_features(test_df, config.date_col, test_df[config.weather_covariates])
+    # (no_weather: no covariates -> calendar features only, as XGBoostForecaster_NoWeather)
+    covs = config.weather_covariates
+    X_train = prepare_xgboost_features(train_df, config.date_col, train_df[covs] if covs else None)
+    X_test = prepare_xgboost_features(test_df, config.date_col, test_df[covs] if covs else None)
 
     if max_train_size is not None and len(y_train) > max_train_size:
         y_train = y_train[-max_train_size:]
@@ -377,14 +385,15 @@ def run_city(city: str, args) -> None:
         verbose=True,
     )
     output_file = save_results(params, args.output_dir)
-    print(f"  --> config.xgb_params_file = '{output_file}'")
+    field = "xgb_noweather_params_file" if args.scenario == "no_weather" else "xgb_params_file"
+    print(f"  --> config.{field} = '{output_file}'")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tune XGBoost (Optuna TPE + early stopping)")
     parser.add_argument('--city', type=str, choices=["seoul", "london", "washington"],
                         default=None, help='City to tune (default: all cities)')
-    parser.add_argument('--scenario', type=str, choices=['clean_only', 'all_weather'],
+    parser.add_argument('--scenario', type=str, choices=['clean_only', 'all_weather', 'no_weather'],
                         default='clean_only', help='Covariate set (default: clean_only)')
     parser.add_argument("--trials", type=int, default=100, help="Optuna TPE trials")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")

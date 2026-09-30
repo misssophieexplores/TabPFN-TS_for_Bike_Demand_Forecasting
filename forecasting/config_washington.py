@@ -53,6 +53,7 @@ def get_config() -> ForecastConfig:
     config.arima_params_file = "results/tuning/arima_best_params_washington_clean_only_720_20260516_003716.json"
     config.sarimax_params_file = "results/tuning/sarimax_best_params_washington_clean_only_720_20260515_155959.json"
     config.xgb_params_file = "results/tuning/xgboost_best_params_washington_clean_only_720_20260515_233428.json"
+    config.xgb_noweather_params_file = None  # set after: tune_xgboost.py --city washington --scenario no_weather
     config.prophet_params_file = "results/tuning/prophet_best_params_washington_720_20260516_000912.json" 
     config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_washington_clean_only_720_20260516_003612.json"
     config.neuralprophet_noweather_params_file = None  # set after: tune_neuralprophet.py --city washington --scenario no_weather

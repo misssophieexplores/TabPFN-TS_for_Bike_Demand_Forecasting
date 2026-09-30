@@ -182,3 +182,20 @@ class XGBoostForecaster(BaseForecaster):
         self.model = None
         self.y_train = None
         self.feature_names = None
+
+
+class XGBoostForecaster_NoWeather(XGBoostForecaster):
+    """
+    XGBoost without weather, holiday and season covariates (model name
+    "XGBoost_NoWeather"): lagged demand + calendar features (hour, dayofweek,
+    month, is_weekend) only. Same features as TabPFN_NoWeather gets: no
+    covariates. Tuned with tune_xgboost.py --scenario no_weather.
+
+    use_covariates=False: the pipeline passes calendar features only, and
+    the degraded scenarios are skipped (as for all models without covariates).
+    """
+
+    def __init__(self, n_lags: int = 24, **xgb_params):
+        super().__init__(n_lags=n_lags, **xgb_params)
+        self.name = "XGBoost_NoWeather"
+        self.use_covariates = False

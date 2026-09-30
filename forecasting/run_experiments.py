@@ -21,7 +21,7 @@ from config import ForecastConfig
 from features import prepare_xgboost_features
 from models.base import BaseForecaster
 from models.statistical import SeasonalNaiveForecaster, ARIMAForecaster, SARIMAXForecaster, trend_from_intercept
-from models.ml_models import XGBoostForecaster
+from models.ml_models import XGBoostForecaster, XGBoostForecaster_NoWeather
 from models.tabpfn_pipeline_model import TabPFNPipelineForecaster, TabPFNPipelineForecaster_NoWeather
 from models.prophet_models import ProphetForecaster, NeuralProphetForecaster, NeuralProphetForecaster_NoWeather
 from evaluation.cv import TimeSeriesCV
@@ -40,7 +40,7 @@ BASELINE_MODEL = "Seasonal_Naive"
 
 # Model keys accepted by build_models(), in paper order
 MODEL_KEYS = [
-    "seasonal_naive", "arima", "sarimax", "xgboost", "prophet",
+    "seasonal_naive", "arima", "sarimax", "xgboost", "xgboost_noweather", "prophet",
     "neuralprophet", "neuralprophet_noweather",
     "tabpfn", "tabpfn_noweather", "timesfm", "timesfm_noweather",
 ]
@@ -107,6 +107,13 @@ def build_models(config: ForecastConfig, keys: Optional[List[str]] = None) -> Li
         elif key == "xgboost":
             cfg = _load_params(config.xgb_params_file, "xgb_params_file", "Run tune_xgboost.py.")
             models.append(XGBoostForecaster(n_lags=cfg["n_lags"], **cfg["xgb_params"]))
+        elif key == "xgboost_noweather":
+            cfg = _load_params(config.xgb_noweather_params_file, "xgb_noweather_params_file",
+                               "Run tune_xgboost.py --scenario no_weather for this city first.")
+            if cfg.get("scenario") != "no_weather":
+                raise ValueError(f"config.xgb_noweather_params_file = {config.xgb_noweather_params_file} "
+                                 f"was tuned with scenario '{cfg.get('scenario')}', not 'no_weather'.")
+            models.append(XGBoostForecaster_NoWeather(n_lags=cfg["n_lags"], **cfg["xgb_params"]))
         elif key == "prophet":
             cfg = _load_params(config.prophet_params_file, "prophet_params_file", "Run tune_prophet.py.")
             models.append(ProphetForecaster(**cfg["prophet_params"]))

@@ -36,6 +36,7 @@ class ForecastConfig:
     arima_params_file: Optional[str] = None
     sarimax_params_file: Optional[str] = None
     xgb_params_file: Optional[str] = None
+    xgb_noweather_params_file: Optional[str] = None
     prophet_params_file: Optional[str] = None
     neuralprophet_params_file: Optional[str] = None
     neuralprophet_noweather_params_file: Optional[str] = None

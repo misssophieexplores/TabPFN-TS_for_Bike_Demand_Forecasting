@@ -176,19 +176,21 @@ class TestMetrics:
 # ----------------------------------------------------------------------
 # Tuning vs experiment consistency (XGBoost)
 # ----------------------------------------------------------------------
-def test_xgboost_tuning_equals_experiment(config):
+@pytest.mark.parametrize("scenario", ["clean_only", "no_weather"])
+def test_xgboost_tuning_equals_experiment(config, scenario):
     """tune_xgboost (no early stopping) and the experiment path
     (build inputs with prepare_fold_inputs, XGBoostForecaster) must give
-    identical forecasts for the same parameters."""
+    identical forecasts for the same parameters. no_weather: tuning with
+    --scenario no_weather and XGBoostForecaster_NoWeather (calendar features only)."""
     pytest.importorskip("xgboost")
     import tune_xgboost as tx
-    from models.ml_models import XGBoostForecaster
+    from models.ml_models import XGBoostForecaster, XGBoostForecaster_NoWeather
     from run_experiments import prepare_fold_inputs
     from weather.weather_processor import WeatherProcessor
 
     df = make_df()
     cfg_tune = get_config()
-    cfg_tune.weather_covariates = tx.select_covariates(cfg_tune, df, "clean_only")
+    cfg_tune.weather_covariates = tx.select_covariates(cfg_tune, df, scenario)
     cv = TimeSeriesCV(cfg_tune)
     tune_df = df[df["Date"] <= cv.get_cutoff_date(df)]
     train_df, test_df = cv.split(tune_df, 24)[-1]
@@ -207,10 +209,13 @@ def test_xgboost_tuning_equals_experiment(config):
 
     cfg_exp = get_config()
     cfg_exp.weather_covariates = COVS + ["Holiday", "Seasons"]  # as after load_and_prepare_data
-    model = XGBoostForecaster(n_lags=24, **params)
+    model_cls = XGBoostForecaster_NoWeather if scenario == "no_weather" else XGBoostForecaster
+    model = model_cls(n_lags=24, **params)
     y_train, X_train, _, X_test = prepare_fold_inputs(
         cfg_exp, model, WeatherProcessor(cfg_exp), train_df, test_df, "clean_only", 24, 0
     )
+    if scenario == "no_weather":
+        assert list(X_train.columns) == ["hour", "dayofweek", "month", "is_weekend"]
     model.fit(y_train, X_train)
     pred = model.predict(len(test_df), X_test)
     np.testing.assert_allclose(pred, captured["pred"], rtol=0, atol=1e-9)

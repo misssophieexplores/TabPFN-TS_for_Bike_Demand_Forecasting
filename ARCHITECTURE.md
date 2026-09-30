@@ -16,7 +16,7 @@ forecasting/
 ├── models/
 │   ├── base.py              # BaseForecaster abstract class
 │   ├── statistical.py       # Seasonal Naive, ARIMA, SARIMAX, trend_from_intercept()
-│   ├── ml_models.py         # XGBoost with lag features
+│   ├── ml_models.py         # XGBoost and XGBoost_NoWeather with lag features
 │   ├── tabpfn_pipeline_model.py  # TabPFN pipeline models
 │   ├── prophet_models.py    # Prophet, NeuralProphet, NeuralProphet_NoWeather
 │   ├── timesfm_model.py     # TimesFMForecaster, TimesFMForecaster_NoWeather
@@ -37,7 +37,7 @@ forecasting/
 │   ├── test_max_degradation.py
 │   ├── test_weather_single_model.py
 │   ├── test_weather_unit.py
-│   └── test_pipeline_unit.py   # CV folds, metrics, comparative metrics, XGBoost tuning = experiment
+│   └── test_pipeline_unit.py   # CV folds, metrics, comparative metrics, XGBoost tuning = experiment (with and without weather)
 ├── run_experiments.py       # ForecastingExperiment class with W&B logging and checkpointing; load_and_prepare_data(); comparative metrics
 └── run_weather_baseline.py  # Per-city experiment runner (called by main.py, or directly with --city)
 
@@ -85,7 +85,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 ### Configuration (`config.py` + city configs)
 - `config.py`: Shared base dataclass. Contains the fields that are identical across all datasets: `wandb_project`, `results_version`, `horizons`, `n_folds`, `n_train_samples`, `seasonal_period`, `degradation_seed`, `degradation_scales`, `weather_scenarios`, `output_dir`, `verbose`, `experiment_name`, `tune_folds`, `tune_horizon`. Dataset-specific fields default to `None` (except `holiday_mapping` and `column_scale_factors`, see below).
 - `config_seoul.py`, `config_london.py`, `config_washington.py`: Each exposes a `get_config()` function that instantiates `ForecastConfig` and overrides all dataset-specific fields. To update `wandb_project` or `results_version`, change `config.py` only — all cities pick it up automatically.
-- Dataset-specific fields (set per city): `data_filename`, `dataset_name`, `date_col`, `target_col`, `functioning_day_col`, `holiday_col`, `holiday_mapping`, `season_col`, `season_mapping`, `weather_covariates`, `weather_degradation_mapping`, `rain_col`, `snow_col`, `column_scale_factors`, `arima_params_file`, `sarimax_params_file`, `xgb_params_file`, `prophet_params_file`, `neuralprophet_params_file`, `neuralprophet_noweather_params_file`
+- Dataset-specific fields (set per city): `data_filename`, `dataset_name`, `date_col`, `target_col`, `functioning_day_col`, `holiday_col`, `holiday_mapping`, `season_col`, `season_mapping`, `weather_covariates`, `weather_degradation_mapping`, `rain_col`, `snow_col`, `column_scale_factors`, `arima_params_file`, `sarimax_params_file`, `xgb_params_file`, `xgb_noweather_params_file`, `prophet_params_file`, `neuralprophet_params_file`, `neuralprophet_noweather_params_file`
 - Horizons: [6, 24, 48, 168] hours
 - Training size (`n_train_samples`): 720 observations (30 days). The previous setting (4096 observations, 20 folds) is kept commented out in `config.py`.
 - Number of folds (`n_folds`): 35, counted in folds of the longest horizon: evaluation period = `n_folds * max(horizons)` = 35 × 168 = 5,880 h for every horizon. Folds per horizon: 980 (6 h), 245 (24 h), 123 (48 h: 122 full + 1 partial fold of 24 h), 35 (168 h). The evaluation period does not need to be a multiple of each horizon (see Partial Last Fold)
@@ -105,7 +105,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - `season_col`: Optional column name for season (normalized to 0–3 int via `season_mapping`, appended to `weather_covariates` at load time)
 - `season_mapping`: Explicit per-dataset dict mapping raw season values to 0–3 integers (handles strings, 0-based, and 1-based encodings)
 - `verbose`: If `True`, prints detailed progress (CV info, data loading, W&B URLs). Default `False` in `config.py` (cluster/server runs where stdout is captured in SLURM logs).
-- Params files: each city config points to the tuned-parameter JSON files in `results/tuning/` (all tuned with `n_train_samples=720`). ARIMA and SARIMAX params files must contain `with_intercept`, i.e. they must come from the current tuning scripts; older files are rejected by `run_weather_baseline.py`. `neuralprophet_noweather_params_file` must be set (tuned with `--scenario no_weather`); it is `None` until then and the runners raise `ValueError`.
+- Params files: each city config points to the tuned-parameter JSON files in `results/tuning/` (all tuned with `n_train_samples=720`). ARIMA and SARIMAX params files must contain `with_intercept`, i.e. they must come from the current tuning scripts; older files are rejected by `run_weather_baseline.py`. `neuralprophet_noweather_params_file` and `xgb_noweather_params_file` must be set (each tuned with `--scenario no_weather`); they are `None` until then and the runners raise `ValueError`. `build_models()` also raises if `xgb_noweather_params_file` was tuned with another scenario.
 
 ### Weather Degradation (`weather/`)
 **WeatherProcessor**: Orchestrates weather data preparation for scenarios
@@ -167,6 +167,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - ARIMAForecaster: Tuned order via auto_arima (e.g., (2,1,2)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
 - SARIMAXForecaster: Tuned orders via auto_arima (e.g., (4,0,0)×(1,0,1,24)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
 - XGBoostForecaster: Uses lagged features (n_lags=24) + weather covariates (including holiday and season via `weather_covariates`) + calendar time features (hour, dayofweek, month, is_weekend). `use_time_features=True` — pipeline appends calendar features automatically at fold time. **Note: XGBoost must be re-tuned whenever `weather_covariates` changes (e.g. after adding holiday/season).**
+- XGBoostForecaster_NoWeather (model name `XGBoost_NoWeather`, key `xgboost_noweather`): same model, without weather, holiday and season covariates: lagged demand + calendar time features (hour, dayofweek, month, is_weekend) only. `use_covariates=False`, `use_time_features=True`: the pipeline passes the calendar features only, and the degraded scenarios are skipped. Counterpart of XGBoost in the with/without-weather comparison (as TabPFN / TabPFN_NoWeather and NeuralProphet / NeuralProphet_NoWeather). Tuned with `tune_xgboost.py --scenario no_weather`
 - TabPFNPipelineForecaster (model name `TabPFN`): `TabPFNTSPipeline` (tabpfn-time-series), zero-shot, TabPFN v2.5 pinned via `TABPFN_MODEL_CONFIG` (`tabpfn-v2.5-regressor-v2.5_default.ckpt`); all other settings at the pipeline defaults. Features: the pipeline's defaults (running index, calendar, auto-seasonal) + every covariate column (present in both context and future frame). Point forecast = median. Without the explicit pin the checkpoint would depend on the installed tabpfn-time-series version (1.0.10: v2; 1.1.0/1.2.0: v3; 1.3.0: v3.5)
 - TabPFNPipelineForecaster_NoWeather (model name `TabPFN_NoWeather`): same pipeline and model, univariate (context and future frames contain only timestamps and target)
 - TimesFMForecaster / TimesFMForecaster_NoWeather (`timesfm_model.py`, server `run_timesfm_server.py`): TimesFM 2.5 (200M, `google/timesfm-2.5-200m-pytorch`), zero-shot, no timestamps. Compiled with the authors' recommended forecast config (`normalize_inputs`, `use_continuous_quantile_head`, `force_flip_invariance`, `infer_is_positive`, `fix_quantile_crossing` all `True`), `max_context=1024` (context = the 720 training hours), `max_horizon=168`, `return_backcast=True` (required for covariates). Point forecast = median. With covariates: `forecast_with_covariates` in its default mode `"xreg + timesfm"` — an in-context linear regression on the covariates (standardized with context statistics, ridge 0, pseudo-inverse; constant covariates are harmless), TimesFM forecasts the residual; covariate values for the horizon come from `X_test` (clean or degraded). NoWeather: `forecast()`; with `return_backcast=True` this returns the backcast followed by the forecast, so the forecast is the last `horizon` values. The client checks the context has no NaN (the server finds the horizon rows by NaN target), checks each server reply and deletes its temp files
@@ -174,7 +175,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - NeuralProphetForecaster: NeuralProphet with weather covariates (`use_covariates=True`). Every covariate column is added as a **future regressor** (`add_future_regressor`): the forecast for each step uses that step's covariate values from `X_future`; columns that NeuralProphet silently drops (e.g. all-constant) are removed from the covariate list after fitting. Default `n_lags=24`, `seasonality_mode="multiplicative"`, daily and weekly seasonality on, yearly off, `epochs=None` (NeuralProphet picks based on data size).
 - NeuralProphetForecaster_NoWeather: Same as above, univariate (no covariates).
 
-**Model list used for paper results**, built by `run_experiments.build_models(config, keys=None)` — the single place where models are constructed, used by `run_weather_baseline.py`, `run_experiments.main()` and `testing/test_weather_single_model.py`; `keys` selects models from `MODEL_KEYS` and only their params files are read: Seasonal Naive (`seasonal_period`), ARIMA and SARIMAX (orders and `with_intercept` from their params files, translated to a statsmodels `trend`), XGBoost (`n_lags` + `xgb_params`), Prophet (`prophet_params`), NeuralProphet (`n_lags` + `neuralprophet_params` from `neuralprophet_params_file`), NeuralProphet_NoWeather (same keys from its own `neuralprophet_noweather_params_file`), TabPFN and TabPFN_NoWeather, TimesFM and TimesFM_NoWeather (default arguments).
+**Model list used for paper results**, built by `run_experiments.build_models(config, keys=None)` — the single place where models are constructed, used by `run_weather_baseline.py`, `run_experiments.main()` and `testing/test_weather_single_model.py`; `keys` selects models from `MODEL_KEYS` and only their params files are read: Seasonal Naive (`seasonal_period`), ARIMA and SARIMAX (orders and `with_intercept` from their params files, translated to a statsmodels `trend`), XGBoost (`n_lags` + `xgb_params`), XGBoost_NoWeather (same keys from its own `xgb_noweather_params_file`), Prophet (`prophet_params`), NeuralProphet (`n_lags` + `neuralprophet_params` from `neuralprophet_params_file`), NeuralProphet_NoWeather (same keys from its own `neuralprophet_noweather_params_file`), TabPFN and TabPFN_NoWeather, TimesFM and TimesFM_NoWeather (default arguments).
 
 **ARIMA / SARIMAX specifics (`statistical.py`):**
 - Tuning uses pmdarima, the experiments use statsmodels (`ARIMA`, `SARIMAX`). The two handle the constant differently: pmdarima's `with_intercept` is chosen during the search, statsmodels `SARIMAX` adds no constant unless `trend` is set, and statsmodels `ARIMA` adds one by default only when d = 0.
@@ -205,7 +206,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 **Tuning scripts:**
 - `tune_arima.py`: Non-seasonal ARIMA (p,d,q)
 - `tune_sarimax.py`: Seasonal ARIMA with exogenous variables (p,d,q)×(P,D,Q,s)
-- `tune_xgboost.py`: XGBoost with lag features (n_lags + XGBoost hyperparameters)
+- `tune_xgboost.py`: XGBoost with lag features (n_lags + XGBoost hyperparameters); `--scenario no_weather` for XGBoost_NoWeather
 - `tune_prophet.py`: Prophet (changepoint / seasonality / holidays prior scales + seasonality mode)
 - `tune_neuralprophet.py`: NeuralProphet (learning_rate + n_lags)
 
@@ -245,7 +246,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - Optuna TPE search (multivariate, seeded with `--seed`, default 42), default 100 trials (`--trials`), optimizing mean MAE across folds
 - Jointly tunes `n_lags` (options `--n-lags-options`, default [12, 24, 48, 168]) and the XGBoost hyperparameters below
 - `n_estimators` is not searched: each fold is fitted with early stopping (50 rounds, cap 3,000 trees) on the last 15 % (min 24 rows) of the fold's lagged training rows; the final `n_estimators` is the mean best iteration of the best trial across folds
-- Features: lags + covariates chosen by `--scenario` (`clean_only` default: keys of `weather_degradation_mapping` + holiday + season; `all_weather`: all of `config.weather_covariates`) + calendar features (hour, dayofweek, month, is_weekend); training rows capped at `--max-train-size` (default 8,000, no effect with 720)
+- Features: lags + covariates chosen by `--scenario` (`clean_only` default: keys of `weather_degradation_mapping` + holiday + season; `all_weather`: all of `config.weather_covariates`; `no_weather`: no covariates, produces the params file for XGBoost_NoWeather (`config.xgb_noweather_params_file`)) + calendar features (hour, dayofweek, month, is_weekend); training rows capped at `--max-train-size` (default 8,000, no effect with 720)
 - Forecasts are recursive (predictions fed back as lags), as in `XGBoostForecaster`
 - A failed fold prunes the trial
 - Features are built with `features.prepare_xgboost_features()`, the same builder `run_experiments.py` uses
@@ -327,7 +328,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 ```json
 {
   "city": str,
-  "scenario": "clean_only" | "all_weather",
+  "scenario": "clean_only" | "all_weather" | "no_weather",
   "n_train_samples": int,
   "tuning_period": {"first_timestamp": str, "last_timestamp": str},
   "n_lags": int,
@@ -486,7 +487,7 @@ Runs all datasets sequentially without manual intervention.
 - `no_confirm=True` skips the interactive prompt for non-interactive/cluster use (direct runs ask for confirmation)
 - Runs clean_only, then every scenario in `config.degradation_scales` (degraded, degraded_x050, degraded_x150), for all models; `all_weather` is not run
 - All horizons: [6, 24, 48, 168] hours over the same 5,880 h evaluation period (980 / 245 / 123 / 35 folds; the last 48 h fold is partial)
-- Builds all models with `run_experiments.build_models(config)`, which loads the tuned hyperparameters from the JSON files named in the city config (ARIMA, SARIMAX, XGBoost, Prophet, NeuralProphet, NeuralProphet_NoWeather). A params file without `provenance` (written by older tuning code) raises `ValueError`; one tuned with uncommitted code prints a warning
+- Builds all models with `run_experiments.build_models(config)`, which loads the tuned hyperparameters from the JSON files named in the city config (ARIMA, SARIMAX, XGBoost, XGBoost_NoWeather, Prophet, NeuralProphet, NeuralProphet_NoWeather). A params file without `provenance` (written by older tuning code) raises `ValueError`; one tuned with uncommitted code prints a warning
 - ARIMA/SARIMAX: `trend` is derived from `with_intercept` and the orders via `trend_from_intercept()`; a params file without `with_intercept` raises `KeyError` (re-run tuning)
 - Auto-skips the degraded scenarios for models without covariates
 - Displays degradation impact summary (gated behind `config.verbose`)
@@ -497,7 +498,7 @@ Runs all datasets sequentially without manual intervention.
 ## Key Design Decisions
 
 ### Weather Scenario Optimization
-Models without covariates (`use_covariates=False`, e.g. Seasonal Naive, ARIMA, Prophet, NeuralProphet_NoWeather, TabPFN_NoWeather) automatically skip the degraded scenarios ('degraded', 'degraded_x050', 'degraded_x150') since they ignore weather data. This avoids redundant computation.
+Models without covariates (`use_covariates=False`, e.g. Seasonal Naive, ARIMA, Prophet, XGBoost_NoWeather, NeuralProphet_NoWeather, TabPFN_NoWeather) automatically skip the degraded scenarios ('degraded', 'degraded_x050', 'degraded_x150') since they ignore weather data. This avoids redundant computation.
 
 Rationale: every degraded scenario = clean_only for models that don't use weather covariates.
 
@@ -609,6 +610,7 @@ Rationale:
 
 ### No Post-Processing of Forecasts
 Forecasts are scored as each model produces them: no clipping of negative values or other post-processing, in tuning and in the experiments. TimesFM returns non-negative forecasts because of its own default inference setting (`infer_is_positive=True`), which is part of the model as published.
+<!-- TODO: check with code, please! Might be not correct -->
 
 ### Imputed Data Tracking and Exclusion from Scoring
 Uses the `Functioning Day` column (No = imputed), configured via `functioning_day_col` for all three cities
@@ -713,7 +715,7 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 - `weather_scenario`: 'all_weather' (only used in Pilot project), 'clean_only', 'degraded', 'degraded_x050' or 'degraded_x150'
 - `model_uses_covariates`: Boolean (from model.use_covariates property)
 - `degradation_seed`: Random seed used (42 by default)
-- `num_weather_vars`: Number of columns in `X_train` (taken from the first fold) (0 for models without covariates; for models with covariates: 7 degradable + holiday + season = 9, plus 4 calendar time features for XGBoost = 13 total features; TabPFN creates its own calendar features, which is 17 additional features)
+- `num_weather_vars`: Number of columns in `X_train` (taken from the first fold) (0 for models without covariates; for models with covariates: 7 degradable + holiday + season = 9, plus 4 calendar time features for XGBoost = 13 total features; XGBoost_NoWeather: 4, the calendar time features only; TabPFN creates its own calendar features, which is 17 additional features)
 - Runtime in seconds (wall-clock, over successful folds): `fit_time_mean_s`, `predict_time_mean_s`, `runtime_mean_s`, `runtime_std_s` (per fold), and `fit_time_total_s`, `predict_time_total_s`, `runtime_total_s` (summed over folds)
 
 **Additional columns in detailed_results_master_{version}.csv (per fold):** `MAE`, `RMSE`, `MASE`, `sMAPE` (observed hours only), `fold`, `test_imputed`, `train_imputed`, `test_hours`, `test_scored`, `fit_time_s`, `predict_time_s`, `runtime_s` (seconds)
@@ -747,3 +749,9 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 13. Runtimes are wall-clock times on the machine that ran the experiment: they depend on hardware, CPU/GPU availability, thread settings (e.g. XGBoost `n_jobs=-1`, TabPFN `CPUParallelWorker`) and concurrent load, so they are only comparable within one run environment. The first fold of a model can include one-off costs (library warm-up, model loading for TabPFN/TimesFM). Failed folds are not timed
 14. The noise-magnitude sensitivity scales error magnitudes only; precipitation event detection (miss rate, false-alarm probability, false-alarm amount) stays at its calibrated values at every scale
 15. Consequence of the hour-to-hour independence (Limitation 1): for models that use each step's covariates only for that step (SARIMAX, NeuralProphet, TabPFN, TimesFM), the expected error per step is unchanged and mainly the fold-to-fold spread is affected. XGBoost forecasts recursively, so correlated covariate errors could compound through the fed-back lags; the independent-noise setting may therefore understate XGBoost's degradation relative to TabPFN
+
+
+<!-- TODO TimesFM; adjust documentation:
+* TimesFM is being run
+* TimesFM clips at zero without covariates but might go below with! -->
+
