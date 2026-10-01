@@ -9,7 +9,16 @@ versions of the forecasting libraries (incl. TimesFM in .timesfm_venv).
 git_dirty = True means tracked files had uncommitted changes when the run
 started; the commit then does not fully identify the code. Untracked files
 (data, results) are ignored.
+
+Without git (e.g. on the cluster, where the repo is copied without its .git
+folder), git_commit holds a code ID instead: "code:<16 hex>", a SHA-256 of all
+.py files and weather-error calibration files (.npz) in forecasting/ (without
+testing/, __pycache__ and hidden folders; line endings normalised). The same files always give the same ID. To find the
+commit of a result, run on the laptop after committing:
+    python forecasting/provenance.py
+and compare the printed code ID with the result's git_commit.
 """
+import hashlib
 import platform
 import subprocess
 from functools import lru_cache
@@ -33,14 +42,47 @@ def _git(*args: str) -> str:
     ).stdout.strip()
 
 
+_CODE_DIR = _REPO_ROOT / "forecasting"
+_CODE_EXCLUDED_DIRS = {"testing", "__pycache__"}
+_CODE_SUFFIXES = {".py", ".npz"}   # code and weather-error calibration data
+
+
+def code_id() -> str:
+    """
+    "code:<16 hex>": SHA-256 over the relative paths and contents of all .py
+    and .npz files in forecasting/ (sorted; testing/, __pycache__ and hidden
+    folders excluded; CRLF -> LF in .py files). Identifies the code without git.
+    """
+    h = hashlib.sha256()
+    files = sorted(
+        f for f in _CODE_DIR.rglob("*")
+        if f.is_file() and f.suffix in _CODE_SUFFIXES
+        and not any(part in _CODE_EXCLUDED_DIRS or part.startswith(".")
+                   for part in f.relative_to(_CODE_DIR).parts[:-1])
+    )
+    for f in files:
+        h.update(f.relative_to(_CODE_DIR).as_posix().encode() + b"\0")
+        data = f.read_bytes()
+        if f.suffix == ".py":
+            data = data.replace(b"\r\n", b"\n")
+        h.update(data + b"\0")
+    return "code:" + h.hexdigest()[:16]
+
+
 @lru_cache(maxsize=1)
 def get_code_version() -> dict:
-    """{'git_commit': <full hash or 'unknown'>, 'git_dirty': bool or None}"""
+    """
+    {'git_commit': <full commit hash>, 'git_dirty': bool} with git, otherwise
+    {'git_commit': code_id(), 'git_dirty': None} (no git, or no .git folder).
+    """
     try:
+        # The repo must be this project itself, not a parent folder that happens to be a repo
+        if Path(_git("rev-parse", "--show-toplevel")).resolve() != _REPO_ROOT:
+            raise RuntimeError("not the project repository")
         commit = _git("rev-parse", "HEAD")
         dirty = bool(_git("status", "--porcelain", "--untracked-files=no"))
     except Exception:
-        return {"git_commit": "unknown", "git_dirty": None}
+        return {"git_commit": code_id(), "git_dirty": None}
     if dirty:
         print(f"WARNING: uncommitted changes in tracked files; results are tagged "
               f"git_dirty=True (commit {commit[:10]}). Commit before paper runs.")
@@ -77,3 +119,13 @@ def get_library_versions() -> dict:
 def get_provenance() -> dict:
     """Git commit/dirty flag plus library versions (for tuning JSONs, W&B)."""
     return {**get_code_version(), "library_versions": get_library_versions()}
+
+
+if __name__ == "__main__":
+    # On the laptop: match results from the cluster (git_commit = "code:...") to a commit
+    print(f"Code ID: {code_id()}")
+    try:
+        print(f"Commit:  {_git('rev-parse', 'HEAD')}"
+              f"{' (uncommitted changes)' if _git('status', '--porcelain', '--untracked-files=no') else ''}")
+    except Exception:
+        print("Commit:  no git repository here")
