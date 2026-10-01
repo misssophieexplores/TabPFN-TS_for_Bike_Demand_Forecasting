@@ -28,8 +28,16 @@ forecasting/
 │       ├── tune_prophet.py          # Prophet random search
 │       └── tune_neuralprophet.py    # NeuralProphet random search
 ├── weather/
-│   ├── weather_degradation.py      # NWP forecast error simulation
-│   └── weather_processor.py        # Scenario orchestration
+│   ├── nwp_error_model.py          # Measured NWP error model per city (default degradation model)
+│   ├── weather_degradation.py      # Literature error model; training-fold parameters; rain/snow correction
+│   ├── weather_processor.py        # Scenario orchestration
+│   └── nwp/                        # Measured forecast errors: download, analysis, calibration
+│       ├── fetch_nwp_data.py       # Downloads ECMWF forecasts, reanalysis and station data (normal internet access needed)
+│       ├── analyze_nwp_errors.py   # Error statistics per city, variable and lead time (CSV for the paper)
+│       ├── build_nwp_calibration.py # Builds the calibration files used by nwp_error_model.py
+│       ├── expected_errors.py      # Errors applied by the default setting at 6/24/48/168 h (for the paper)
+│       ├── validate_on_real_data.py # Runs the model on the real data with the experiment folds (check)
+│       └── calibration/            # seoul.npz, london.npz, washington.npz (+ readable *_summary.json)
 ├── evaluation/
 │   ├── cv.py                # TimeSeriesCV with dynamic fold calculation
 │   └── metrics.py           # MAE, RMSE, MASE, sMAPE
@@ -83,9 +91,9 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 ## Core Components
 
 ### Configuration (`config.py` + city configs)
-- `config.py`: Shared base dataclass. Contains the fields that are identical across all datasets: `wandb_project`, `results_version`, `horizons`, `n_folds`, `n_train_samples`, `seasonal_period`, `degradation_seed`, `degradation_scales`, `weather_scenarios`, `output_dir`, `verbose`, `experiment_name`, `tune_folds`, `tune_horizon`. Dataset-specific fields default to `None` (except `holiday_mapping` and `column_scale_factors`, see below).
+- `config.py`: Shared base dataclass. Contains the fields that are identical across all datasets: `wandb_project`, `results_version`, `horizons`, `n_folds`, `n_train_samples`, `seasonal_period`, `degradation_seed`, `degradation_model`, `nwp_fresh_forecast`, `nwp_remove_bias`, `nwp_run_hours_utc`, `nwp_availability_delay_h`, `nwp_season_window_days`, `degradation_scales`, `weather_scenarios`, `output_dir`, `verbose`, `experiment_name`, `tune_folds`, `tune_horizon`. Dataset-specific fields default to `None` (except `holiday_mapping` and `column_scale_factors`, see below).
 - `config_seoul.py`, `config_london.py`, `config_washington.py`: Each exposes a `get_config()` function that instantiates `ForecastConfig` and overrides all dataset-specific fields. To update `wandb_project` or `results_version`, change `config.py` only — all cities pick it up automatically.
-- Dataset-specific fields (set per city): `data_filename`, `dataset_name`, `date_col`, `target_col`, `functioning_day_col`, `holiday_col`, `holiday_mapping`, `season_col`, `season_mapping`, `weather_covariates`, `weather_degradation_mapping`, `rain_col`, `snow_col`, `column_scale_factors`, `arima_params_file`, `sarimax_params_file`, `xgb_params_file`, `xgb_noweather_params_file`, `prophet_params_file`, `neuralprophet_params_file`, `neuralprophet_noweather_params_file`
+- Dataset-specific fields (set per city): `data_filename`, `dataset_name`, `date_col`, `target_col`, `functioning_day_col`, `holiday_col`, `holiday_mapping`, `season_col`, `season_mapping`, `weather_covariates`, `weather_degradation_mapping`, `rain_col`, `snow_col`, `timezone`, `nwp_calibration_file`, `column_scale_factors`, `arima_params_file`, `sarimax_params_file`, `xgb_params_file`, `xgb_noweather_params_file`, `prophet_params_file`, `neuralprophet_params_file`, `neuralprophet_noweather_params_file`
 - Horizons: [6, 24, 48, 168] hours
 - Training size (`n_train_samples`): 720 observations (30 days). The previous setting (4096 observations, 20 folds) is kept commented out in `config.py`.
 - Number of folds (`n_folds`): 35, counted in folds of the longest horizon: evaluation period = `n_folds * max(horizons)` = 35 × 168 = 5,880 h for every horizon. Folds per horizon: 980 (6 h), 245 (24 h), 123 (48 h: 122 full + 1 partial fold of 24 h), 35 (168 h). The evaluation period does not need to be a multiple of each horizon (see Partial Last Fold)
@@ -94,6 +102,12 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - W&B project: `bike-forecasting`
 - Weather scenarios: ['all_weather', 'clean_only', 'degraded', 'degraded_x050', 'degraded_x150']
 - Degradation seed: 42 (reproducible error simulation)
+- `degradation_model`: error model of the degraded scenarios. `"nwp_measured"` (default): per-city errors measured from real ECMWF forecasts (`weather/nwp_error_model.py`). `"literature"`: the earlier model with published error sizes, the same for every city (`weather_degradation.degrade_weather_dataset`); kept to reproduce earlier results. Any other value raises `ValueError` in `WeatherProcessor`
+- `nwp_fresh_forecast` (`True`), `nwp_remove_bias` (`True`): measured model only. Default = an operator with an up-to-date, locally corrected weather forecast: test hour i gets the error of an (i+1)-hour forecast in every city, and the average error (bias) of the forecasts is removed. `nwp_fresh_forecast = False`: the newest run available at the issue time is used (6–17 h old); `nwp_remove_bias = False`: the measured bias is kept (both `False` = the first version of 1 Oct 2026)
+- `nwp_run_hours_utc` (`[0, 12]`), `nwp_availability_delay_h` (6), `nwp_season_window_days` (30): measured model only. ECMWF runs start at these UTC hours (fresh forecast: the start hour closest to the issue time of day is replayed; otherwise a run can be used `nwp_availability_delay_h` hours after its start); the replayed run starts within ± `nwp_season_window_days` of the test window's day of year
+- `degradation_label()`: error model and settings as written to the results, e.g. `nwp_measured(fresh,no_bias)`
+- `timezone` (per city): IANA time zone of the date column (Seoul `Asia/Seoul`, London `Europe/London`, Washington `America/New_York`); the measured model converts the test hours to UTC. A repeated autumn hour is read as standard time, a non-existent spring hour is shifted forward (London and Washington have both in their data)
+- `nwp_calibration_file` (per city): calibration file of the measured model, relative to `forecasting/` (`weather/nwp/calibration/<city>.npz`)
 - `degradation_scales`: `{'degraded': 1.0, 'degraded_x050': 0.5, 'degraded_x150': 1.5}` — every degraded scenario and the factor applied to the calibrated error magnitudes (see Noise-magnitude sensitivity). `config.is_degraded(scenario)` (True for its keys) is the single test for a degraded scenario, used by `WeatherProcessor` and by the skip logic in `run_experiments.py`
 - `experiment_name`: Defaults to `{dataset_name}_{results_version}` (set in `__post_init__`; re-set in `run_weather_baseline.main()` if it starts with `None`)
 - `tune_horizon`: Horizon used by all tuning scripts (24)
@@ -109,9 +123,9 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 
 ### Weather Degradation (`weather/`)
 **WeatherProcessor**: Orchestrates weather data preparation for scenarios
-- `prepare_weather_data(split='train'|'test')`: Main entry point, applies scenario logic. Training split always returns clean weather; test split applies degradation with per-row lead times in the degraded scenarios (`config.is_degraded`), with `noise_scale = config.degradation_scales[scenario]`. In a degraded scenario, the train split also computes `degradation_params` (solar cap = 99.5th percentile of the clean training fold; wet-hour share = share of training hours with rain or snow > 0), which the test split then uses; the train split must be prepared first (otherwise `RuntimeError`).
+- `prepare_weather_data(split='train'|'test')`: Main entry point, applies scenario logic. Training split always returns clean weather; test split applies degradation with per-row lead times in the degraded scenarios (`config.is_degraded`), with `noise_scale = config.degradation_scales[scenario]`. In a degraded scenario, the train split also computes `degradation_params` (solar cap = 99.5th percentile of the clean training fold; wet-hour share = share of training hours with rain or snow > 0; `visibility_max` = largest visibility of the training fold), which the test split then uses; the train split must be prepared first (otherwise `RuntimeError`). The test split passes the rows' timestamps (`config.date_col`) to the degradation.
 - `get_weather_columns()`: Returns appropriate columns per scenario
-- `degrade_dataframe(df, horizon, fold_idx, noise_scale=1.0)`: On-the-fly degradation with proper seeding (the seed does not depend on `noise_scale`), followed by the rain/snow phase correction (temperature column taken from `weather_degradation_mapping`, rain/snow columns from `config.rain_col`/`config.snow_col`; raises `ValueError` if they are not set)
+- `degrade_dataframe(df, horizon, fold_idx, noise_scale=1.0, timestamps=None)`: On-the-fly degradation with proper seeding (the seed does not depend on `noise_scale`), with the model in `config.degradation_model`, followed by the rain/snow phase correction (temperature column taken from `weather_degradation_mapping`, rain/snow columns from `config.rain_col`/`config.snow_col`; raises `ValueError` if they are not set). The measured model needs `timestamps` (`ValueError` otherwise) and stores what it used in `last_degradation_info` (settings, forecast start, replayed start hour, first/last lead time, replayed run, number of candidate runs)
 
 **Weather Scenarios:**
 1. **all_weather**: All weather variables from `config.weather_covariates`, no degradation (original baseline)
@@ -120,7 +134,18 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 4. **degraded_x050**: as degraded, error magnitudes × 0.5
 5. **degraded_x150**: as degraded, error magnitudes × 1.5
 
-**Degradation Variables (7, all mapped in `weather_degradation_mapping` for Seoul, London and Washington):**
+**Measured NWP error model** (default, `degradation_model = "nwp_measured"`, `weather/nwp_error_model.py`; full description in `weather/weather_methodology.md`):
+- Data: 1,828 ECMWF IFS HRES 9 km runs per city (00/12 UTC, Mar 2024 – Sep 2026, Open-Meteo Single Runs API), compared with the source each city's covariates come from: Seoul = station 47108 (= KMA 108, the station of the Seoul data; Mar 2024 – Aug 2025, 844 complete runs); London and Washington = ERA5 / ERA5-Land (their covariates come from the Open-Meteo archive). Solar radiation and precipitation use ERA5 for all cities, visibility the station
+- Lead times (`nwp_fresh_forecast = True`, default): the weather forecast starts when the demand forecast is issued (first test hour − 1 h), so row i gets lead time i + 1 in every city; errors are replayed from the 00/12 UTC runs closest to the issue time of day. `False`: the newest run available at the issue time is used (6–17 h old), row i gets lead time run age + i + 1
+- Temperature, humidity, wind speed: the actual errors of one real ECMWF run of the city are added (the selected start hour, start within ± 30 days of the test window's day of year, any year; drawn at random with the fold seed). With `nwp_remove_bias = True` (default) the average error of all these candidate runs is subtracted first (bias removed, e.g. Seoul −1.5 °C). Error growth, hour-to-hour persistence and the links between the three variables are those of the real forecasts. Humidity clipped to [0, 100], wind truncated at 0
+- Solar radiation: X·(1 + b(lead) + s(lead)·z), b and s measured per lead time (b = 0 with the bias removed), z standard normal with the measured hour-to-hour correlation (AR(1)); 0 at night; capped at the solar cap of the training fold
+- Rainfall and snowfall: one precipitation variable, one decision per hour; measured miss rate and false-alarm ratio per lead time (wet = ≥ 0.1 mm/h); false-alarm ratio converted with the training fold's wet-hour share as in the literature model; misses and false alarms persist from hour to hour (latent AR(1) with the measured correlation); hits get the measured lognormal amount error (mean-preserving with the bias removed), false alarms the measured amount distribution
+- Visibility: lognormal error in log space with measured mean (mean-preserving with the bias removed), SD and persistence. Seoul (cap 20 km) and Washington (cap 16 km): an hour at the cap stays there unless the forecast falls below it (measured probability 0.30 and 0.11); results are cut at the cap. London (no cap): cut at the training fold's maximum
+- Calibration files: `weather/nwp/calibration/<city>.npz`, built by `weather/nwp/build_nwp_calibration.py` from the downloaded data (`weather/nwp/fetch_nwp_data.py`); `<city>_summary.json` lists the main numbers
+- Checked on the real data with the experiment's CV folds (all horizons, every fold, `weather/nwp/validate_on_real_data.py`): simulated errors match the calibration (default setting: mean temperature error −0.06 to +0.04 °C, typical errors within 0.17 °C / 0.8 %-points / 0.09 m/s; first version: temperature error SD within 0.3 °C, visibility below the cap 0.27 vs 0.30 in Seoul and 0.11 vs 0.11 in Washington); about 8 ms per fold
+- Typical errors applied by the default setting at 24 h: temperature 0.92 / 0.67 / 0.96 °C, humidity 7.4 / 4.4 / 6.4 %-points, wind 0.73 / 0.53 / 0.64 m/s (Seoul / London / Washington; `weather/nwp/expected_errors.py`)
+
+**Literature error model** (`degradation_model = "literature"`, `weather_degradation.py`; same for all cities, row i has lead time i + 1). Degradation variables (7, all mapped in `weather_degradation_mapping` for Seoul, London and Washington):
 - Temperature → Additive Gaussian error
 - Humidity → Additive Gaussian error, clipped to [0, 100]
 - Wind speed → Additive Gaussian, truncated at 0
@@ -135,17 +160,11 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - Holiday (`config.holiday_col`) — passed through in clean_only and degraded
 - Season (`config.season_col`) — passed through in clean_only and degraded
 
-**Error Growth:** Calibrated to verification statistics
-- 6h: Small errors
-- 24h: Moderate errors
-- 48h: Larger errors
-- 168h: Substantial errors
-
 **Noise-magnitude sensitivity** (`noise_scale`, from `config.degradation_scales`):
-- Scaled (multiplied by `noise_scale`, before clipping/capping): Gaussian σ of temperature, humidity and wind speed; relative MAE of solar radiation; magnitude CV of detected precipitation; CV of visibility
-- Not scaled: precipitation event detection (miss rate, false-alarm probability per dry hour, false-alarm amount), the wet-hour share, the solar cap, the physical bounds and the 2 °C rain/snow threshold
+- Scaled (multiplied by `noise_scale`, before clipping/capping). Measured model: the replayed temperature, humidity and wind errors (bias included); the relative solar error (b and s·z); the log error of precipitation amounts of hits; the log error of visibility and the depth below the cap. Literature model: Gaussian σ of temperature, humidity and wind speed; relative MAE of solar radiation; magnitude CV of detected precipitation; CV of visibility
+- Not scaled: precipitation event detection (miss rate, false-alarm probability per dry hour, false-alarm amount), whether visibility falls below the cap (measured model), the replayed run, the wet-hour share, the solar cap, the physical bounds and the 2 °C rain/snow threshold
 - `noise_scale = 1.0` ('degraded') is the calibrated error model, unchanged
-- The seed does not depend on the scenario, and neither the detection outcomes nor the number of random draws per hour depend on `noise_scale`, so all degraded scenarios of a (horizon, fold) use the same random numbers (common random numbers): every Gaussian error (before clipping) at 0.5× / 1.5× is 0.5 / 1.5 times the error at 1×, and precipitation is hit, missed and falsely forecast in the same hours. The scenarios differ in error magnitude only
+- The seed does not depend on the scenario, and neither the detection outcomes nor the number of random draws per hour depend on `noise_scale`, so all degraded scenarios of a (horizon, fold) use the same random numbers (common random numbers): every additive error (before clipping) at 0.5× / 1.5× is 0.5 / 1.5 times the error at 1×, and precipitation is hit, missed and falsely forecast in the same hours (measured model: the same ECMWF run is replayed). The scenarios differ in error magnitude only
 - `noise_scale < 0` raises `ValueError`
 
 **Reproducibility:**
@@ -527,6 +546,17 @@ Rationale:
 - The server used the library defaults (`normalize_inputs=False`, `use_continuous_quantile_head=False`, `fix_quantile_crossing=False`) instead of the configuration in the TimesFM 2.5 README. For the point forecast (median) only `normalize_inputs` matters; the other two affect the quantiles.
 - TimesFM_NoWeather results produced before this fix are invalid; all TimesFM results need to be re-run.
 
+### Measured NWP Error Model per City
+The degraded scenarios use forecast errors measured for each city from real ECMWF IFS HRES forecasts (default `degradation_model = "nwp_measured"`), instead of one set of published error sizes for all cities.
+
+Rationale:
+- The published values did not match these cities: measured temperature error SD at 168 h is 2.5–3.3 °C (literature 3.8 °C), humidity 6–11 % at 24 h (13.6 %), wind 0.7–1.0 m/s at 24 h (2.0 m/s); visibility CV is about 100 % where the data are not capped (25 %), precipitation amount CV of hits 110–170 % at 6–24 h (31–34 %), miss rate and false-alarm ratio reach 0.61–0.76 at 168 h (capped at 0.5)
+- Errors are measured against the data each city's model is trained on (Seoul: the same station; London/Washington: ERA5, the source of their covariates), so the degraded covariates differ from the clean ones as a real forecast would differ from that data
+- Default setting (revised 1 Oct 2026): fresh forecast and bias removed, i.e. an operator with an up-to-date, locally corrected forecast. The first version used the run available at the issue time (6–17 h old) and kept the biases. That gave (a) a forecast age fixed per city by its time zone (Seoul 14 h, London 10–11 h, Washington 15–16 h for horizons ≥ 24 h), so some hours of the day always had older forecasts and the cities differed for a reason unrelated to weather, and (b) a bias that appears only where the reference is a station (Seoul −1.5 °C; Washington's forecast is also about 1.5 °C too cold against its airport station, but its reference is ERA5). A real operator would use a regularly updated forecast corrected to local measurements. Both settings remain available
+- Replaying whole runs gives the real persistence from hour to hour and the real links between temperature, humidity and wind; independent hourly noise (literature model) understated both (Known Limitations 1 and 15)
+- All degraded results produced with the literature model must be re-run; the literature model stays available (`degradation_model = "literature"`) for comparison and to reproduce earlier results
+- Forecast years (2024–26) differ from the data years (2011–18); forecasts were less accurate then (Known Limitations)
+
 ### Degradation Parameters from the Training Fold
 The solar cap used by the degradation is computed from the clean training fold, not from the test window being degraded.
 
@@ -583,7 +613,7 @@ Rationale:
 The degraded scenario is also run with the error magnitudes at 0.5× and 1.5× (`degraded_x050`, `degraded_x150`), with the same random numbers as `degraded`.
 
 Rationale:
-- The error model is calibrated once, from published verification statistics, for all three cities (Known Limitation 3). The two extra scenarios test whether the conclusions under `degraded` hold if the real forecast error is lower or higher.
+- The measured model is calibrated on 2024–26 forecasts, while the data are from 2011–18, when forecasts were less accurate; the literature model was calibrated once, for all cities. The two extra scenarios test whether the conclusions under `degraded` hold if the real forecast error is lower or higher.
 - Common random numbers (same seed, same number of draws for every scale): the scenarios differ only in error magnitude, not in the random draw, so the differences between them are not sampling noise.
 - Precipitation event detection is not scaled: miss rate and FAR are probabilities capped at 50 % (no skill), not error magnitudes; at 1.5× they would reach the cap from 30 h instead of 60 h. Keeping them fixed also keeps the random draws aligned across scales.
 - Comparisons against the baseline are computed per scenario, so the sensitivity scenarios do not change the clean_only/degraded win rates and skill scores.
@@ -715,6 +745,7 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 - `weather_scenario`: 'all_weather' (only used in Pilot project), 'clean_only', 'degraded', 'degraded_x050' or 'degraded_x150'
 - `model_uses_covariates`: Boolean (from model.use_covariates property)
 - `degradation_seed`: Random seed used (42 by default)
+- `degradation_model`: error model of the degraded scenarios and its settings (`config.degradation_label()`, e.g. `nwp_measured(fresh,no_bias)`, or `literature`); also in the detailed CSV
 - `num_weather_vars`: Number of columns in `X_train` (taken from the first fold) (0 for models without covariates; for models with covariates: 7 degradable + holiday + season = 9, plus 4 calendar time features for XGBoost = 13 total features; XGBoost_NoWeather: 4, the calendar time features only; TabPFN creates its own calendar features, which is 17 additional features)
 - Runtime in seconds (wall-clock, over successful folds): `fit_time_mean_s`, `predict_time_mean_s`, `runtime_mean_s`, `runtime_std_s` (per fold), and `fit_time_total_s`, `predict_time_total_s`, `runtime_total_s` (summed over folds)
 
@@ -734,21 +765,23 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 ## Known Limitations
 
 
-1. Degradation assumes independent errors across variables (no cross-correlation) and from hour to hour (real forecast errors persist over many hours)
-2. Below the shortest lead time verified in the sources (12 h for temperature and humidity, 24 h for wind, solar radiation, precipitation and visibility) the error formulas are extrapolated; this covers all lead times of h=6 and the first hours of every longer horizon
-3. Error growth calibrated to published statistics (ECMWF, KMA); may differ for specific locations (the noise-magnitude sensitivity scenarios, 0.5× and 1.5×, test the effect of a lower or higher error)
+1. Measured model: temperature, humidity and wind errors are real (persistent, linked to each other); solar radiation, precipitation and visibility errors are persistent but independent of each other and of the other variables. Literature model: independent errors across variables and from hour to hour (real forecast errors persist over many hours)
+2. Measured model: the errors come from ECMWF forecasts of 2024–26 (model versions 49r1 and 50r1) and are applied to data from 2011–18, when forecasts were less accurate; the replayed errors belong to another day than the test window (same season and start hour), so they do not depend on the weather of the test window. Literature model: below the shortest lead time verified in the sources (12 h for temperature and humidity, 24 h for wind, solar radiation, precipitation and visibility) the error formulas are extrapolated
+3. Measured model references: Seoul temperature, humidity, wind and visibility = station 47108 (the station of the Seoul data); London and Washington = ERA5 / ERA5-Land at the nearest grid cell, without the Open-Meteo height correction (their covariates are from the Open-Meteo archive but could not be reproduced exactly: median difference 0.3–0.5 °C); solar radiation and precipitation = ERA5 for all cities (no usable free station data; Seoul's covariates are station data); visibility errors from ISD station reports, which end in Aug 2025. Seoul has 844 complete runs (station gaps), London and Washington 1,817. Literature model: error growth calibrated to published statistics, the same for every city
 4. NeuralProphet training cost grows with the horizon (one output per forecast step with `n_forecasts = horizon`), and the model is retrained on every `predict()` call
 5. NeuralProphet hyperparameters are tuned at `config.tune_horizon` only and reused for all evaluation horizons
 6. Season and holiday can only be used by SARIMAX (and NeuralProphet) in folds where they vary within the 30-day training window
 7. ARIMA/SARIMAX candidate orders come from `auto_arima`'s stepwise AIC search on 6 folds; orders it does not propose are not considered
 8. NeuralProphet is searched on 6 of the 90 tune folds (run time); all other tuned models are selected on all 90
-9. Precipitation detection errors use POD and FAR that Sukovich et al. (2014) verified for the top 1% of 24-hour events; they are applied to all hourly precipitation. A training fold without precipitation (wet-hour share 0) gives no false alarms in that fold
+9. Literature model: precipitation detection errors use POD and FAR that Sukovich et al. (2014) verified for the top 1% of 24-hour events; they are applied to all hourly precipitation. Both models: a training fold without precipitation (wet-hour share 0) gives no false alarms in that fold
 10. The rain/snow phase correction uses a fixed 2 °C threshold (the real transition spans roughly 0–4 °C) and moves amounts between rain (mm) and snow (cm) without unit conversion
 11. The partial last fold (h=48) covers lead times 1–24 only and is averaged with equal weight to the full folds; for NeuralProphet it is forecast by a model with `n_forecasts = 24`
 12. Fold metrics are averaged with equal weight per fold; a fold with few observed hours (partly imputed test window) counts as much as a fully observed one
 13. Runtimes are wall-clock times on the machine that ran the experiment: they depend on hardware, CPU/GPU availability, thread settings (e.g. XGBoost `n_jobs=-1`, TabPFN `CPUParallelWorker`) and concurrent load, so they are only comparable within one run environment. The first fold of a model can include one-off costs (library warm-up, model loading for TabPFN/TimesFM). Failed folds are not timed
-14. The noise-magnitude sensitivity scales error magnitudes only; precipitation event detection (miss rate, false-alarm probability, false-alarm amount) stays at its calibrated values at every scale
-15. Consequence of the hour-to-hour independence (Limitation 1): for models that use each step's covariates only for that step (SARIMAX, NeuralProphet, TabPFN, TimesFM), the expected error per step is unchanged and mainly the fold-to-fold spread is affected. XGBoost forecasts recursively, so correlated covariate errors could compound through the fed-back lags; the independent-noise setting may therefore understate XGBoost's degradation relative to TabPFN
+14. The noise-magnitude sensitivity scales error magnitudes only; precipitation event detection (miss rate, false-alarm probability, false-alarm amount) and, in the measured model, whether visibility falls below the cap stay at their calibrated values at every scale
+15. Literature model only: consequence of the hour-to-hour independence (Limitation 1): for models that use each step's covariates only for that step (SARIMAX, NeuralProphet, TabPFN, TimesFM), the expected error per step is unchanged and mainly the fold-to-fold spread is affected. XGBoost forecasts recursively, so correlated covariate errors could compound through the fed-back lags; the independent-noise setting may therefore understate XGBoost's degradation relative to TabPFN. The measured model has persistent errors
+16. Measured model: the fresh, locally corrected forecast (default) is approximated by the global 9 km model's errors at short lead times with its average bias removed; no free archive of past local forecasts exists. Local high-resolution forecasts are usually more accurate in the first hours, so these may be slightly pessimistic. The replayed run's start hour (00/12 UTC) can differ from the issue time of day by up to 6 h. With `nwp_fresh_forecast = False`: the issue time is the end of the training window and a run is assumed usable 6 h after its start; the 06/18 UTC runs (90 h only) are not used. Beyond 90 h ECMWF outputs 3-/6-hourly values; the replayed hourly errors there are those of Open-Meteo's interpolated hourly series
+17. `testing/test_max_degradation.py` applies the literature model only
 
 
 <!-- TODO TimesFM; adjust documentation:

@@ -1,0 +1,61 @@
+{
+ "city": "seoul",
+ "n_runs_total": 1828,
+ "tqw_reference": "NOAA ISD station 47108099999 (nearest report within +/-30 min)",
+ "tqw_runs_complete_1_192h": 844,
+ "tqw_check_24h": {
+  "temperature": {
+   "bias": -1.499,
+   "sd": 1.342
+  },
+  "humidity": {
+   "bias": 4.493,
+   "sd": 10.776
+  },
+  "wind_speed": {
+   "bias": -0.23,
+   "sd": 0.965
+  }
+ },
+ "solar": {
+  "reference": "Open-Meteo archive era5_seamless (ERA5-Land T/RH + ERA5), nearest grid cell",
+  "phi": 0.71,
+  "n_pairs": 65090,
+  "bias_rel_24h": 0.025,
+  "sd_rel_24h": 0.257,
+  "relmae_measured_24h": 0.198
+ },
+ "precipitation": {
+  "reference": "Open-Meteo archive era5_seamless (ERA5-Land T/RH + ERA5), nearest grid cell",
+  "wet_threshold_mm": 0.1,
+  "wet_share_ref": 0.16,
+  "miss_24h": 0.309,
+  "far_24h": 0.27,
+  "miss_168h": 0.603,
+  "far_168h": 0.582,
+  "hit_mean_log_24h": 0.026,
+  "hit_sd_log_24h": 1.254,
+  "fa_amount_median_mm": 0.345,
+  "fa_amount_sd_log": 1.13,
+  "rho_miss": 0.855,
+  "n_wetwet": 21117,
+  "rho_false_alarm": 0.905,
+  "n_drydry": 129718,
+  "hit_phi": 0.543,
+  "n_hithit": 12857
+ },
+ "visibility": {
+  "reference": "NOAA ISD station 47108099999 (nearest report within +/-30 min)",
+  "cap_km": 20.0,
+  "share_obs_at_cap": 0.585,
+  "p_forecast_below_cap_when_obs_at_cap": 0.302,
+  "median_forecast_over_cap_when_below": 0.745,
+  "below_cap_mean_log": 0.461,
+  "below_cap_sd_log": 0.978,
+  "phi": 0.822,
+  "n_pairs": 88252
+ },
+ "created_utc": "2026-10-01T16:52:49+00:00",
+ "forecast_source": "ECMWF IFS HRES 9km (Open-Meteo Single Runs, 00/12 UTC runs; hourly as served, leads >90 h interpolated by Open-Meteo from 3-/6-hourly output)",
+ "run_period": "2024-03-14 00:00:00 .. 2026-09-16 12:00:00"
+}

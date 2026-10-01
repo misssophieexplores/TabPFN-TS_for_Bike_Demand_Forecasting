@@ -373,6 +373,7 @@ class ForecastingExperiment:
                 metrics['weather_scenario'] = weather_scenario
                 metrics['model_uses_covariates'] = model.use_covariates
                 metrics['degradation_seed'] = self.config.degradation_seed
+                metrics['degradation_model'] = self.config.degradation_label()
                 metrics['num_weather_vars'] = len(X_train.columns) if X_train is not None else 0
 
                 # Track imputation info
@@ -453,6 +454,7 @@ class ForecastingExperiment:
             'weather_scenario': weather_scenario,
             'model_uses_covariates': model.use_covariates,
             'degradation_seed': self.config.degradation_seed,
+            'degradation_model': self.config.degradation_label(),
             'num_weather_vars': results_df['num_weather_vars'].iloc[0] if len(results_df) > 0 else 0,
             'n_folds': len(fold_results),
             'n_failed_folds': n_failed_folds,

@@ -1,6 +1,121 @@
 # Weather Forecast Degradation Methodology
 
-## Overview
+Two error models are implemented (`config.degradation_model`):
+
+- **Measured NWP error model** (`"nwp_measured"`, default since 1 Oct 2026; `nwp_error_model.py`): per-city errors measured from real ECMWF forecasts. Described in the next section.
+- **Literature error model** (`"literature"`; `weather_degradation.py`): one set of published error sizes for all cities. Described from "Overview (literature model)" on; kept to reproduce earlier results.
+
+## Measured NWP Error Model (default)
+
+### Summary
+
+Observed weather covariates in the test windows were degraded with forecast errors measured for each city from 1,828 operational-resolution ECMWF IFS HRES (9 km) forecasts issued at 00 and 12 UTC between 14 March 2024 and 16 September 2026 (Open-Meteo Single Runs API). Errors were measured against the data source of each city's covariates: the Seoul weather station (WMO 47108, the station of the Seoul data) for Seoul, and ERA5/ERA5-Land reanalysis for London and Washington, whose covariates come from the Open-Meteo archive. For temperature, humidity and wind speed, the actual errors of a whole forecast run are replayed; solar radiation, precipitation and visibility errors are simulated from per-city, per-lead-time error statistics with measured hour-to-hour persistence.
+
+Default setting (revised 1 Oct 2026): an operator with an up-to-date, locally corrected weather forecast. The weather forecast starts when the demand forecast is made, so test hour *i* gets the error of an (*i*+1)-hour forecast in every city (`config.nwp_fresh_forecast = True`), and the average error (bias) of the forecasts is removed (`config.nwp_remove_bias = True`). Both can be switched off; with both off the model is the version first delivered on 1 Oct 2026 (6–17 h old forecast, bias kept).
+
+### Data
+
+- Forecasts: ECMWF IFS HRES 9 km, nearest grid cell, no elevation downscaling, hourly values as served by the Open-Meteo Single Runs API (beyond 90 h ECMWF outputs 3-/6-hourly values, which Open-Meteo interpolates to hourly). Runs until 12 May 2026 are ECMWF re-runs with IFS cycle 49r1, later runs operational cycle 50r1. Variables: 2 m temperature, 2 m relative humidity, 10 m wind speed, global horizontal irradiance, precipitation (rain + snow, mm), visibility.
+- References: NOAA ISD hourly station reports (Seoul 47108, London Heathrow 03772, Washington Reagan National 72405-13743; nearest report within ±30 min; until Aug 2025) and ERA5-seamless reanalysis (ERA5-Land temperature and humidity, ERA5 otherwise; Open-Meteo Historical Weather API, nearest grid cell).
+- Downloaded with `weather/nwp/fetch_nwp_data.py`; statistics with `weather/nwp/analyze_nwp_errors.py`; calibration files with `weather/nwp/build_nwp_calibration.py` (`weather/nwp/calibration/<city>.npz`).
+
+### Lead times
+
+A demand forecast is issued at the end of the training window (one hour before the first test hour). Local timestamps are converted to UTC with the city's time zone (`config.timezone`).
+
+- **Fresh forecast (default, `nwp_fresh_forecast = True`).** The weather forecast starts at the issue time, so test hour *i* (0-indexed) has lead time *i* + 1 h, the same in every city and at every time of day. This represents a regularly updated forecast (weather services update their short-range forecasts several times a day, some hourly). Errors are replayed from runs whose start hour (00 or 12 UTC) is closest to the issue time of day (at most 6 h apart; on a tie the earlier start).
+- **Newest available run (`nwp_fresh_forecast = False`).** The newest ECMWF run available at the issue time is used: runs start at 00 and 12 UTC and are assumed available 6 h later. Each test hour gets the lead time of that run (valid time − run start). The run is 6–17 h old depending on the time of day, so the first test hour has a lead time of 7–18 h. With the experiments' fixed issue hours this gives a fixed age per city (Seoul 14 h, London 10–11 h, Washington 15–16 h for horizons ≥ 24 h), i.e. differences between cities that come from their time zones.
+
+### Temperature, relative humidity, wind speed: replayed forecast errors
+
+For each test window one ECMWF run of the same city is drawn at random (fold seed) among the runs that (a) start at the selected hour (00 or 12 UTC, see Lead times), (b) start within ±30 days of the test window's day of year (any year) and (c) have complete errors at the needed lead times. Its errors e(L) = forecast − reference at the test window's lead times are added to the clean values. With `nwp_remove_bias = True` (default) the average error ē(L) of all these candidate runs (same start hour, same season) is subtracted first:
+
+X'ₜ = Xₜ + e(Lₜ) − ē(Lₜ)  (default),  or  X'ₜ = Xₜ + e(Lₜ)  (bias kept);  humidity clipped to [0, 100] %, wind speed truncated at 0.
+
+Removing ē(L) represents a forecast corrected to local measurements: the systematic part of the error (e.g. Seoul's forecast being on average 1.5 °C colder than the city-centre station, London's wind on average 0.7–0.8 m/s too low) is gone; the hour-to-hour errors remain. The degraded covariates thus carry the real error growth, hour-to-hour persistence and cross-variable relations (e.g. a run that is too warm is often too dry) of ECMWF forecasts for that city and season. Gaps of up to 3 h in the reference are interpolated along the lead time.
+
+### Solar radiation
+
+Heteroscedastic relative error with persistence, per lead time L:
+
+X'ₜ = Xₜ · (1 + b(L) + s(L)·zₜ),  zₜ = φ zₜ₋₁ + √(1−φ²) εₜ
+
+b(L) and s(L) are weighted least-squares estimates over daylight hours of the error model error = observed · (b + s·z) against ERA5; φ is the lag-1 correlation of the standardised errors (leads 1–89 h, observed > 50 W/m²). With `nwp_remove_bias = True`, b = 0. Night hours (X = 0) stay 0; values are capped at the 99.5th percentile of the training fold.
+
+### Precipitation
+
+Rainfall and snowfall are one precipitation variable with one decision per hour (wet = any column > 0):
+- Wet hour: missed (forecast 0) with the measured miss rate m(L); otherwise every precipitation column is multiplied by exp(μ_h(L) + σ_h(L)·zₜ), the measured distribution of log(forecast/observed) for hits. With `nwp_remove_bias = True`, μ_h = −σ_h²/2 (mean-preserving multiplier, no systematic over- or underestimate); the miss rate, the false-alarm ratio and false-alarm amounts are event rates and stay as measured.
+- Dry hour: false alarm with probability FAR(L)/(1 − FAR(L)) · (1 − m(L)) · p/(1 − p) (p = wet-hour share of the training fold; reproduces the measured false-alarm ratio FAR), amount lognormal with the measured median and spread of ECMWF amounts in false alarms; written to the rain column.
+- Persistence: the miss and false-alarm decisions use latent Gaussian AR(1) series whose lag-1 correlations ρ are the tetrachoric correlations of consecutive hours in the ECMWF data (an event that is missed tends to be missed for hours); the hit amount errors follow an AR(1) series with the measured lag-1 correlation φ.
+- Rates are pooled over ±12 h of lead time; wet = ≥ 0.1 mm/h (the data resolution); reference ERA5 for all cities (the Seoul station reports hourly rain only in wet hours).
+
+### Visibility
+
+Lognormal error in log space with persistence (AR(1), measured φ). For hours below the covariate's cap: X' = X · exp(μ_b + σ_b·zₜ), with μ_b and σ_b the mean and SD of log(forecast/observed) against the station; with `nwp_remove_bias = True`, μ_b = −σ_b²/2 (mean-preserving). The probability of falling below the cap is an event rate and stays as measured. Seoul (cap 20 km) and Washington (cap 16 km) have capped visibility covariates: an hour at the cap stays at the cap unless Φ(zₜ) is below the measured probability that the forecast falls below the cap when the station reports the cap (0.30 and 0.11); the depth below the cap, −log(X'/C), is then lognormal as measured. Results are cut at the cap (London: at the training fold's maximum).
+
+### Noise-magnitude sensitivity
+
+`degraded_x050` and `degraded_x150` multiply every error magnitude by 0.5 and 1.5: the replayed errors (their bias included if it is kept), the relative solar error b + s·z, the log errors of precipitation amounts and of visibility, and the depth below the visibility cap. Event detection (misses, false alarms, visibility falling below the cap) and false-alarm amounts are not scaled. The same run is replayed and the same random numbers are used in all three scenarios.
+
+### Calibration per city
+
+| Quantity | Seoul | London | Washington |
+| --- | --- | --- | --- |
+| Reference for temperature, humidity, wind | station 47108 | ERA5 / ERA5-Land | ERA5 / ERA5-Land |
+| ECMWF runs with complete errors (lead 1–192 h) | 844 | 1817 | 1817 |
+| Temperature error, bias / SD at 24 h (°C) | -1.50 / 1.34 | +0.47 / 0.98 | +0.02 / 1.38 |
+| Temperature error, bias / SD at 168 h (°C) | -1.53 / 2.45 | +0.19 / 2.55 | +0.08 / 3.27 |
+| Humidity error, bias / SD at 24 h (%) | +4.5 / 10.8 | -2.6 / 6.5 | -3.4 / 9.3 |
+| Humidity error, bias / SD at 168 h (%) | +4.6 / 16.1 | -1.7 / 11.8 | -3.1 / 15.7 |
+| Wind speed error, bias / SD at 24 h (m/s) | -0.23 / 0.97 | -0.73 / 0.74 | +0.14 / 0.84 |
+| Wind speed error, bias / SD at 168 h (m/s) | -0.26 / 1.28 | -0.82 / 1.90 | +0.16 / 1.48 |
+| Solar: relative bias b / SD s at 24 h | +0.025 / 0.257 | +0.031 / 0.239 | -0.024 / 0.192 |
+| Solar: relative bias b / SD s at 168 h | -0.078 / 0.416 | -0.049 / 0.384 | -0.036 / 0.369 |
+| Solar: hour-to-hour correlation φ | 0.71 | 0.65 | 0.69 |
+| Precipitation: miss rate / false-alarm ratio at 24 h | 0.31 / 0.27 | 0.39 / 0.30 | 0.42 / 0.29 |
+| Precipitation: miss rate / false-alarm ratio at 168 h | 0.60 / 0.58 | 0.71 / 0.67 | 0.67 / 0.65 |
+| Precipitation hits: mean / SD of log(forecast/observed) at 24 h | +0.03 / 1.25 | +0.03 / 1.07 | -0.04 / 1.32 |
+| False-alarm amount: median (mm) / SD of log | 0.35 / 1.13 | 0.26 / 0.89 | 0.37 / 1.09 |
+| Persistence: misses ρ / false alarms ρ / hit amounts φ | 0.85 / 0.90 / 0.54 | 0.78 / 0.84 / 0.42 | 0.82 / 0.88 / 0.45 |
+| Visibility cap of the covariate (km) | 20 | none | 16 |
+| Visibility at the cap: P(forecast below cap) | 0.30 | – | 0.11 |
+| Visibility below the cap: mean / SD of log(forecast/observed) | +0.46 / 0.98 | +0.12 / 0.94 | +0.47 / 1.03 |
+| Visibility: hour-to-hour correlation φ | 0.82 | 0.77 | 0.67 |
+
+Precipitation rates here use wet = ≥ 0.1 mm/h and ±12 h pooling; the verification report quotes > 0.1 mm/h per lead hour (slightly higher miss rates and false-alarm ratios). The table lists the measured values; the default model removes the biases (temperature, humidity and wind bias, solar b, mean log errors of rain amounts and visibility).
+
+Errors applied by the default model (fresh forecast, bias removed), from the calibration files; typical error = mean absolute error after removing each run pool's average error (`weather/nwp/expected_errors.py`):
+
+| Typical error | Seoul 24 h / 168 h | London 24 h / 168 h | Washington 24 h / 168 h |
+| --- | --- | --- | --- |
+| Temperature (°C) | 0.92 / 1.82 | 0.67 / 1.89 | 0.96 / 2.33 |
+| Relative humidity (%-points) | 7.4 / 11.9 | 4.4 / 8.8 | 6.4 / 11.6 |
+| Wind speed (m/s) | 0.73 / 0.93 | 0.53 / 1.45 | 0.64 / 1.12 |
+| Solar radiation (relative) | 0.21 / 0.33 | 0.19 / 0.31 | 0.15 / 0.29 |
+
+### Validation on the bike data
+
+Default setting (fresh forecast, bias removed), run on the real data with the experiment's CV folds (all horizons, all folds, scenario `degraded`, seeds 42, 1042, 2042; `weather/nwp/validate_on_real_data.py`): the mean temperature error is between −0.06 and +0.04 °C in every city (bias removed; with the bias kept, Seoul's is about −1.5 °C); typical errors at leads 6, 24 and 48 h are within 0.17 °C (temperature), 0.8 %-points (humidity) and 0.09 m/s (wind) of the calibration values above, solar relative error at lead ~6 h within 0.015; precipitation miss rates within 0.04 of the expected rate across the three seeds. Cost: about 8 ms per fold.
+
+First version (newest available run, bias kept), same check: the simulated covariate errors reproduce the calibration: temperature error SD within 0.3 °C of the replayed runs' SD at the same lead times, humidity within 2.3 %-points, wind speed within 0.11 m/s; solar relative MAE within 0.05; precipitation miss rate and false-alarm ratio within sampling variation (misses persist, so the rate varies between seeds, e.g. Seoul 0.26–0.32 for an expected 0.31); visibility at the cap falls below it in 27 % (Seoul, measured 30 %) and 11 % (Washington, measured 11 %) of hours, and visibility below the cap is pushed to the cap in 46–47 % (Seoul, measured 47 %) and 54–56 % (Washington, measured 53 %) of hours. Cost: about 8 ms per fold.
+
+### Limitations of the measured model
+
+1. Forecast years (2024–26) differ from the data years (2011–18); forecasts were less accurate then, so the errors are probably too small for those years. The sensitivity scenarios (0.5×, 1.5×) bracket this.
+1a. Fresh, locally corrected forecast (default) is approximated: no free archive of past local forecasts exists, so the errors are those of the global 9 km model at short lead times with its average bias removed. Local high-resolution forecasts are usually more accurate in the first hours, so these may be slightly pessimistic. The replayed run's start hour can differ from the issue time of day by up to 6 h; with the bias removed, only the time-of-day dependence of the remaining errors is shifted.
+2. Replayed errors come from another day (same season and run hour) and do not depend on the weather of the test window.
+3. Solar radiation, precipitation and visibility errors are independent of each other and of temperature, humidity and wind.
+4. References: London and Washington covariates could not be reproduced exactly from the Open-Meteo archive (median differences 0.3–0.5 °C), so the ERA5 reference is close to, not identical with, their source. Solar radiation and precipitation use ERA5 also for Seoul, whose covariates are station data. Station visibility reports end in Aug 2025; Seoul's station gaps leave 844 complete runs.
+5. Only with `nwp_fresh_forecast = False`: issue time and availability (6 h) are assumptions; the 06/18 UTC runs (90 h only) are not used. Beyond 90 h the hourly errors are those of Open-Meteo's interpolated hourly series.
+6. Daylight-saving hours: a repeated autumn hour is read as standard time and a non-existent spring hour shifted forward (±1 h for two hours a year).
+
+---
+
+# Literature Error Model (earlier; `degradation_model = "literature"`)
+
+
+## Overview (literature model)
 
 To evaluate model robustness under realistic operational conditions, observed weather variables were degraded to simulate forecast uncertainty at lead times of 6, 24, 48, and 168 hours. Error growth functions were parameterized from published numerical weather prediction (NWP) verification statistics where available, with conservative assumptions applied for variables lacking specific verification data.
 
@@ -216,6 +331,18 @@ For production pipelines, the default reproducible behavior is recommended.
 Despite these limitations, the degradation methodology provides a realistic and conservative estimate of operational forecast uncertainty appropriate for evaluating machine learning model robustness under forecast input conditions.
 
 ## References
+
+Measured model:
+
+Hersbach, H., et al. (2020). The ERA5 global reanalysis. Quarterly Journal of the Royal Meteorological Society, 146(730), 1999–2049. https://doi.org/10.1002/qj.3803
+
+Muñoz Sabater, J. (2019). ERA5-Land hourly data from 1950 to present. Copernicus Climate Change Service (C3S) Climate Data Store. https://doi.org/10.24381/cds.e2161bac
+
+NOAA National Centers for Environmental Information. Integrated Surface Database (ISD), global hourly. https://www.ncei.noaa.gov/data/global-hourly/access/
+
+Zippenfenig, P. (2023). Open-Meteo.com Weather API (Single Runs API; Historical Weather API). https://doi.org/10.5281/zenodo.7970649
+
+Literature model:
 
 Bari, D. & Ouagabi, A. (2020). Machine-learning regression applied to diagnose horizontal visibility from mesoscale NWP model forecasts. Discover Applied Sciences, 2, 389. https://doi.org/10.1007/s42452-020-2327-x
 

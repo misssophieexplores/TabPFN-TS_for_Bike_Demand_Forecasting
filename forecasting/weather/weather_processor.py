@@ -13,8 +13,12 @@ from typing import List, Optional
 from config import ForecastConfig
 from weather.weather_degradation import (
     prepare_degradation_parameters,
-    degrade_weather_dataset
+    degrade_weather_dataset,
+    fix_precipitation_type,
 )
+from weather.nwp_error_model import load_error_model, to_utc
+
+DEGRADATION_MODELS = ("nwp_measured", "literature")
 
 
 class WeatherProcessor:
@@ -52,6 +56,14 @@ class WeatherProcessor:
         """
         self.config = config
         self.degradation_params = None
+        # Measured NWP model: what the last degraded test window used
+        # (forecast start, lead times, replayed run, settings); None for "literature"
+        self.last_degradation_info = None
+        if config.degradation_model not in DEGRADATION_MODELS:
+            raise ValueError(
+                f"degradation_model must be one of {DEGRADATION_MODELS}, "
+                f"got {config.degradation_model!r}"
+            )
         
     def get_weather_columns(self, scenario: str) -> List[str]:
         """
@@ -131,13 +143,13 @@ class WeatherProcessor:
               covariates would conflate train/test domain shift with the
               robustness signal we want to measure.
 
-            - 'test': degradation uses **row-varying lead times** (1 h for
-              the first prediction step, 2 h for the second, …, horizon h
-              for the last step).  This is physically correct because a
-              horizon-h forecast covers h consecutive future hours and the
-              NWP error grows with each additional hour of lead time.
-              The old behaviour (same max-horizon noise on every test row)
-              overestimated degradation for near-term steps.
+            - 'test': degradation uses **row-varying lead times**: row i
+              has lead (i + 1) hours (measured NWP model with
+              config.nwp_fresh_forecast=True, the default, and the
+              'literature' model). With nwp_fresh_forecast=False the ECMWF
+              run available at the forecast issue time (6-17 h old) is used,
+              so row i has lead (run age + i + 1) hours. The measured model
+              needs config.date_col in df.
             
         Returns
         -------
@@ -187,11 +199,14 @@ class WeatherProcessor:
         # Training data always uses clean (observed) weather so that the
         # experiment measures degradation at inference time, not during fitting.
         if degraded and split == "test":
+            date_col = self.config.date_col
+            timestamps = df[date_col] if date_col and date_col in df.columns else None
             weather_df = self.degrade_dataframe(
                 weather_df,
                 horizon,
                 fold_idx,
-                noise_scale=self.config.degradation_scales[scenario]
+                noise_scale=self.config.degradation_scales[scenario],
+                timestamps=timestamps,
             )
         
         return weather_df
@@ -201,7 +216,8 @@ class WeatherProcessor:
         df: pd.DataFrame,
         horizon: int,
         fold_idx: int,
-        noise_scale: float = 1.0
+        noise_scale: float = 1.0,
+        timestamps=None,
     ) -> pd.DataFrame:
         """
         Apply degradation to weather dataframe with row-varying lead times.
@@ -218,6 +234,9 @@ class WeatherProcessor:
         noise_scale : float, default=1.0
             Factor applied to the error magnitudes (config.degradation_scales
             of the scenario; 1.0 = calibrated error model)
+        timestamps : array-like, optional
+            Local timestamps of the rows (config.date_col, time zone
+            config.timezone). Required for the measured NWP model.
             
         Returns
         -------
@@ -237,12 +256,17 @@ class WeatherProcessor:
           at h=24 both got base_seed + 24).
 
         Lead-time assignment:
-        - Row i (0-indexed) is the forecast for (i+1) hours ahead, so it
-          receives noise calibrated to lead time (i+1) hours.
-        - The first test step gets the smallest noise of the window (1 h
-          lead), which is not zero: every error formula has an intercept
-          (e.g. temperature 0.79 °C, humidity 13.0 %-points at 1 h). The
-          last step gets full-horizon noise.
+        - "nwp_measured", config.nwp_fresh_forecast=True (default): the
+          weather forecast starts when the demand forecast is issued (first
+          test hour - 1 h); row i gets lead time i + 1. With
+          config.nwp_remove_bias=True (default) the average forecast error
+          (lean) is removed. See weather/nwp_error_model.py.
+        - "nwp_measured", config.nwp_fresh_forecast=False: the newest ECMWF
+          run available at the issue time is used (runs at
+          config.nwp_run_hours_utc, available config.nwp_availability_delay_h
+          hours later). Row i gets that run's lead time: run age (6-17 h) + i + 1.
+        - "literature": row i (0-indexed) is the forecast for (i+1) hours
+          ahead and receives noise calibrated to lead time (i+1) hours.
         """
         # Seed unique per (horizon, fold): fold_idx < 10000 for all horizons
         if not 0 <= fold_idx < 10000:
@@ -251,10 +275,7 @@ class WeatherProcessor:
                 f"would collide across horizons"
             )
         horizon_seed = self.config.degradation_seed + 10000 * horizon + fold_idx
-        
-        # Per-row lead times: step 0 → 1 h, step 1 → 2 h, …, step h-1 → h
-        lead_times = np.arange(1, len(df) + 1)
-        
+
         # Degradation parameters computed from the training fold
         if self.degradation_params is None:
             raise RuntimeError(
@@ -270,7 +291,40 @@ class WeatherProcessor:
                 "weather_degradation_mapping and config.rain_col / config.snow_col set"
             )
 
-        # Apply degradation with per-row lead times
+        if self.config.degradation_model == "nwp_measured":
+            if timestamps is None:
+                raise ValueError(
+                    "The measured NWP error model needs the timestamps of the test "
+                    f"rows (column {self.config.date_col!r})"
+                )
+            if not self.config.nwp_calibration_file:
+                raise ValueError("config.nwp_calibration_file is not set for this city")
+            model = load_error_model(self.config.nwp_calibration_file)
+            times_utc = to_utc(timestamps, self.config.timezone)
+            df_degraded, info = model.degrade(
+                df,
+                times_utc,
+                self.config.weather_degradation_mapping,
+                self.degradation_params,
+                seed=horizon_seed,
+                rain_col=self.config.rain_col,
+                noise_scale=noise_scale,
+                run_hours=tuple(self.config.nwp_run_hours_utc),
+                delay_h=self.config.nwp_availability_delay_h,
+                season_days=self.config.nwp_season_window_days,
+                fresh_forecast=self.config.nwp_fresh_forecast,
+                remove_bias=self.config.nwp_remove_bias,
+            )
+            self.last_degradation_info = info
+            # Rain/snow phase from the degraded temperature (as in the
+            # literature model)
+            return fix_precipitation_type(
+                df_degraded, temp_col=temp_cols[0],
+                rain_col=self.config.rain_col, snow_col=self.config.snow_col,
+            )
+
+        # "literature": per-row lead times 1..h
+        lead_times = np.arange(1, len(df) + 1)
         df_degraded = degrade_weather_dataset(
             df=df,
             horizon_hours=horizon,      # fallback scalar (unused when lead_times given)

@@ -44,6 +44,8 @@ def get_config() -> ForecastConfig:
         "Visibility": "visibility"
     }
     config.rain_col = "Rainfall"
+    config.timezone = "Asia/Seoul"   # local time of the date column (KST, no daylight saving)
+    config.nwp_calibration_file = "weather/nwp/calibration/seoul.npz"
     config.snow_col = "Snowfall"
     config.column_scale_factors = {"Visibility": 0.01}  # raw unit is 10 m -> km (as London/Washington)
 

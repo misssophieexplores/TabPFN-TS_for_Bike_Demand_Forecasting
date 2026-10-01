@@ -30,6 +30,12 @@ class ForecastConfig:
     weather_degradation_mapping: Optional[Dict[str, str]] = None
     rain_col: Optional[str] = None   # used for rain/snow phase correction in the degraded scenarios
     snow_col: Optional[str] = None
+    # Local time zone of the date column (IANA name); the measured NWP error
+    # model converts the test hours to UTC to find the ECMWF run in use
+    timezone: Optional[str] = None
+    # Calibration file of the measured NWP error model (path relative to
+    # forecasting/), built by weather/nwp/build_nwp_calibration.py
+    nwp_calibration_file: Optional[str] = None
     column_scale_factors: Dict[str, float] = field(default_factory=dict)
 
     # --- Model parameters (dataset-specific — override in city config) ---
@@ -56,11 +62,32 @@ class ForecastConfig:
 
     # --- Weather degradation (shared) ---
     degradation_seed: int = 42
+    # Error model of the degraded scenarios:
+    #   "nwp_measured": per-city errors measured from real ECMWF IFS HRES
+    #       forecasts (weather/nwp_error_model.py; see weather_methodology.md)
+    #   "literature": the earlier model with published error sizes, the same
+    #       for every city (weather_degradation.degrade_weather_dataset)
+    degradation_model: str = "nwp_measured"
+    # Measured model. Default = an operator with an up-to-date, locally
+    # corrected weather forecast:
+    #   nwp_fresh_forecast=True: the weather forecast starts when the demand
+    #       forecast is made, so test hour i gets the error of an (i+1)-hour
+    #       forecast in every city. False: the newest ECMWF run available at
+    #       that time is used (start hours nwp_run_hours_utc, available
+    #       nwp_availability_delay_h hours later), i.e. a 6-17 h old forecast.
+    #   nwp_remove_bias=True: the average error (lean) of the forecasts is
+    #       removed, e.g. Seoul's forecast being on average 1.5 C too cold.
+    # The replayed run comes from the same time of year (+/- nwp_season_window_days).
+    nwp_fresh_forecast: bool = True
+    nwp_remove_bias: bool = True
+    nwp_run_hours_utc: List[int] = field(default_factory=lambda: [0, 12])
+    nwp_availability_delay_h: int = 6
+    nwp_season_window_days: int = 30
     # Degraded scenarios -> factor applied to the calibrated error magnitudes
-    # (Gaussian sigmas, solar relative MAE, precipitation and visibility CVs;
-    # precipitation event detection is not scaled). 'degraded' is the
-    # calibrated error model; degraded_x050 / degraded_x150 are the
-    # noise-magnitude sensitivity scenarios. All use the same seeds.
+    # (see ARCHITECTURE.md "Noise-magnitude sensitivity" for what is scaled
+    # in each error model; precipitation event detection is not scaled).
+    # 'degraded' is the calibrated error model; degraded_x050 / degraded_x150
+    # are the noise-magnitude sensitivity scenarios. All use the same seeds.
     degradation_scales: Dict[str, float] = field(default_factory=lambda: {
         "degraded": 1.0,
         "degraded_x050": 0.5,
@@ -94,3 +121,12 @@ class ForecastConfig:
     def is_degraded(self, scenario: str) -> bool:
         """True if the scenario degrades the test covariates (a key of degradation_scales)."""
         return scenario in self.degradation_scales
+
+    def degradation_label(self) -> str:
+        """Error model and its settings, as written to the results
+        ('degradation_model' column), e.g. 'nwp_measured(fresh,no_bias)'."""
+        if self.degradation_model != "nwp_measured":
+            return self.degradation_model
+        age = "fresh" if self.nwp_fresh_forecast else f"age_delay{self.nwp_availability_delay_h}h"
+        bias = "no_bias" if self.nwp_remove_bias else "with_bias"
+        return f"nwp_measured({age},{bias})"

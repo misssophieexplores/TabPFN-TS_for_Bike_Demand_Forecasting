@@ -180,9 +180,12 @@ class TestWeatherDegradation:
         assert not df_degraded.equals(df)
 
     def _make_weather_processor(self):
-        """Helper: minimal config + WeatherProcessor that doesn't need real data."""
+        """Helper: minimal config + WeatherProcessor that doesn't need real data.
+        These tests cover the "literature" error model (no timestamps needed);
+        the measured NWP model is tested in TestMeasuredNWPModel."""
         config = ForecastConfig()
         config.dataset_name = "test"
+        config.degradation_model = "literature"
         config.degradation_seed = 42
         config.weather_covariates = [
             'Temperature', 'Humidity', 'Wind speed', 'Solar Radiation',
@@ -438,6 +441,7 @@ class TestWeatherDegradation:
         config.rain_col = 'rainfall_mm'
         config.snow_col = 'snowfall_cm'
         config.degradation_seed = 42
+        config.degradation_model = "literature"
         processor = WeatherProcessor(config)
         n = 48
         df = pd.DataFrame({'temperature_c': np.full(n, 20.0),      # warm: snow must become rain
@@ -448,6 +452,259 @@ class TestWeatherDegradation:
         warm = X['temperature_c'] > 2
         assert warm.any()
         assert (X.loc[warm, 'snowfall_cm'] == 0).all()
+
+
+# ======================================================================
+# Measured NWP error model (config.degradation_model = "nwp_measured")
+# ======================================================================
+import importlib
+from weather.nwp_error_model import (
+    load_error_model, run_init_and_leads, fresh_start_and_leads, to_utc, ar1, MAX_LEAD,
+)
+
+CITY_MODULES = {"seoul": "config_seoul", "london": "config_london", "washington": "config_washington"}
+
+
+def _city_config(city):
+    return importlib.import_module(CITY_MODULES[city]).get_config()
+
+
+def _synthetic_city_data(config, start, n_hours, seed=0, rain_every=None):
+    """Clean weather in the city's own columns, with its date column."""
+    rng = np.random.default_rng(seed)
+    m = config.weather_degradation_mapping
+    t = pd.date_range(start, periods=n_hours, freq="h")
+    df = pd.DataFrame({config.date_col: t})
+    for col, typ in m.items():
+        if typ == "temperature":
+            df[col] = 12 + 6 * np.sin(2 * np.pi * (t.hour - 9) / 24) + rng.normal(0, 1, n_hours)
+        elif typ == "humidity":
+            df[col] = rng.uniform(40, 90, n_hours)
+        elif typ == "wind_speed":
+            df[col] = rng.uniform(0.5, 6, n_hours)
+        elif typ == "solar_radiation":
+            df[col] = np.where((t.hour >= 7) & (t.hour <= 17), 300.0, 0.0)
+        elif typ == "visibility":
+            df[col] = rng.uniform(2, 30, n_hours)
+        elif typ == "precipitation":
+            df[col] = 0.0
+    if rain_every:
+        df[config.rain_col] = np.where(np.arange(n_hours) % rain_every == 0, 1.5, 0.0)
+    for col in [config.holiday_col, config.season_col]:
+        if col:
+            df[col] = 0
+    return df
+
+
+def _processor(city, fresh=True, remove_bias=True):
+    config = _city_config(city)
+    config.nwp_fresh_forecast = fresh
+    config.nwp_remove_bias = remove_bias
+    config.weather_covariates = list(config.weather_degradation_mapping) + [
+        c for c in [config.holiday_col, config.season_col] if c]
+    return WeatherProcessor(config)
+
+
+class TestMeasuredNWPModel:
+    """Per-city error model measured from real ECMWF IFS HRES forecasts."""
+
+    def test_default_model_and_city_settings(self):
+        cfg = ForecastConfig()
+        assert cfg.degradation_model == "nwp_measured"
+        assert cfg.nwp_fresh_forecast and cfg.nwp_remove_bias
+        assert cfg.degradation_label() == "nwp_measured(fresh,no_bias)"
+        for city in CITY_MODULES:
+            config = _city_config(city)
+            assert config.timezone
+            model = load_error_model(config.nwp_calibration_file)
+            assert model.tqw_errors.shape[1:] == (MAX_LEAD + 1, 3)
+            assert np.isfinite(model.tqw_errors[:, 1:, :]).all(axis=(1, 2)).sum() > 500
+
+    def test_run_and_lead_times(self):
+        """Issue time = first test hour - 1 h; newest 00/12 UTC run that is
+        6 h old by then. Lead of the first hour 7..18 h, for every start hour."""
+        cases = {  # first test hour (UTC) -> (run start, first lead)
+            "2015-06-01 12:00": ("2015-06-01 00:00", 12),
+            "2015-06-01 19:00": ("2015-06-01 12:00", 7),
+            "2015-06-01 18:00": ("2015-06-01 00:00", 18),
+            "2015-06-01 03:00": ("2015-05-31 12:00", 15),
+        }
+        for first, (init, lead0) in cases.items():
+            times = pd.date_range(first, periods=24, freq="h")
+            got_init, leads = run_init_and_leads(times)
+            assert got_init == pd.Timestamp(init)
+            assert leads[0] == lead0 and (np.diff(leads) == 1).all()
+        for h in range(24):
+            times = pd.date_range(pd.Timestamp("2016-01-10") + pd.Timedelta(hours=h), periods=168, freq="h")
+            _, leads = run_init_and_leads(times)
+            assert 7 <= leads[0] <= 18 and leads[-1] <= MAX_LEAD
+
+    def test_fresh_forecast_leads(self):
+        """Fresh forecast: lead times 1..n for any start hour; errors replayed
+        from the 00/12 UTC run closest to the issue time of day (tie: the
+        earlier one)."""
+        cases = {  # first test hour (UTC) -> replay start hour
+            "2015-06-01 01:00": 0, "2015-06-01 06:00": 0, "2015-06-01 07:00": 0,
+            "2015-06-01 08:00": 12, "2015-06-01 13:00": 12, "2015-06-01 19:00": 12,
+            "2015-06-01 20:00": 0, "2015-06-02 00:00": 0,
+        }
+        for first, hour in cases.items():
+            times = pd.date_range(first, periods=48, freq="h")
+            issue, start_hour, leads = fresh_start_and_leads(times)
+            assert issue == times[0] - pd.Timedelta(hours=1)
+            assert start_hour == hour, first
+            assert list(leads) == list(range(1, 49))
+
+    def test_local_time_to_utc(self):
+        t = ["2015-07-01 12:00", "2015-01-15 12:00"]
+        assert list(to_utc(t, "Asia/Seoul").hour) == [3, 3]
+        assert list(to_utc(t, "Europe/London").hour) == [11, 12]
+        assert list(to_utc(t, "America/New_York").hour) == [16, 17]
+        # repeated autumn hour (read as standard time) and missing spring hour
+        assert to_utc(["2015-10-25 01:00"], "Europe/London")[0] == pd.Timestamp("2015-10-25 01:00")
+        assert len(to_utc(["2015-03-29 01:00"], "Europe/London")) == 1
+
+    def test_replays_real_errors_of_one_run(self):
+        """Temperature, humidity and wind get the actual errors of one ECMWF run
+        with the matching start hour and season, minus the average error of
+        all such runs (default), or unchanged (nwp_remove_bias=False). The run
+        is reported in last_degradation_info."""
+        for city in CITY_MODULES:
+            for fresh, remove_bias in [(True, True), (False, False), (True, False)]:
+                proc = _processor(city, fresh, remove_bias)
+                cfg = proc.config
+                df = _synthetic_city_data(cfg, "2016-07-10 05:00", 720 + 48)
+                train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+                proc.prepare_weather_data(train, "degraded", horizon=48, fold_idx=1, split="train")
+                X = proc.prepare_weather_data(test, "degraded", horizon=48, fold_idx=1, split="test")
+                info = proc.last_degradation_info
+                assert info["fresh_forecast"] == fresh and info["remove_bias"] == remove_bias
+                model = load_error_model(cfg.nwp_calibration_file)
+                k = np.flatnonzero(model.run_init == pd.Timestamp(info["replayed_run_utc"]))[0]
+                times = to_utc(test[cfg.date_col], cfg.timezone)
+                if fresh:
+                    start, hour, leads = fresh_start_and_leads(times)
+                    assert list(leads) == list(range(1, 49))
+                else:
+                    start, leads = run_init_and_leads(times)
+                    hour = start.hour
+                    assert 7 <= leads[0] <= 18
+                assert str(start) == info["forecast_start_utc"] and hour == info["start_hour_utc"]
+                assert model.run_init[k].hour == hour
+                d = abs(model.run_init[k].dayofyear - start.dayofyear)
+                assert min(d, 366 - d) <= info["season_window_days"]
+                expected = model.tqw_errors[k, leads, 0]
+                if remove_bias:
+                    cand, _ = model.candidate_runs(hour, start.dayofyear, leads, cfg.nwp_season_window_days)
+                    assert len(cand) == info["n_candidate_runs"]
+                    expected = expected - model.tqw_errors[cand][:, leads, 0].mean(axis=0)
+                tcol = [c for c, t in cfg.weather_degradation_mapping.items() if t == "temperature"][0]
+                np.testing.assert_allclose(X[tcol] - test[tcol], expected, atol=1e-9)
+
+    def test_needs_timestamps(self):
+        proc = _processor("london")
+        df = _synthetic_city_data(proc.config, "2016-01-01", 744)
+        proc.prepare_weather_data(df.iloc[:720], "degraded", horizon=24, fold_idx=0, split="train")
+        with pytest.raises(ValueError):
+            proc.degrade_dataframe(df.iloc[720:][list(proc.config.weather_degradation_mapping)], 24, 0)
+
+    def test_noise_scales_share_random_numbers(self):
+        """Same run and same random numbers in every degraded scenario:
+        temperature errors proportional to the scale, identical rain events
+        and identical visibility-below-cap decisions."""
+        proc = _processor("seoul")
+        cfg = proc.config
+        df = _synthetic_city_data(cfg, "2018-03-01", 720 + 168, rain_every=7)
+        df.loc[df.index % 3 == 0, "Visibility"] = 20.0            # at the Seoul cap
+        train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+        out = {}
+        for scen in cfg.degradation_scales:
+            proc.prepare_weather_data(train, scen, horizon=168, fold_idx=4, split="train")
+            out[scen] = proc.prepare_weather_data(test, scen, horizon=168, fold_idx=4, split="test")
+        e1 = out["degraded"]["Temperature"] - test["Temperature"]
+        wet1 = (out["degraded"][["Rainfall", "Snowfall"]] > 0).any(axis=1)
+        below1 = out["degraded"]["Visibility"] < 20.0 - 1e-9
+        for scen, scale in cfg.degradation_scales.items():
+            np.testing.assert_allclose(out[scen]["Temperature"] - test["Temperature"], scale * e1, atol=1e-9)
+            assert ((out[scen][["Rainfall", "Snowfall"]] > 0).any(axis=1) == wet1).all()
+            at = test["Visibility"] >= 20.0
+            assert ((out[scen]["Visibility"] < 20.0 - 1e-9)[at] == below1[at]).all() or scale == 0
+
+    def test_bounds(self):
+        """Humidity 0..100, wind >= 0, solar 0 at night and <= training cap,
+        visibility <= the city's cap (Seoul 20 km, Washington 16 km) or the
+        training maximum (London)."""
+        for city in CITY_MODULES:
+            proc = _processor(city)
+            cfg = proc.config
+            m = cfg.weather_degradation_mapping
+            col = {t: c for c, t in m.items() if t != "precipitation"}
+            df = _synthetic_city_data(cfg, "2016-11-01", 720 + 168)
+            if city == "seoul":
+                df[col["visibility"]] = np.minimum(df[col["visibility"]], 20.0)
+            if city == "washington":
+                df[col["visibility"]] = np.minimum(df[col["visibility"]], 16.0)
+            train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+            for fold in range(5):
+                proc.prepare_weather_data(train, "degraded_x150", horizon=168, fold_idx=fold, split="train")
+                X = proc.prepare_weather_data(test, "degraded_x150", horizon=168, fold_idx=fold, split="test")
+                assert X[col["humidity"]].between(0, 100).all()
+                assert (X[col["wind_speed"]] >= 0).all()
+                night = test[col["solar_radiation"]] <= 0
+                assert (X.loc[night, col["solar_radiation"]] == 0).all()
+                assert X[col["solar_radiation"]].max() <= proc.degradation_params["solar_cap"] + 1e-9
+                vmax = {"seoul": 20.0, "washington": 16.0}.get(city, proc.degradation_params["visibility_max"])
+                assert X[col["visibility"]].max() <= vmax + 1e-9
+
+    def test_reproduces_measured_error_statistics(self):
+        """Over many test windows the simulated errors match the calibration:
+        precipitation miss rate and false-alarm ratio, visibility falling
+        below the Seoul cap, and the temperature error: average ~0 with the
+        lean removed (default), the measured Seoul lean (about -1 C or more)
+        with nwp_remove_bias=False; spread as in the replayed runs."""
+        for remove_bias in (True, False):
+            proc = _processor("seoul", fresh=True, remove_bias=remove_bias)
+            cfg = proc.config
+            model = load_error_model(cfg.nwp_calibration_file)
+            horizon, n_folds = 24, 300
+            t_err, leads_all, exp_var = [], [], []
+            H = M = F = 0
+            vis_below, vis_at = 0, 0
+            for fold in range(n_folds):
+                start = pd.Timestamp("2018-01-01") + pd.Timedelta(hours=int(29 * fold))
+                df = _synthetic_city_data(cfg, start, 720 + horizon, seed=fold, rain_every=6)
+                df["Visibility"] = 20.0
+                train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+                proc.prepare_weather_data(train, "degraded", horizon=horizon, fold_idx=fold, split="train")
+                X = proc.prepare_weather_data(test, "degraded", horizon=horizon, fold_idx=fold, split="test")
+                info = proc.last_degradation_info
+                leads = np.arange(info["lead_first"], info["lead_last"] + 1)
+                assert info["lead_first"] == 1 and len(leads) == horizon
+                t_err.append((X["Temperature"] - test["Temperature"]).to_numpy())
+                leads_all.append(leads)
+                fs = pd.Timestamp(info["forecast_start_utc"])
+                cand, _ = model.candidate_runs(info["start_hour_utc"], fs.dayofyear, leads, cfg.nwp_season_window_days)
+                exp_var.append(model.tqw_errors[cand][:, leads, 0].var(axis=0).mean())
+                ow = test["Rainfall"] > 0
+                fw = (X[["Rainfall", "Snowfall"]] > 0).any(axis=1)
+                H += int((ow & fw).sum()); M += int((ow & ~fw).sum()); F += int((~ow & fw).sum())
+                vis_below += int((X["Visibility"] < 20.0 - 1e-9).sum()); vis_at += len(X)
+            leads_all = np.concatenate(leads_all)
+            assert M / (H + M) == pytest.approx(model.miss_rate[leads_all].mean(), abs=0.06)
+            assert F / (H + F) == pytest.approx(model.far[leads_all].mean(), abs=0.08)
+            assert vis_below / vis_at == pytest.approx(model.vis_at_cap_p_below, abs=0.06)
+            e = np.concatenate(t_err)
+            if remove_bias:
+                assert abs(e.mean()) < 0.25
+                # spread around the run-pool average, as in the replayed runs
+                assert e.std() == pytest.approx(np.sqrt(np.mean(exp_var)), rel=0.2)
+            else:
+                assert e.mean() < -0.5
+
+    def test_ar1_persistence(self):
+        z = ar1(200000, 0.8, np.random.default_rng(1))
+        assert np.corrcoef(z[:-1], z[1:])[0, 1] == pytest.approx(0.8, abs=0.01)
+        assert z.std() == pytest.approx(1.0, abs=0.01)
 
 
 if __name__ == "__main__":

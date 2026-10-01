@@ -1,0 +1,61 @@
+{
+ "city": "washington",
+ "n_runs_total": 1828,
+ "tqw_reference": "Open-Meteo archive era5_seamless (ERA5-Land T/RH + ERA5), nearest grid cell",
+ "tqw_runs_complete_1_192h": 1817,
+ "tqw_check_24h": {
+  "temperature": {
+   "bias": 0.023,
+   "sd": 1.375
+  },
+  "humidity": {
+   "bias": -3.377,
+   "sd": 9.314
+  },
+  "wind_speed": {
+   "bias": 0.137,
+   "sd": 0.839
+  }
+ },
+ "solar": {
+  "reference": "Open-Meteo archive era5_seamless (ERA5-Land T/RH + ERA5), nearest grid cell",
+  "phi": 0.69,
+  "n_pairs": 66356,
+  "bias_rel_24h": -0.024,
+  "sd_rel_24h": 0.192,
+  "relmae_measured_24h": 0.148
+ },
+ "precipitation": {
+  "reference": "Open-Meteo archive era5_seamless (ERA5-Land T/RH + ERA5), nearest grid cell",
+  "wet_threshold_mm": 0.1,
+  "wet_share_ref": 0.153,
+  "miss_24h": 0.418,
+  "far_24h": 0.29,
+  "miss_168h": 0.665,
+  "far_168h": 0.652,
+  "hit_mean_log_24h": -0.039,
+  "hit_sd_log_24h": 1.32,
+  "fa_amount_median_mm": 0.367,
+  "fa_amount_sd_log": 1.092,
+  "rho_miss": 0.817,
+  "n_wetwet": 19486,
+  "rho_false_alarm": 0.883,
+  "n_drydry": 130927,
+  "hit_phi": 0.452,
+  "n_hithit": 9825
+ },
+ "visibility": {
+  "reference": "NOAA ISD station 72405013743 (nearest report within +/-30 min)",
+  "cap_km": 16.0,
+  "share_obs_at_cap": 0.905,
+  "p_forecast_below_cap_when_obs_at_cap": 0.112,
+  "median_forecast_over_cap_when_below": 0.615,
+  "below_cap_mean_log": 0.473,
+  "below_cap_sd_log": 1.026,
+  "phi": 0.668,
+  "n_pairs": 92460
+ },
+ "created_utc": "2026-10-01T16:52:55+00:00",
+ "forecast_source": "ECMWF IFS HRES 9km (Open-Meteo Single Runs, 00/12 UTC runs; hourly as served, leads >90 h interpolated by Open-Meteo from 3-/6-hourly output)",
+ "run_period": "2024-03-14 00:00:00 .. 2026-09-16 12:00:00"
+}

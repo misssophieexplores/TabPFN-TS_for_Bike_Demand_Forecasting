@@ -41,6 +41,8 @@ def get_config() -> ForecastConfig:
         "visibility_km": "visibility"
     }
     config.rain_col = "rainfall_mm"
+    config.timezone = "Europe/London"   # local time of the date column (daylight saving included)
+    config.nwp_calibration_file = "weather/nwp/calibration/london.npz"
     config.snow_col = "snowfall_cm"
 
     # --- Model parameters ---

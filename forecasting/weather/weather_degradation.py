@@ -4,10 +4,14 @@ Weather Forecast Degradation Module
 Simulate realistic numerical weather prediction (NWP) forecast errors for
 machine learning model evaluation under operational conditions.
 
-Error growth functions are calibrated to published NWP verification statistics.
+This module holds the "literature" error model (config.degradation_model =
+"literature"): error growth functions calibrated to published NWP verification
+statistics, the same for every city. The default model is the per-city
+measured model in nwp_error_model.py ("nwp_measured"); it uses
+prepare_degradation_parameters() and fix_precipitation_type() from here.
 See weather_methodology.md for detailed documentation and validation evidence.
 
-Version: 1.3.0
+Version: 1.4.0
 """
 
 import numpy as np
@@ -354,6 +358,10 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
           precipitation column (rain or snow > 0); only if column_mapping
           has precipitation columns present in training_data. Converts the
           false alarm ratio into a probability per dry hour.
+        - 'visibility_max': largest visibility of the training data; only if
+          column_mapping has a visibility column present in training_data.
+          Upper limit of degraded visibility in the measured NWP error model
+          for cities without a visibility cap (London).
 
     Examples
     --------
@@ -392,6 +400,13 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
     ]
     if precip_cols:
         params['wet_fraction'] = float((training_data[precip_cols] > 0).any(axis=1).mean())
+
+    vis_cols = [
+        c for c, t in (column_mapping or {}).items()
+        if t == 'visibility' and c in training_data.columns
+    ]
+    if vis_cols:
+        params['visibility_max'] = float(training_data[vis_cols].max().max())
 
     return params
 
