@@ -1,0 +1,74 @@
+{
+  "city": "seoul",
+  "scenario": "no_weather",
+  "n_train_samples": 720,
+  "tuning_period": {
+    "first_timestamp": "2017-12-01T00:00:00",
+    "last_timestamp": "2018-03-30T23:00:00"
+  },
+  "n_lags": 168,
+  "xgb_params": {
+    "objective": "reg:squarederror",
+    "random_state": 42,
+    "tree_method": "hist",
+    "n_jobs": -1,
+    "n_estimators": 1200,
+    "learning_rate": 0.00635470258796248,
+    "max_depth": 9,
+    "min_child_weight": 2.608133449863516,
+    "subsample": 0.8880729377598204,
+    "colsample_bytree": 0.633148958183317,
+    "gamma": 8.23051336355569,
+    "reg_lambda": 0.004919067173693768,
+    "reg_alpha": 0.2629757983455018
+  },
+  "tuning": {
+    "search_type": "optuna_tpe_multivariate_with_early_stopping",
+    "trials": 100,
+    "tune_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 99.02356235451171,
+    "n_lags_options": [
+      12,
+      24,
+      48,
+      168
+    ],
+    "early_stopping_rounds": 50,
+    "max_estimators_cap": 3000
+  },
+  "mae_mean": 97.71562326484255,
+  "mae_std": 84.7399660299909,
+  "rmse_mean": 129.69851363867178,
+  "rmse_std": 106.92092873890469,
+  "validation_folds": 90,
+  "max_train_size": 8000,
+  "covariates_used": [],
+  "time_features_used": [
+    "hour",
+    "dayofweek",
+    "month",
+    "is_weekend"
+  ],
+  "provenance": {
+    "git_commit": "unknown",
+    "git_dirty": null,
+    "library_versions": {
+      "python": "3.11.2",
+      "numpy": "1.26.4",
+      "pandas": "2.3.3",
+      "scikit-learn": "1.6.1",
+      "statsmodels": "0.14.6",
+      "pmdarima": "2.1.1",
+      "xgboost": "3.1.3",
+      "optuna": "4.7.0",
+      "prophet": "1.3.0",
+      "neuralprophet": "0.9.0",
+      "torch": "2.9.1",
+      "tabpfn": "6.4.1",
+      "tabpfn-time-series": "1.0.9",
+      "timesfm (.timesfm_venv)": "3.0.2"
+    }
+  }
+}

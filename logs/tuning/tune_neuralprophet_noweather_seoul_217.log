@@ -1,0 +1,59 @@
+Job 217 | neuralprophet_noweather | seoul | DAH2 | CPUs 4 | 2026-10-01 18:13:04
+Commit: unknown
+
+======================================================================
+TUNING NEURALPROPHET FOR: SEOUL
+======================================================================
+
+Loading data for seoul...
+Loaded 8760 observations
+======================================================================
+NEURALPROPHET TUNING | city=seoul | horizon=24h | scenario=no_weather
+======================================================================
+Trials: 20
+Search folds: 6 spread over 90 tune folds: [0, 18, 36, 53, 71, 89]
+n_lags_options: [12, 24, 48, 168]
+Cutoff date: 2018-03-30 23:00:00
+Tune obs: 2880
+Covariates (0): []
+======================================================================
+Importing plotly failed. Interactive plots will not work.
+Importing plotly failed. Interactive plots will not work.
+[   1/20] MAE=79.18 RMSE=97.94 | lr=0.02098 n_lags=48 *
+[   2/20] MAE=68.75 RMSE=86.07 | lr=0.03765 n_lags=24 *
+[   3/20] MAE=71.12 RMSE=90.08 | lr=0.01236 n_lags=12
+[   4/20] MAE=84.21 RMSE=106.89 | lr=0.08450 n_lags=12
+[   5/20] MAE=79.16 RMSE=98.00 | lr=0.01921 n_lags=48
+[   6/20] MAE=153.40 RMSE=197.30 | lr=0.00024 n_lags=168
+[   7/20] MAE=70.27 RMSE=96.11 | lr=0.00224 n_lags=48
+[   8/20] MAE=72.75 RMSE=90.70 | lr=0.06030 n_lags=24
+[   9/20] MAE=60.06 RMSE=80.91 | lr=0.00854 n_lags=24 *
+[  10/20] MAE=122.22 RMSE=153.67 | lr=0.00214 n_lags=168
+[  11/20] MAE=131.79 RMSE=175.32 | lr=0.00048 n_lags=12
+[  12/20] MAE=191.62 RMSE=249.13 | lr=0.00016 n_lags=48
+[  13/20] MAE=67.58 RMSE=84.76 | lr=0.03040 n_lags=24
+[  14/20] MAE=79.13 RMSE=97.98 | lr=0.01880 n_lags=48
+[  15/20] MAE=96.53 RMSE=126.16 | lr=0.00116 n_lags=12
+[  16/20] MAE=135.59 RMSE=167.56 | lr=0.04779 n_lags=168
+[  17/20] MAE=148.46 RMSE=176.43 | lr=0.02163 n_lags=168
+[  18/20] MAE=83.13 RMSE=109.88 | lr=0.00251 n_lags=12
+[  19/20] MAE=210.92 RMSE=273.30 | lr=0.00014 n_lags=48
+[  20/20] MAE=69.14 RMSE=88.66 | lr=0.01120 n_lags=12
+
+======================================================================
+BEST PARAMETERS FROM SEARCH
+======================================================================
+Search MAE=60.06  RMSE=80.91
+{
+  "learning_rate": 0.008542704033115328,
+  "n_lags": 24
+}
+
+Results saved to: results/tuning/neuralprophet_best_params_seoul_no_weather_720_20261001_183244.json
+  --> config.neuralprophet_noweather_params_file = 'results/tuning/neuralprophet_best_params_seoul_no_weather_720_20261001_183244.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================
+[W1001 18:32:45.295956467 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Finished: 2026-10-01 18:32:45

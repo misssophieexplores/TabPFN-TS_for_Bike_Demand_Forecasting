@@ -1,0 +1,38 @@
+Job 203 | sarimax | london | DAH2 | CPUs 4 | 2026-10-01 17:02:34
+Commit: unknown
+
+======================================================================
+TUNING SARIMAX FOR: LONDON
+======================================================================
+Loaded 17544 observations for london
+======================================================================
+SARIMAX TUNING | city=london | horizon=24h | scenario=clean_only | m=24
+======================================================================
+Cutoff date (held-out test start): 2016-05-03 23:00:00
+Candidate folds (auto_arima): [155, 173, 191, 208, 226, 244] | scoring folds: all 90 tune folds
+Covariates (9): ['t1', 'hum', 'wind_speed', 'solar_radiation_wm2', 'rainfall_mm', 'snowfall_cm', 'visibility_km', 'is_holiday', 'season']
+  fold 155: auto_arima -> order=(0, 0, 2) seasonal=(1, 0, 1, 24) intercept=True AIC=10490.2
+  fold 173: auto_arima -> order=(1, 0, 0) seasonal=(1, 0, 1, 24) intercept=True AIC=10620.8
+  fold 191: auto_arima -> order=(0, 0, 3) seasonal=(0, 0, 2, 24) intercept=False AIC=10680.5
+  fold 208: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 1, 24) intercept=True AIC=10479.1
+  fold 226: auto_arima -> order=(3, 0, 3) seasonal=(1, 0, 0, 24) intercept=True AIC=10686.4
+  fold 244: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 1, 24) intercept=False AIC=10559.3
+  candidate ((0, 0, 2), (1, 0, 1, 24), True): ok MAE=375.78
+  candidate ((1, 0, 0), (1, 0, 1, 24), True): ok MAE=391.16
+  candidate ((0, 0, 3), (0, 0, 2, 24), False): ok MAE=408.03
+  candidate ((2, 0, 0), (1, 0, 1, 24), True): ok MAE=384.87
+  candidate ((3, 0, 3), (1, 0, 0, 24), True): ok MAE=390.23
+  candidate ((2, 0, 0), (1, 0, 1, 24), False): ok MAE=379.83
+
+======================================================================
+SELECTED: order=[0, 0, 2] seasonal_order=[1, 0, 1, 24] with_intercept=True (trend=c) | search MAE=375.78
+======================================================================
+
+Results saved to: results/tuning/sarimax_best_params_london_clean_only_720_20261001_194055.json
+  --> config.sarimax_params_file = 'results/tuning/sarimax_best_params_london_clean_only_720_20261001_194055.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================
+[W1001 19:40:56.066192209 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Finished: 2026-10-01 19:40:56
