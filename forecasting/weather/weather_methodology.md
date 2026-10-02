@@ -21,10 +21,10 @@ Default setting (revised 1 Oct 2026): an operator with an up-to-date, locally co
 
 ### Lead times
 
-A demand forecast is issued at the end of the training window (one hour before the first test hour). Local timestamps are converted to UTC with the city's time zone (`config.timezone`).
+A demand forecast is issued at the end of the training window (one hour before the first test hour). The issue time is converted to UTC with the city's time zone (`config.timezone`) and selects the replayed run. Lead times count test hours (rows), not clock time, so a daylight-saving change inside a test window does not shift them.
 
 - **Fresh forecast (default, `nwp_fresh_forecast = True`).** The weather forecast starts at the issue time, so test hour *i* (0-indexed) has lead time *i* + 1 h, the same in every city and at every time of day. This represents a regularly updated forecast (weather services update their short-range forecasts several times a day, some hourly). Errors are replayed from runs whose start hour (00 or 12 UTC) is closest to the issue time of day (at most 6 h apart; on a tie the earlier start).
-- **Newest available run (`nwp_fresh_forecast = False`).** The newest ECMWF run available at the issue time is used: runs start at 00 and 12 UTC and are assumed available 6 h later. Each test hour gets the lead time of that run (valid time − run start). The run is 6–17 h old depending on the time of day, so the first test hour has a lead time of 7–18 h. With the experiments' fixed issue hours this gives a fixed age per city (Seoul 14 h, London 10–11 h, Washington 15–16 h for horizons ≥ 24 h), i.e. differences between cities that come from their time zones.
+- **Newest available run (`nwp_fresh_forecast = False`).** The newest ECMWF run available at the issue time is used: runs start at 00 and 12 UTC and are assumed available 6 h later. Test hour *i* gets lead time run age + *i* + 1 h (run age = issue time − run start). The run is 6–17 h old depending on the time of day, so the first test hour has a lead time of 7–18 h. With the experiments' fixed issue hours this gives a fixed age per city (Seoul 14 h, London 10–11 h, Washington 15–16 h for horizons ≥ 24 h), i.e. differences between cities that come from their time zones.
 
 ### Temperature, relative humidity, wind speed: replayed forecast errors
 
@@ -121,7 +121,7 @@ First version (newest available run, bias kept), same check: the simulated covar
 4. References: London and Washington covariates could not be reproduced exactly from the Open-Meteo archive (median differences 0.3–0.5 °C), so the ERA5 reference is close to, not identical with, their source. Solar radiation uses ERA5 also for Seoul, whose covariates are station data. Station reports end in Aug 2025; Seoul's station gaps leave 844 complete runs for temperature, humidity and wind, and 1,049 runs with station rain (Mar 2024 – Aug 2025). Seoul's seasonal rain values in winter rest on wide windows (up to ±120 days) because the station has few wet winter hours.
 4a. Precipitation errors do not depend on the intensity of the rain (one miss rate for drizzle and downpours); the amount error of hits is lognormal with one spread per lead time and time of year.
 5. Only with `nwp_fresh_forecast = False`: issue time and availability (6 h) are assumptions; the 06/18 UTC runs (90 h only) are not used. Beyond 90 h the hourly errors are those of Open-Meteo's interpolated hourly series.
-6. Daylight-saving hours: a repeated autumn hour is read as standard time and a non-existent spring hour shifted forward (±1 h for two hours a year).
+6. Daylight saving affects only the issue time (run selection), not the lead times: a repeated autumn hour is read as daylight-saving time (the occurrence kept), a non-existent spring hour is shifted forward, so a window starting at such an hour could be issued 1 h off (none does in the experiments: windows start at 00, 06, 12 or 18 h local time).
 
 ---
 

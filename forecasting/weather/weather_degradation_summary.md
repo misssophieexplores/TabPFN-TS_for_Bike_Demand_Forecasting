@@ -151,7 +151,7 @@ Errors the model applies *h* hours ahead with the default setting (fresh forecas
 5. **Calculated, not measured truth** (see step 2): for London and Washington (all variables except visibility) and for Seoul solar radiation, the truth is ERA5, calculated by a weather model of the same centre as the forecasts. Errors against it are probably smaller than against real measurements. Seoul solar radiation additionally does not match the Seoul bike data, which come from the station.
 6. **Station data end in August 2025** (NOAA archive). Seoul has 844 forecasts with complete station data for temperature, humidity and wind and 1,049 with station rain, London and Washington 1,817.
 7. **Fresh, corrected forecast is approximated.** No free archive of past local forecasts exists, so the errors are those of the global 9 km model at short lead times with its bias removed. Local high-resolution forecasts are usually more accurate in the first hours, so these may be slightly pessimistic. The replayed forecast's start time (00 or 12 UTC) can differ from the time of day of the demand forecast by up to 6 hours. Beyond 90 hours ECMWF provides 3- and 6-hourly values; the hours in between are interpolated by Open-Meteo.
-8. **Daylight saving.** For the two clock-change hours per year the time conversion may be off by one hour.
+8. **Daylight saving.** Lead times count test hours, so clock changes do not affect them. Only the choice of the replayed forecast's start time uses the clock; it could be off by one hour if a test window started at a clock-change hour (none does).
 
 ## Sources
 

@@ -23,7 +23,7 @@ for city, mod in [("seoul", "config_seoul"), ("london", "config_london"), ("wash
     cfg = importlib.import_module(mod).get_config()
     df = pd.read_csv(f"data/{cfg.data_filename}")
     df[cfg.date_col] = pd.to_datetime(df[cfg.date_col])
-    df = df.sort_values(cfg.date_col).drop_duplicates(cfg.date_col).reset_index(drop=True)
+    df = df.sort_values(cfg.date_col, kind="stable").drop_duplicates(cfg.date_col).reset_index(drop=True)
     for col, f in cfg.column_scale_factors.items():
         df[col] = df[col] * f
     cfg.weather_covariates = [c for c in cfg.weather_covariates if c in df.columns and c not in (cfg.holiday_col, cfg.season_col)]

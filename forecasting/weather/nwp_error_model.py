@@ -20,6 +20,9 @@ How one test window is degraded
    fresh_forecast=False: the newest ECMWF run available at the issue time is
    used (runs start at 00 and 12 UTC and are available `delay_h` = 6 h
    later); row i gets that run's lead time, 6-17 h + i + 1.
+   Lead times count rows (time steps), not clock time, so a daylight-saving
+   change inside the window does not shift them. The UTC issue time (first
+   hour - 1 h) only selects the replayed run (start hour, day of year).
 2. Temperature, humidity, wind speed: one real ECMWF run of the city is drawn
    (that start hour; start date within +/- `season_days` of the test window's
    day of year, any year) and its actual errors at those lead times are
@@ -81,21 +84,26 @@ TQW_TYPES = ("temperature", "humidity", "wind_speed")
 
 def to_utc(timestamps, tz):
     """Naive local timestamps -> naive UTC. tz None = timestamps already UTC.
-    Daylight saving: an ambiguous (repeated) hour is read as standard time, a
-    non-existent hour is shifted forward."""
+    Daylight saving: an ambiguous (repeated) hour is read as daylight-saving
+    time (the first occurrence, the one load_and_prepare_data keeps), a
+    non-existent hour is shifted forward. Used for the issue time (run
+    selection) only; lead times count rows."""
     t = pd.DatetimeIndex(pd.to_datetime(timestamps))
     if tz is None:
         return t
-    loc = t.tz_localize(tz, ambiguous=np.zeros(len(t), dtype=bool),
+    loc = t.tz_localize(tz, ambiguous=np.ones(len(t), dtype=bool),
                         nonexistent="shift_forward")
     return loc.tz_convert("UTC").tz_localize(None)
 
 
 def run_init_and_leads(times_utc, run_hours=(0, 12), delay_h=6):
     """
-    NWP run used for a forecast of the hours `times_utc`, and the lead time of
-    every hour. Issue time = first hour - 1 h; run = newest start in
-    `run_hours` (UTC) with start + delay_h <= issue time.
+    NWP run used for a forecast of the hours `times_utc` (consecutive rows),
+    and the lead time of every row. Issue time = first hour - 1 h (UTC); run =
+    newest start in `run_hours` (UTC) with start + delay_h <= issue time.
+    Row i (0-based) gets lead time run age + i + 1, run age = issue time - run
+    start: counted in rows, not clock time (a daylight-saving change inside
+    the window does not shift it). Only times_utc[0] is used.
 
     Returns (init: pd.Timestamp, leads: np.ndarray of int hours)
     """
@@ -106,8 +114,8 @@ def run_init_and_leads(times_utc, run_hours=(0, 12), delay_h=6):
     starts = [day + pd.Timedelta(hours=h) for h in sorted(run_hours)]
     starts += [s - pd.Timedelta(days=1) for s in starts]
     init = max(s for s in starts if s <= latest)
-    leads = np.asarray((times_utc - init) / pd.Timedelta(hours=1), dtype=float)
-    leads = np.rint(leads).astype(int)
+    age = int(round((issue - init) / pd.Timedelta(hours=1)))
+    leads = age + np.arange(1, len(times_utc) + 1)
     if leads.min() < 1 or leads.max() > MAX_LEAD:
         raise ValueError(f"lead times {leads.min()}..{leads.max()} h outside 1..{MAX_LEAD} h")
     return init, leads
@@ -116,15 +124,17 @@ def run_init_and_leads(times_utc, run_hours=(0, 12), delay_h=6):
 def fresh_start_and_leads(times_utc, run_hours=(0, 12)):
     """
     Fresh forecast: the weather forecast starts at the issue time (first hour
-    - 1 h), so the hours get lead times 1, 2, ..., n. The errors are replayed
-    from runs whose start hour in `run_hours` (UTC) is closest to the issue
-    time of day; on a tie the earlier start (before the issue time) is used.
+    - 1 h), so row i (0-based) gets lead time i + 1: counted in rows, not
+    clock time (a daylight-saving change inside the window does not shift
+    it). Only times_utc[0] is used: the errors are replayed from runs whose
+    start hour in `run_hours` (UTC) is closest to the issue time of day; on a
+    tie the earlier start (before the issue time) is used.
 
     Returns (issue: pd.Timestamp, start_hour: int, leads: np.ndarray of int hours)
     """
     times_utc = pd.DatetimeIndex(times_utc)
     issue = times_utc[0] - pd.Timedelta(hours=1)
-    leads = np.rint(np.asarray((times_utc - issue) / pd.Timedelta(hours=1), dtype=float)).astype(int)
+    leads = np.arange(1, len(times_utc) + 1)
     if leads.min() < 1 or leads.max() > MAX_LEAD:
         raise ValueError(f"lead times {leads.min()}..{leads.max()} h outside 1..{MAX_LEAD} h")
     t = issue.hour + issue.minute / 60.0

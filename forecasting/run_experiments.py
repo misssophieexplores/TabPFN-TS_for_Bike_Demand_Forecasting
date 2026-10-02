@@ -690,7 +690,10 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
 
     # Parse datetime and sort
     df[config.date_col] = pd.to_datetime(df[config.date_col])
-    df = df.sort_values(config.date_col).reset_index(drop=True)
+    # Stable sort: keep="first" below then keeps the file's first occurrence
+    # of a repeated autumn hour (daylight-saving time, as to_utc reads it);
+    # the default quicksort does not guarantee which one survives
+    df = df.sort_values(config.date_col, kind="stable").reset_index(drop=True)
 
     # Drop duplicate timestamps (e.g. DST clock-back hours)
     n_dupes = df[config.date_col].duplicated().sum()

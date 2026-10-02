@@ -663,9 +663,66 @@ class TestMeasuredNWPModel:
         assert list(to_utc(t, "Asia/Seoul").hour) == [3, 3]
         assert list(to_utc(t, "Europe/London").hour) == [11, 12]
         assert list(to_utc(t, "America/New_York").hour) == [16, 17]
-        # repeated autumn hour (read as standard time) and missing spring hour
-        assert to_utc(["2015-10-25 01:00"], "Europe/London")[0] == pd.Timestamp("2015-10-25 01:00")
+        # repeated autumn hour (read as daylight-saving time = the first
+        # occurrence, kept by load_and_prepare_data) and missing spring hour
+        assert to_utc(["2015-10-25 01:00"], "Europe/London")[0] == pd.Timestamp("2015-10-25 00:00")
+        assert to_utc(["2012-11-04 01:00"], "America/New_York")[0] == pd.Timestamp("2012-11-04 05:00")
         assert len(to_utc(["2015-03-29 01:00"], "Europe/London")) == 1
+
+    # Test windows across a clock change: naive local hours as in the data
+    # after load_and_prepare_data (repeated autumn hour once, non-existent
+    # spring hour present). (city, time zone, first test hour, change)
+    DST_WINDOWS = [
+        ("london", "Europe/London", "2016-03-26 22:00", "spring"),          # 27 Mar 2016 01:00
+        ("london", "Europe/London", "2016-10-30 00:00", "autumn"),          # v7 fold
+        ("washington", "America/New_York", "2012-03-10 22:00", "spring"),   # 11 Mar 2012 02:00
+        ("washington", "America/New_York", "2012-11-04 00:00", "autumn"),   # v7 fold
+    ]
+
+    def test_leads_count_rows_across_clock_change(self):
+        """Lead time of row i = i + 1 (fresh) or run age + i + 1 (newest run),
+        also when the window spans a clock change (in UTC: a 2-h step in
+        autumn, a repeated hour in spring). UTC only selects the run: issue
+        time = UTC of the first hour - 1 h."""
+        for _, tz, first, change in self.DST_WINDOWS:
+            for n in (6, 24, 48, 168):
+                utc = to_utc(pd.date_range(first, periods=n, freq="h"), tz)
+                step = np.diff(utc) / pd.Timedelta(hours=1)
+                assert (step == (2 if change == "autumn" else 0)).sum() == 1
+                assert (step == 1).sum() == n - 2
+                issue, _, leads = fresh_start_and_leads(utc)
+                assert issue == utc[0] - pd.Timedelta(hours=1)
+                assert list(leads) == list(range(1, n + 1)), (tz, first, n)
+                init, leads = run_init_and_leads(utc)
+                age = int((issue - init) / pd.Timedelta(hours=1))
+                assert init.hour in (0, 12) and 6 <= age <= 17
+                assert list(leads) == list(range(age + 1, age + n + 1)), (tz, first, n)
+
+    def test_degrade_across_clock_change(self):
+        """End to end (h = 24, fresh and newest run): the replayed temperature
+        errors are those of lead times 1..24, or run age + 1..24, also when
+        the window spans a clock change."""
+        for city, tz, first, _ in self.DST_WINDOWS:
+            for fresh in (True, False):
+                proc = _processor(city, fresh)
+                cfg = proc.config
+                df = _synthetic_city_data(cfg, pd.Timestamp(first) - pd.Timedelta(hours=720), 744)
+                train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+                proc.prepare_weather_data(train, "degraded", horizon=24, fold_idx=0, split="train")
+                X = proc.prepare_weather_data(test, "degraded", horizon=24, fold_idx=0, split="test")
+                info = proc.last_degradation_info
+                start = pd.Timestamp(info["forecast_start_utc"])
+                issue = to_utc(test[cfg.date_col].iloc[:1], tz)[0] - pd.Timedelta(hours=1)
+                age = 0 if fresh else int((issue - start) / pd.Timedelta(hours=1))
+                leads = age + np.arange(1, 25)
+                assert (info["lead_first"], info["lead_last"]) == (leads[0], leads[-1])
+                model = load_error_model(cfg.nwp_calibration_file)
+                k = np.flatnonzero(model.run_init == pd.Timestamp(info["replayed_run_utc"]))[0]
+                cand, _ = model.candidate_runs(info["start_hour_utc"], start.dayofyear, leads,
+                                               cfg.nwp_season_window_days)
+                expected = model.tqw_errors[k, leads, 0] - model.tqw_errors[cand][:, leads, 0].mean(axis=0)
+                tcol = [c for c, t in cfg.weather_degradation_mapping.items() if t == "temperature"][0]
+                np.testing.assert_allclose(X[tcol] - test[tcol], expected, atol=1e-9)
 
     def test_replays_real_errors_of_one_run(self):
         """Temperature, humidity and wind get the actual errors of one ECMWF run
