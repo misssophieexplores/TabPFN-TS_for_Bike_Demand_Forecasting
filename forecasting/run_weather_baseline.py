@@ -129,6 +129,7 @@ def main(config=None, no_confirm=False):
     except KeyboardInterrupt:
         print("\n\nInterrupted - Progress saved to checkpoint")
         print("Restart with same experiment name to resume")
+        raise
     except Exception as e:
         import traceback
         error_log_path = Path(config.output_dir) / f"errors_{config.results_version}.log"

@@ -92,7 +92,7 @@ def main():
     # Comparative metrics — once, pooled across all cities
     # ------------------------------------------------------------------
     from run_experiments import compute_and_log_comparative_metrics
-    if any(s == "OK" for s in results.values()):
+    if results and all(s == "OK" for s in results.values()):
         print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Computing comparative metrics (pooled across cities)")
         try:
             comp = compute_and_log_comparative_metrics(first_config, log_wandb=False)

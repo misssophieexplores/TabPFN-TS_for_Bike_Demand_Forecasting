@@ -80,8 +80,8 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 7. **Predict**: `model.predict(n_steps, X_test)` generates forecasts, with `n_steps = len(test_df)`: the horizon, or fewer hours for a partial last fold. Wall-clock time of `predict()` is recorded as `predict_time_s`; `runtime_s = fit_time_s + predict_time_s` (see Runtime Measurement)
 8. **Evaluate**: `MetricsCalculator.calculate_all(y_test, y_pred, y_train, test_mask, train_mask)` computes metrics on observed hours only; imputed hours (`functioning_day_col == 'No'`) are excluded from scoring (masks from `MetricsCalculator.observed_mask()`). Imputed hours stay in the model inputs (training data)
 9. **Log**: W&B logs aggregated metrics and a per-fold table
-10. **Save**: after each model-horizon-scenario run, the hourly forecasts are appended to `forecasts_{dataset_name}_{version}.csv`, the fold-level rows to `detailed_results_master_{version}.csv` and the aggregated row to `results_master_{version}.csv` (header must match, otherwise `RuntimeError`); only then is the checkpoint updated
-11. **Compare** (once, after all cities): `compute_and_log_comparative_metrics()` computes win rate and skill score vs `Seasonal_Naive`, pooled across cities, one comparison per (model, scenario)
+10. **Save**: after each successfully completed model-horizon-scenario run, the hourly forecasts are appended to `forecasts_{dataset_name}_{version}.csv`, the fold-level rows to `detailed_results_master_{version}.csv` and the aggregated row to `results_master_{version}.csv` (header must match, otherwise `RuntimeError`); only then is the checkpoint updated. If any fold fails, that whole model-horizon-scenario run is aborted and none of its partial rows are saved or checkpointed
+11. **Compare** (once, after all selected cities completed successfully): `compute_and_log_comparative_metrics()` computes win rate and skill score vs `Seasonal_Naive`, pooled across cities, one comparison per (model, scenario)
 
 **Weather Data Flow:**
 - **all_weather**: Use all weather columns from `config.weather_covariates` as-is (in `config.weather_scenarios`, but not run by `run_weather_baseline.py`)
@@ -473,7 +473,7 @@ Runs all datasets sequentially without manual intervention.
 - Imports each city config via `get_config()` and passes it to `run_weather_baseline.main()`
 - Bypasses the interactive confirmation prompt (`no_confirm=True`)
 - Catches per-city failures, writes full traceback to `errors_{version}.log` (path taken from the first selected city's config), and continues to the next city
-- After all cities: if at least one city succeeded, computes comparative metrics once, pooled across cities (`compute_and_log_comparative_metrics(first_config, log_wandb=False)`), and prints `model`, `weather_scenario`, `n_tasks`, `win_rate`, `skill_score`
+- After all cities: computes comparative metrics only if all selected cities succeeded, pooled across cities (`compute_and_log_comparative_metrics(first_config, log_wandb=False)`), and prints `model`, `weather_scenario`, `n_tasks`, `win_rate`, `skill_score`
 - Prints timestamped `STARTING`, `[OK]`, and `[FAILED]` lines to stdout; prints a pass/fail summary and total wall time at the end
 - Exits with code 1 if any city failed
 - Accepts `--cities` flag to run a subset (e.g. `python forecasting/main.py --cities seoul london`); default order: seoul, washington, london
@@ -489,10 +489,10 @@ Runs all datasets sequentially without manual intervention.
 - `save_results()` merges with the existing aggregated CSV and drops duplicates on (`dataset`, `model`, `horizon`, `weather_scenario`, `run_name`), keeping the latest; the detailed CSV is not touched (already written after every experiment)
 - Automatic skip logic: models with `use_covariates=False` skip every degraded scenario (`config.is_degraded`)
 - Coverage check: `run_single_experiment()` raises `RuntimeError` unless the splits number `expected_n_folds(horizon)` and their test windows add up to exactly `get_eval_hours()` hours (catches missing hourly timestamps), so no evaluation hours are dropped for any horizon
-- Fold-level errors logged to `errors_{version}.log` with full traceback and to W&B (`error`); `[ERROR]` line always printed to stdout regardless of `verbose`; the fold is skipped and the run continues. If any fold failed, a `[WARN]` line with the count is always printed and `n_failed_folds` > 0 in the aggregated row: that model/horizon/scenario is then averaged over fewer folds than the others and is not comparable
+- Fold-level errors are logged to `errors_{version}.log` with full traceback and to W&B (`error`); `[ERROR]` is always printed regardless of `verbose`. A fold error aborts that entire model-horizon-scenario run immediately. `run_all_experiments()` catches the exception, records the failed experiment, leaves it unsaved and uncheckpointed, and continues with the remaining combinations. After all combinations have been attempted, it raises `RuntimeError` if any experiment failed, so `main.py` marks that city failed while preserving all successful completed work
 - Runtime: `fit()` and `predict()` are timed per fold with `time.perf_counter()` (`fit_time_s`, `predict_time_s`, `runtime_s`) and aggregated per model, horizon and scenario (see Results Schema)
 
-- `run_all_experiments(models, df, scenarios=None)`: `scenarios=None` uses `config.weather_scenarios`
+- `run_all_experiments(models, df, scenarios=None)`: `scenarios=None` uses `config.weather_scenarios`; failed model-horizon-scenario combinations are collected in `failed_experiments` and reported only after all remaining combinations have been attempted
 - The module sets `warnings.filterwarnings('ignore')` globally, except for the SARIMAX "did not converge" warning (shown once per run)
 
 **`main(config=None)`**: run directly with `python forecasting/run_experiments.py --city {seoul,washington,london}` (`--city` is required when no config is passed). Builds the models with `build_models(config)` (same as `run_weather_baseline.py`; ARIMA/SARIMAX `trend` from `with_intercept` via `trend_from_intercept()`, ARIMA with `seasonal_order=(0, 0, 0, 0)`) but runs all of `config.weather_scenarios` (including `all_weather`) under the experiment name `baseline_models_{version}`.
@@ -675,8 +675,8 @@ Rationale:
 - A checkpoint or results CSV written by older code (no provenance fields) is rejected, because resuming from it would silently skip experiments or append rows under a different header. Before a full re-run, move the old `results_master_{version}.csv`, `detailed_results_master_{version}.csv`, `forecasts_*_{version}.csv` and `checkpoint_*.json` away, or use a new `results_version`.
 
 ### Checkpoint Recovery
-Saves completed `(dataset_name, model, horizon, scenario)` tuples to JSON after each experiment, after its aggregated and fold-level rows are on disk (previously fold-level rows were written only at the end of a city's run, so an interrupted run lost them and the resume skipped the experiments).
-On restart, skips already-completed experiments.
+Saves completed `(dataset_name, model, horizon, scenario)` tuples to JSON after each successfully completed experiment, after its aggregated and fold-level rows are on disk (previously fold-level rows were written only at the end of a city's run, so an interrupted run lost them and the resume skipped the experiments). Failed model-horizon-scenario combinations are never checkpointed.
+On restart, skips already-completed experiments; failed/uncheckpointed combinations are retried.
 Prevents data loss from crashes during long runs — including mid-run failures when iterating over multiple datasets.
 File format: `checkpoint_{experiment_name}.json` in `results/` directory.
 
@@ -736,7 +736,7 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 ## Results Schema
 
 **Columns in results_master_{version}.csv:**
-- `dataset`, `run_name`, `timestamp`, `model`, `horizon`, `n_folds` (successful folds), `n_failed_folds` (expected − successful; must be 0 for paper results)
+- `dataset`, `run_name`, `timestamp`, `model`, `horizon`, `n_folds` (successful folds), `n_failed_folds` (expected − successful; saved complete experiments have 0; retained for schema compatibility and must be 0 for paper results)
 - `total_test_hours`: test hours summed over folds (= evaluation period, 5,880); `partial_folds`: number of folds with fewer than `horizon` test hours (1 for h=48, else 0)
 - `MAE_mean`/`MAE_std`, `RMSE_mean`/`RMSE_std`, `MASE_mean`/`MASE_std`, `sMAPE_mean`/`sMAPE_std`
 - `total_test_imputed`, `total_train_imputed`, `folds_with_imputed_test` (counts unchanged)
@@ -761,7 +761,7 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 - `y_true`, `y_pred`: actual value and point forecast, exactly as scored
 - `observed`: `False` for imputed hours (`functioning_day_col == 'No'`), same mask as in scoring; imputed hours are kept, not dropped
 - `version`, `git_commit`
-- Written for successful folds only (a failed fold has no rows in either file). Every evaluation hour appears once per (model, horizon, scenario): 5,880 rows each, about 1.8 million rows over the three cities (roughly 250–300 MB)
+- Written only for successfully completed model-horizon-scenario runs. If any fold fails, no forecast or detailed-result rows from that incomplete combination are written. Every evaluation hour appears once per successful (model, horizon, scenario): 5,880 rows each, about 1.8 million rows over the three cities (roughly 250–300 MB)
 - Output only: nothing in the pipeline reads it, and the other results files are unchanged by it. The MAE of a fold recomputed from its `observed` rows equals the fold's `MAE`
 
 
@@ -788,7 +788,4 @@ Dataset columns mapped to degradation variable types via `config.weather_degrada
 18. Measured model, rain: Seoul is measured against the station (hourly amounts in wet hours; dry hours inferred from routine reports without an amount, hours with precipitation in the present-weather group but no amount left out); its seasonal values in winter rest on wide windows (up to ±120 days) because the station has few wet winter hours. The miss rate does not depend on rain intensity. By default the raw forecast's rain frequency is kept: Seoul's degraded test data get false rain in about 15 % of dry hours (London, Washington 4–5 %); option `nwp_rain_frequency_unbiased` removes this
 
 
-<!-- TODO TimesFM; adjust documentation:
-* TimesFM is being run
-* TimesFM clips at zero without covariates but might go below with! -->
 

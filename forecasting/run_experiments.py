@@ -194,6 +194,7 @@ class ForecastingExperiment:
         self.cv = TimeSeriesCV(config)
         self.metrics_calc = MetricsCalculator()
         self.results = []
+        self.failed_experiments = []
 
         
         # Setup output directory
@@ -427,7 +428,9 @@ class ForecastingExperiment:
                     f.write(f"{'='*80}\n")
                     traceback.print_exc(file=f)
                 wandb.log({"error": error_msg})
-                continue
+                # Abort only this model/horizon/scenario. run_all_experiments()
+                # catches the exception, leaves it uncheckpointed, and continues.
+                raise
 
         if len(fold_results) == 0:
             print(f" [FAILED] All folds failed")
@@ -591,15 +594,28 @@ class ForecastingExperiment:
                     continue
                 
                 for horizon in self.config.horizons:
-                    result = self.run_single_experiment(
-                        model, df, horizon, scenario, verbose
-                    )
+                    try:
+                        result = self.run_single_experiment(
+                            model, df, horizon, scenario, verbose
+                        )
+                    except Exception as e:
+                        # Fail only this model/horizon/scenario. Successful
+                        # experiments are already saved/checkpointed; this one is
+                        # deliberately left uncheckpointed so a rerun retries it.
+                        self.failed_experiments.append(
+                            (model.name, horizon, scenario, str(e))
+                        )
+                        print(
+                            f"[FAILED EXPERIMENT] {model.name} | h={horizon} | "
+                            f"{scenario}: {e}"
+                        )
+                        result = None
 
-                    if result is not None:  
+                    if result is not None:
                         aggregated, fold_results = result
                         all_fold_results.extend(fold_results)
                     completed += 1
-                    
+
                     if verbose:
                         print(f"Progress: {completed}/{total}\n")
         
@@ -617,6 +633,17 @@ class ForecastingExperiment:
 
         # Save detailed fold results
         self.detailed_results = all_fold_results
+
+        if self.failed_experiments:
+            failed = ", ".join(
+                f"{model}/h{horizon}/{scenario}"
+                for model, horizon, scenario, _ in self.failed_experiments
+            )
+            raise RuntimeError(
+                f"{len(self.failed_experiments)} experiment(s) failed: {failed}. "
+                "Successful experiments were saved and checkpointed; rerun main.py "
+                "to retry the failed combinations."
+            )
 
         return results_df
     
@@ -804,6 +831,7 @@ def main(config: Optional[ForecastConfig] = None):
         
     except KeyboardInterrupt:
         print("\n\nInterrupted - Progress saved to checkpoint")
+        raise
     except Exception as e:
         import traceback
         error_log_path = Path(config.output_dir) / f"errors_{config.results_version}.log"
