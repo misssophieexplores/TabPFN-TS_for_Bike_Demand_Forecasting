@@ -49,7 +49,7 @@ def get_config() -> ForecastConfig:
     config.arima_params_file = "results/tuning/arima_best_params_london_720_20261001_170305.json"
     config.sarimax_params_file = "results/tuning/sarimax_best_params_london_clean_only_720_20261001_194055.json"
     config.xgb_params_file = "results/tuning/xgboost_best_params_london_clean_only_720_20261001_225940.json"
-    config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_london_clean_only_720_20261001_225940.json"
+    config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_london_no_weather_720_20261002_014031.json"
     config.prophet_params_file = "results/tuning/prophet_best_params_london_720_20261001_170855.json"
     config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_london_clean_only_720_20261001_175145.json"
     config.neuralprophet_noweather_params_file ="results/tuning/neuralprophet_best_params_london_no_weather_720_20261001_185249.json"
