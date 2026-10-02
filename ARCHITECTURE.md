@@ -641,7 +641,7 @@ Rationale:
 - Same folds and same criterion (24-h MAE on all 90 tune folds) as XGBoost and Prophet.
 
 ### No Post-Processing of Forecasts
-Forecasts are scored as each model produces them: no clipping of negative values or other post-processing, in tuning and in the experiments. TimesFM returns non-negative forecasts because of its own default inference setting (`infer_is_positive=True`), which is part of the model as published.
+Forecasts are scored as each model produces them: no clipping of negative values or other post-processing, in tuning and in the experiments. TimesFM_NoWeather returns non-negative forecasts because of TimesFM's own inference setting (`infer_is_positive=True`: forecasts are floored at 0 when the whole context is non-negative), which is part of the model as published. TimesFM with covariates can return negative forecasts: TimesFM forecasts the residual of the in-context regression, which has negative values, so the floor does not apply.
 <!-- TODO: check with code, please! Might be not correct -->
 
 ### Imputed Data Tracking and Exclusion from Scoring
