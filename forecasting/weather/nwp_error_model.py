@@ -52,10 +52,10 @@ How one test window is degraded
 
 remove_bias does not change event rates: precipitation misses and false
 alarms, false-alarm amounts, and visibility falling below its cap stay as
-measured. rain_frequency_unbiased=True (option, default False): false alarms
-are set so that the forecast is wet as often as the observations (frequency
-bias 1; the false-alarm ratio then equals the miss rate), i.e. the rain
-"lean" of the raw forecast is removed as well. Against the Seoul station the
+measured, except: rain_frequency_unbiased=True (config default since 2 Oct
+2026): false alarms are set so that the forecast is wet as often as the
+observations (frequency bias 1; the false-alarm ratio then equals the miss
+rate), i.e. the rain-frequency bias of the raw forecast is removed as well. Against the Seoul station the
 raw forecast is wet about twice as often as observed; against ERA5 (London,
 Washington) about 0.8-0.9 times.
 

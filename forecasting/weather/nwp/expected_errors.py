@@ -14,6 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from weather.nwp_error_model import NWPErrorModel
 
 BASE = str(Path(__file__).resolve().parent / "calibration") + "/"
+from config import ForecastConfig  # noqa: E402
+UNBIASED = ForecastConfig().nwp_rain_frequency_unbiased
 out = {}
 for city in ["seoul", "london", "washington"]:
     m = NWPErrorModel(BASE + f"{city}.npz")
@@ -36,12 +38,16 @@ for city in ["seoul", "london", "washington"]:
             r[f"{name}_n"] = int(ok.sum())
         r["GHI_relmae_new"] = float(np.sqrt(2 / np.pi) * m.solar_sd[L])
         r["GHI_bias_removed"] = float(m.solar_bias[L])
-        r["miss"] = float(m.miss_rate[L]); r["far"] = float(m.far[L])
+        # applied false-alarm ratio: = miss rate with nwp_rain_frequency_unbiased
+        # (config default); the measured ratio is kept as far_measured
+        r["miss"] = float(m.miss_rate[L]); r["far_measured"] = float(m.far[L])
+        r["far"] = r["miss"] if UNBIASED else r["far_measured"]
         r["pcv"] = float(np.sqrt(np.exp(m.hit_sd_log[L] ** 2) - 1))
         if m.season_doy is not None:      # time of year: 15 Jan and 15 Jul
             for name, k in (("jan", 0), ("jul", 6)):
                 r[f"miss_{name}"] = float(m.miss_rate_seasonal[k, L])
-                r[f"far_{name}"] = float(m.far_seasonal[k, L])
+                r[f"far_{name}"] = (r[f"miss_{name}"] if UNBIASED
+                                    else float(m.far_seasonal[k, L]))
                 r[f"pcv_{name}"] = float(np.sqrt(np.exp(m.hit_sd_log_seasonal[k, L] ** 2) - 1))
         r["vcv"] = float(np.sqrt(np.exp(m.vis_below_sd_log ** 2) - 1))
         r["vbelow"] = float(m.vis_at_cap_p_below) if m.vis_cap is not None else None

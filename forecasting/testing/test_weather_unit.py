@@ -523,7 +523,8 @@ class TestMeasuredNWPModel:
         cfg = ForecastConfig()
         assert cfg.degradation_model == "nwp_measured"
         assert cfg.nwp_fresh_forecast and cfg.nwp_remove_bias and cfg.nwp_seasonal_rain
-        assert cfg.degradation_label() == "nwp_measured(fresh,no_bias,seasonal_rain)"
+        assert cfg.nwp_rain_frequency_unbiased
+        assert cfg.degradation_label() == "nwp_measured(fresh,no_bias,seasonal_rain,rain_freq_unbiased)"
         for city in CITY_MODULES:
             config = _city_config(city)
             assert config.timezone
@@ -576,11 +577,11 @@ class TestMeasuredNWPModel:
         assert dc.rain_params(196)[0][24] > dc.rain_params(15)[0][24]
 
     def test_rain_frequency_option(self):
-        """Option nwp_rain_frequency_unbiased: false alarms equal misses, so
-        the degraded data are wet about as often as the clean data (Seoul,
-        whose raw forecast is wet about twice as often as the station);
-        default off (measured false-alarm ratio)."""
-        assert not ForecastConfig().nwp_rain_frequency_unbiased
+        """nwp_rain_frequency_unbiased (default on): false alarms equal misses,
+        so the degraded data are wet about as often as the clean data;
+        off: the measured false-alarm ratio (Seoul's raw forecast is wet
+        about twice as often as the station)."""
+        assert ForecastConfig().nwp_rain_frequency_unbiased
         ratio = {}
         for unbiased in (False, True):
             proc = _processor("seoul")
@@ -727,6 +728,7 @@ class TestMeasuredNWPModel:
         for remove_bias in (True, False):
             proc = _processor("seoul", fresh=True, remove_bias=remove_bias)
             cfg = proc.config
+            cfg.nwp_rain_frequency_unbiased = False      # measured false-alarm ratio
             model = load_error_model(cfg.nwp_calibration_file)
             horizon, n_folds = 24, 300
             t_err, leads_all, exp_var, exp_miss, exp_far = [], [], [], [], []

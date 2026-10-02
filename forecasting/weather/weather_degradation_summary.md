@@ -1,6 +1,6 @@
 # Weather Degradation Model: Summary
 
-*Status 2 Oct 2026 (fresh forecast, bias removed, rain by time of year, Seoul rain against the station, no sensitivity runs). Code: `forecasting/weather/nwp_error_model.py` (settings `degradation_model = "nwp_measured"`, `nwp_fresh_forecast = True`, `nwp_remove_bias = True`, `nwp_seasonal_rain = True`, the defaults). Full technical description: `forecasting/weather/weather_methodology.md`.*
+*Status 2 Oct 2026 (fresh forecast, bias removed, rain by time of year, Seoul rain against the station, rain-frequency bias removed, no sensitivity runs). Code: `forecasting/weather/nwp_error_model.py` (settings `degradation_model = "nwp_measured"`, `nwp_fresh_forecast = True`, `nwp_remove_bias = True`, `nwp_seasonal_rain = True`, `nwp_rain_frequency_unbiased = True`, the defaults). Full technical description: `forecasting/weather/weather_methodology.md`.*
 
 ## Purpose
 
@@ -33,13 +33,13 @@ ERA5 is calculated, not measured: ECMWF re-runs its weather model over past date
 
 - *Fresh forecast.* The weather forecast starts when the demand forecast is made, so hour *h* of the demand forecast gets the error of an *h*-hour weather forecast, in every city and at every time of day. (A first version used the newest global forecast available at that moment, which is 6–17 hours old. That made the forecast age depend on each city's time zone, Seoul 14 h, London 10–11 h, Washington 15–16 h, and gave some hours of the day always older forecasts. It is still available as a setting.)
 - *Temperature, humidity, wind.* We pick one real forecast of the same city, started at the 00 or 12 UTC run time closest to the time of day of the demand forecast, at the same time of year (±30 days, any year), and add its actual errors hour by hour to the measured values. This carries over the real error sizes, how long errors last, and how the three variables go wrong together.
-- *Bias removed.* A forecast corrected to local measurements does not have the average error of the raw forecast. So the average error of all comparable forecasts (same start time, same season) is subtracted, e.g. Seoul's forecast being on average 1.5 °C colder than the city-centre station. What remains are the hour-to-hour errors. The same applies to the average error of solar radiation, rain amounts and visibility; how often rain is missed or falsely forecast stays as measured (an option removes the rain-frequency bias too, see "Seoul in detail").
+- *Bias removed.* A forecast corrected to local measurements does not have the average error of the raw forecast. So the average error of all comparable forecasts (same start time, same season) is subtracted, e.g. Seoul's forecast being on average 1.5 °C colder than the city-centre station. What remains are the hour-to-hour errors. The same applies to the average error of solar radiation, rain amounts and visibility, and to how often it rains: the forecast is set to be wet as often as observed (false rain as often as missed rain). How often rain is missed stays as measured.
 - *Solar radiation, rain, visibility.* These errors depend on the weather itself (a rain error from a rainy day cannot be added to a dry day), so they are simulated with the measured values: error size per lead time; for rain, how often wet hours are missed, how often dry hours get false rain, and how wrong the amounts are, each for the time of year (monthly values; e.g. Washington's forecast misses 50 % of rainy hours in July and 30 % in January); for visibility, the error size and, where the data are capped, how often the forecast drops below the cap. These errors also persist from hour to hour as measured.
 - *Physical limits.* No sun at night; solar radiation at most the 99.5th percentile of the training period; humidity 0–100 %; no negative wind; visibility at most the city's cap (Seoul 20 km, Washington 16 km) or, in London, the training maximum. Rain becomes snow below 2 °C and snow becomes rain above.
 - *No sensitivity runs.* Runs with all error sizes ×0.5 and ×1.5 were planned when the error sizes came from the literature. With measured errors they are no longer run by default (they would triple the degraded runs); they can be switched back on in the configuration.
 
 **5. Checks.**
-- The model was run on the real bike data with exactly the folds of the experiments (three random seeds). The errors it produces match the calibration: average temperature error between −0.06 and +0.04 °C in every city (bias removed), typical errors within 0.17 °C (temperature), 0.8 %-points (humidity) and 0.09 m/s (wind); rain miss rate within 4 %-points and false-alarm rate within 3 %-points of the values for the time of year. It costs about 8 ms per test period.
+- The model was run on the real bike data with exactly the folds of the experiments (three random seeds). The errors it produces match the calibration: average temperature error between −0.06 and +0.04 °C in every city (bias removed), typical errors within 0.17 °C (temperature), 0.8 %-points (humidity) and 0.09 m/s (wind); rain miss rate within 4 %-points of the values for the time of year; the degraded data are wet 0.99–1.07 times as often as the clean data in every city. It costs about 8 ms per test period.
 - Seoul rain: the Seoul bike-data rain is the station's rain (2017–18: the station's 6- and 12-hour totals equal the bike-data sums in 99 % of cases). The station's hourly rain reports for 2024–25 add up to its own daily totals (no rainy hours missing).
 - Seoul: the Seoul bike data are identical to the station used as truth (median difference 0.0 °C).
 - London and Washington: their weather data are close to, but not identical with, the ERA5 data used as truth (median difference 0.3–0.5 °C); the original download settings are unknown.
@@ -62,8 +62,8 @@ Errors the model applies *h* hours ahead with the default setting (fresh forecas
 | Solar radiation (rel. err.) | 15.0% | 20.5% | 22.3% | 33.2% |
 | Precip. (miss rate) | 16.5% | 22.8% | 30.7% | 58.5% |
 | Precip. (miss rate, January / July) | 16% / 13% | 22% / 20% | 37% / 22% | 65% / 49% |
-| Precip. (false alarm) | 63.4% | 64.9% | 67.5% | 83.4% |
-| Precip. (false alarm, January / July) | 54% / 65% | 52% / 68% | 56% / 70% | 81% / 84% |
+| Precip. (false alarm) | 16.5% | 22.8% | 30.7% | 58.5% |
+| Precip. (false alarm, January / July) | 16% / 13% | 22% / 20% | 37% / 22% | 65% / 49% |
 | Precip. (rel. var.) | 312.0% | 380.6% | 533.4% | 717.0% |
 | Visibility (rel. var.) | 126.5% | 126.5% | 126.5% | 126.5% |
 | Visibility (at cap: forecast below cap) | 30.2% | 30.2% | 30.2% | 30.2% |
@@ -81,8 +81,8 @@ Errors the model applies *h* hours ahead with the default setting (fresh forecas
 | Solar radiation (rel. err.) | 16.7% | 19.1% | 20.6% | 30.7% |
 | Precip. (miss rate) | 36.1% | 39.2% | 43.9% | 71.1% |
 | Precip. (miss rate, January / July) | 26% / 46% | 31% / 50% | 36% / 55% | 66% / 80% |
-| Precip. (false alarm) | 27.7% | 30.2% | 35.6% | 67.4% |
-| Precip. (false alarm, January / July) | 18% / 35% | 20% / 37% | 26% / 41% | 60% / 77% |
+| Precip. (false alarm) | 36.1% | 39.2% | 43.9% | 71.1% |
+| Precip. (false alarm, January / July) | 26% / 46% | 31% / 50% | 36% / 55% | 66% / 80% |
 | Precip. (rel. var.) | 139.9% | 146.8% | 165.5% | 191.1% |
 | Visibility (rel. var.) | 119.0% | 119.0% | 119.0% | 119.0% |
 
@@ -99,8 +99,8 @@ Errors the model applies *h* hours ahead with the default setting (fresh forecas
 | Solar radiation (rel. err.) | 14.2% | 15.3% | 18.3% | 29.5% |
 | Precip. (miss rate) | 36.6% | 41.8% | 46.6% | 66.5% |
 | Precip. (miss rate, January / July) | 24% / 44% | 30% / 50% | 32% / 52% | 57% / 63% |
-| Precip. (false alarm) | 29.4% | 29.0% | 36.5% | 65.2% |
-| Precip. (false alarm, January / July) | 12% / 37% | 13% / 35% | 16% / 42% | 59% / 62% |
+| Precip. (false alarm) | 36.6% | 41.8% | 46.6% | 66.5% |
+| Precip. (false alarm, January / July) | 24% / 44% | 30% / 50% | 32% / 52% | 57% / 63% |
 | Precip. (rel. var.) | 202.9% | 217.2% | 254.0% | 303.0% |
 | Visibility (rel. var.) | 136.6% | 136.6% | 136.6% | 136.6% |
 | Visibility (at cap: forecast below cap) | 11.2% | 11.2% | 11.2% | 11.2% |
@@ -123,7 +123,7 @@ Errors the model applies *h* hours ahead with the default setting (fresh forecas
 - *bias, removed*: measured average error with sign (forecast − truth; negative = raw forecast too low); the model takes it out.
 - *rel. err.*: average size of the error divided by the average measured value, daylight hours only.
 - *miss rate*: share of wet hours (≥ 0.1 mm/h) that the forecast had dry.
-- *false alarm*: share of forecast wet hours that were dry.
+- *false alarm*: share of forecast wet hours that were dry, as applied by the model (equal to the miss rate, because the forecast is set to be wet as often as observed).
 - *rel. var.*: relative spread of the amount error (coefficient of variation); for rain only hours that were wet in both forecast and truth, for visibility only hours below the cap.
 - *at cap: forecast below cap*: share of hours at the visibility cap for which the forecast is below the cap.
 
@@ -138,8 +138,8 @@ Errors the model applies *h* hours ahead with the default setting (fresh forecas
 
 - **Temperature bias.** The raw forecast is colder than the station in every month (−0.6 to −2.5 °C), most at night and in winter (about −2 °C) and least on summer afternoons (about −0.6 °C). This is the typical urban heat effect: the station is in the warm city centre, which a 9 km forecast cannot resolve. A forecast corrected to local measurements would not have this average error, so the model removes it (default setting).
 - **Rain, measured against the station (since 2 Oct 2026).** The free station records report Seoul rain hour by hour whenever it rains (from 2024), and the hourly amounts add up to the station's own daily totals, so no rainy hours are missing. Hours with a routine report but no rain amount and no rain in the weather description are dry. This gives 5.7 % rainy hours and 0.89 % hours with ≥ 5 mm (March 2024 – August 2025), close to the bike data in 2017–18 (6.0 % and 0.8 %). ERA5, used before, has 10.7 % and 0.3 %: almost twice as many rainy hours but fewer than half the downpours, so the Seoul rain errors were too small.
-- **What changed for Seoul rain.** Against the station, the forecast misses fewer rainy hours (23 % at 24 h, before 31 %), but rains far more often than the station measures: 65 % of the forecast's rainy hours are dry at the station (before 27 %), and the amount error of correctly forecast rain is about twice as large (relative spread 381 % at 24 h, before 195 %; July 567 %), the monsoon downpours. In the degraded Seoul test data about 15 % of dry hours get false rain (London and Washington 4–5 %).
-- **Rain-frequency option.** The raw forecast is wet about 2.2 times as often as the Seoul station (London and Washington 0.8–0.9 times against ERA5). A locally corrected forecast might not rain that often. The option `nwp_rain_frequency_unbiased` sets false rain so that the forecast is wet as often as observed; it is off by default.
+- **What changed for Seoul rain.** Against the station, the forecast misses fewer rainy hours (23 % at 24 h, before 31 %), but rains far more often than the station measures: 65 % of the forecast's rainy hours are dry at the station (before 27 %), and the amount error of correctly forecast rain is about twice as large (relative spread 381 % at 24 h, before 195 %; July 567 %), the monsoon downpours. With the measured false-rain rate, about 15 % of dry hours in the degraded Seoul test data would get false rain (London and Washington 4–5 %).
+- **Rain frequency.** The raw forecast is wet about 2.2 times as often as the Seoul station (London and Washington 0.8–0.9 times against ERA5). Like the temperature bias, this is removed (`nwp_rain_frequency_unbiased`, default): the forecast is wet as often as observed. Seoul's degraded test data then get false rain in 2–3 % of dry hours instead of 15 %; London and Washington about 6 %.
 
 ## Limitations
 
