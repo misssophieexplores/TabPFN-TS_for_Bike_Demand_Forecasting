@@ -683,7 +683,7 @@ def load_and_prepare_data(config: ForecastConfig) -> tuple[pd.DataFrame, str]:
     # Normalize and append holiday column (→ 0/1 int)
     if config.holiday_col and config.holiday_col in df.columns:
         col = df[config.holiday_col]
-        if col.dtype == object:
+        if not pd.api.types.is_numeric_dtype(col):
             df[config.holiday_col] = col.map(config.holiday_mapping).astype(int)
         else:
             df[config.holiday_col] = pd.to_numeric(col, errors='coerce').fillna(0).astype(int)
