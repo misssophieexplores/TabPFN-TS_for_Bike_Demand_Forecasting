@@ -52,3 +52,16 @@ The licence also requires a statement that neither the European Commission nor E
 - **Licence/status:** NOAA/federal environmental data are in the public domain in the United States unless explicitly exempt; NCEI works to apply CC0 for international users.
 - **Official policy text:** `Environmental data and information produced by NOAA or any Federal agency are available fully and openly to data users` and `These data are in the public domain in the United States.`
 - **Academic/publication use:** Permitted.
+
+## v7 weather columns (2 Oct 2026)
+
+- **Precipitation (all cities):** total precipitation including melted snow, mm per hour.
+  - Seoul `precipitation_mm` = `Rainfall` (KMA ASOS 강수량, station 108). KMA provides it as 3-hour totals at 00, 03, …, 21 h from November to March and hourly from April to October. Each winter total is spread evenly over its three hours (the value at hour t covers the hours labelled t−2, t−1 and t); totals are kept. `Rainfall` itself is unchanged.
+  - London/Washington `precipitation_mm` = `rainfall_mm` + `snowfall_cm` / 0.7 (Open-Meteo `rain` and `snowfall`; 0.7 cm of snow per mm of water). This equals Open-Meteo's `precipitation` (checked: identical within 0.1 mm in 100 % of hours of the download).
+- **Snow depth (all cities):** snow lying on the ground, cm.
+  - Seoul `snow_depth_cm` = `Snowfall` (KMA ASOS 적설: snow depth, despite the column name; KMA has no hourly snowfall field). `Snowfall` itself is unchanged.
+  - London/Washington `snow_depth_cm` = Open-Meteo Historical Weather API `snow_depth` (`best_match` = ERA5-Land; metres × 100; 1 cm steps), downloaded 2 Oct 2026 for 51.479, −0.449 (Heathrow; grid cell 51.4938, −0.4891) and 38.8483, −77.0342 (Reagan National; grid cell 38.8401, −77.0902). Files: `open_meteo/open-meteo-51.49N0.49W24m.csv`, `open_meteo/open-meteo-38.84N77.09W3m.csv`.
+- **Time alignment (London/Washington):** the Open-Meteo columns (temperature, humidity, wind, dew point, solar radiation, rain, snowfall) were stored on standard time all year (London UTC+0, Washington UTC−5), while the bike counts follow the local clock with daylight saving. They were re-aligned to the clock on 2 Oct 2026 (during daylight saving each value moves down one row; outside it nothing changes). Visibility (Visual Crossing) already followed the clock. London `t2` and `weather_code` (original Kaggle columns, not used) were not changed.
+- **Column names:** all three cities use `precipitation_mm` and `snow_depth_cm`.
+- **No longer used:** London/Washington `rainfall_mm`, `snowfall_cm` (kept for provenance; re-aligned as well); Seoul `Rainfall`, `Snowfall` (original UCI columns).
+- **Script:** `build_weather_v7.py` (provenance record; not part of the pipeline).
