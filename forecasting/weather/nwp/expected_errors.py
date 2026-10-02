@@ -1,5 +1,6 @@
 """
-Errors applied by the default measured model (fresh forecast, bias removed)
+Errors applied by the default measured model (fresh forecast, bias removed,
+seasonal rain; rain: year-round values plus 15 January and 15 July)
 at 6/24/48/168 h ahead, from the calibration files, plus the measured bias
 that is removed. Typical error = mean absolute error after subtracting the
 average error of the run's pool (same start hour, start day of year within
@@ -37,6 +38,11 @@ for city in ["seoul", "london", "washington"]:
         r["GHI_bias_removed"] = float(m.solar_bias[L])
         r["miss"] = float(m.miss_rate[L]); r["far"] = float(m.far[L])
         r["pcv"] = float(np.sqrt(np.exp(m.hit_sd_log[L] ** 2) - 1))
+        if m.season_doy is not None:      # time of year: 15 Jan and 15 Jul
+            for name, k in (("jan", 0), ("jul", 6)):
+                r[f"miss_{name}"] = float(m.miss_rate_seasonal[k, L])
+                r[f"far_{name}"] = float(m.far_seasonal[k, L])
+                r[f"pcv_{name}"] = float(np.sqrt(np.exp(m.hit_sd_log_seasonal[k, L] ** 2) - 1))
         r["vcv"] = float(np.sqrt(np.exp(m.vis_below_sd_log ** 2) - 1))
         r["vbelow"] = float(m.vis_at_cap_p_below) if m.vis_cap is not None else None
         res[str(L)] = r

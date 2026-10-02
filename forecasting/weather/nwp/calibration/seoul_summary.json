@@ -26,23 +26,136 @@
   "relmae_measured_24h": 0.198
  },
  "precipitation": {
-  "reference": "Open-Meteo archive era5_seamless (ERA5-Land T/RH + ERA5), nearest grid cell",
+  "reference": "NOAA ISD station 47108099999 (nearest report within +/-30 min)",
   "wet_threshold_mm": 0.1,
-  "wet_share_ref": 0.16,
-  "miss_24h": 0.309,
-  "far_24h": 0.27,
-  "miss_168h": 0.603,
-  "far_168h": 0.582,
-  "hit_mean_log_24h": 0.026,
-  "hit_sd_log_24h": 1.254,
-  "fa_amount_median_mm": 0.345,
-  "fa_amount_sd_log": 1.13,
-  "rho_miss": 0.855,
-  "n_wetwet": 21117,
-  "rho_false_alarm": 0.905,
-  "n_drydry": 129718,
-  "hit_phi": 0.543,
-  "n_hithit": 12857
+  "n_hours": 185164,
+  "runs_used": 1049,
+  "min_pooled_counts_year_round": {
+   "min_wet": 785,
+   "min_fc_wet": 1752,
+   "min_hits": 593
+  },
+  "seasonal": {
+   "window_days": [
+    120,
+    90,
+    60,
+    45,
+    45,
+    30,
+    30,
+    30,
+    60,
+    75,
+    105,
+    120
+   ],
+   "miss_24h": [
+    0.219,
+    0.207,
+    0.16,
+    0.185,
+    0.219,
+    0.288,
+    0.195,
+    0.178,
+    0.209,
+    0.277,
+    0.305,
+    0.3
+   ],
+   "far_24h": [
+    0.523,
+    0.493,
+    0.5,
+    0.497,
+    0.543,
+    0.686,
+    0.684,
+    0.709,
+    0.71,
+    0.733,
+    0.729,
+    0.674
+   ],
+   "min_pooled_counts": [
+    {
+     "min_wet": 297,
+     "min_fc_wet": 537,
+     "min_hits": 194
+    },
+    {
+     "min_wet": 247,
+     "min_fc_wet": 403,
+     "min_hits": 167
+    },
+    {
+     "min_wet": 204,
+     "min_fc_wet": 340,
+     "min_hits": 153
+    },
+    {
+     "min_wet": 243,
+     "min_fc_wet": 391,
+     "min_hits": 156
+    },
+    {
+     "min_wet": 317,
+     "min_fc_wet": 534,
+     "min_hits": 251
+    },
+    {
+     "min_wet": 221,
+     "min_fc_wet": 493,
+     "min_hits": 173
+    },
+    {
+     "min_wet": 347,
+     "min_fc_wet": 841,
+     "min_hits": 285
+    },
+    {
+     "min_wet": 264,
+     "min_fc_wet": 709,
+     "min_hits": 105
+    },
+    {
+     "min_wet": 314,
+     "min_fc_wet": 854,
+     "min_hits": 129
+    },
+    {
+     "min_wet": 200,
+     "min_fc_wet": 580,
+     "min_hits": 96
+    },
+    {
+     "min_wet": 217,
+     "min_fc_wet": 616,
+     "min_hits": 109
+    },
+    {
+     "min_wet": 225,
+     "min_fc_wet": 568,
+     "min_hits": 127
+    }
+   ]
+  },
+  "wet_share_ref": 0.061,
+  "miss_24h": 0.228,
+  "far_24h": 0.649,
+  "miss_168h": 0.585,
+  "far_168h": 0.834,
+  "hit_mean_log_24h": -0.22,
+  "hit_sd_log_24h": 1.655,
+  "fa_amount_median_mm": 0.358,
+  "fa_amount_sd_log": 1.19,
+  "rho_miss": 0.887,
+  "n_wetwet": 3196,
+  "rho_false_alarm": 0.92,
+  "n_drydry": 77148,
+  "hit_phi": 0.451,
+  "n_hithit": 2277
  },
  "visibility": {
   "reference": "NOAA ISD station 47108099999 (nearest report within +/-30 min)",
@@ -55,7 +168,7 @@
   "phi": 0.822,
   "n_pairs": 88252
  },
- "created_utc": "2026-10-01T16:52:49+00:00",
+ "created_utc": "2026-10-02T08:31:47+00:00",
  "forecast_source": "ECMWF IFS HRES 9km (Open-Meteo Single Runs, 00/12 UTC runs; hourly as served, leads >90 h interpolated by Open-Meteo from 3-/6-hourly output)",
  "run_period": "2024-03-14 00:00:00 .. 2026-09-16 12:00:00"
 }

@@ -53,6 +53,13 @@ LAGS = [1, 3, 6, 12, 24]
 MAX_LEAD = 168
 WET_THRESHOLDS = {"gt0.1": 0.1, "gt0": 0.0}
 ISD_OK_QC = set("014569ACIMPRU")          # accepted ISD quality codes
+# Stations whose hourly SYNOP reports (FM-12) carry a 1-hour precipitation
+# group in every wet hour and omit it in dry hours (checked 2 Oct 2026 for
+# Seoul 47108, 2024-25: the hourly amounts add up to the station's running
+# 24-h totals, median ratio 1.00; Seoul bike-data rain = this station's rain,
+# 2017-18 6-/12-h totals match in 99 % of cases). A routine report without the
+# group and without precipitation in the present-weather group is a dry hour.
+SYNOP_HOURLY_PRECIP = {"seoul"}
 
 FC_ECMWF_SERVED = ("ECMWF IFS HRES 9km (Open-Meteo Single Runs, 00/12 UTC runs; hourly as "
                    "served, leads >90 h interpolated by Open-Meteo from 3-/6-hourly output)")
@@ -309,6 +316,18 @@ def load_isd(root, city):
     # present-weather groups is a dry hour.
     fill = metar & raw["year"].isin(hourly_years) & raw["precip_1h"].isna() & ~pw
     raw.loc[fill, "precip_1h"] = 0.0
+    # Hourly SYNOP stations (SYNOP_HOURLY_PRECIP, e.g. Seoul from 2024): same
+    # rule for full-hour FM-12 reports of station-years with hourly groups.
+    if city in SYNOP_HOURLY_PRECIP:
+        synop = (rep == "FM-12") & (raw["DATE"].dt.minute == 0)
+        n_s = raw.loc[raw.precip_1h.notna() & synop].groupby("year").size()
+        syn_years = set(n_s[n_s >= 200].index)
+        fill_s = synop & raw["year"].isin(syn_years) & raw["precip_1h"].isna() & ~pw
+        raw.loc[fill_s, "precip_1h"] = 0.0
+        DIAG["isd_precip_synop_zero_fill"][city] = dict(
+            years=sorted(int(y) for y in syn_years), n_filled=int(fill_s.sum()),
+            n_unknown_present_weather=int((synop & raw["year"].isin(syn_years)
+                                           & raw["precip_1h"].isna() & pw).sum()))
     # An hourly series that contains (almost) no zeros only reports wet hours
     # and cannot give wet/dry statistics -> not used.
     usable = {}

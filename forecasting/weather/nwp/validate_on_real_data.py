@@ -53,6 +53,7 @@ for city, mod in [("seoul", "config_seoul"), ("london", "config_london"), ("wash
                                  sol_c=te[col["solar_radiation"]][i], sol_d=X[col["solar_radiation"]][i],
                                  vis_c=te[col["visibility"]][i], vis_d=X[col["visibility"]][i],
                                  ow=bool(ow[i]), fw=bool(fw[i]), n_cand=info["n_candidate_runs"],
+                                 start=info["forecast_start_utc"],
                                  season_days=info["season_window_days"]))
         print(f"{city} h={h}: {len(splits)} folds, {time.time() - t0:.1f} s", flush=True)
 pd.DataFrame(rows).to_csv(f"sim_errors_{os.environ.get('SEED','42')}.csv", index=False)  # written to the current folder

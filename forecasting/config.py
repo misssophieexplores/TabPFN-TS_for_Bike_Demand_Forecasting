@@ -78,27 +78,32 @@ class ForecastConfig:
     #   nwp_remove_bias=True: the average error (lean) of the forecasts is
     #       removed, e.g. Seoul's forecast being on average 1.5 C too cold.
     # The replayed run comes from the same time of year (+/- nwp_season_window_days).
+    #   nwp_seasonal_rain=True: rain miss rate, false-alarm ratio and amount
+    #       error of the time of year (monthly bins); False: year-round values.
     nwp_fresh_forecast: bool = True
     nwp_remove_bias: bool = True
+    nwp_seasonal_rain: bool = True
+    #   nwp_rain_frequency_unbiased=True (option): the forecast is wet as often
+    #       as observed (rain "lean" removed too; matters for Seoul, whose
+    #       raw forecast is wet about twice as often as the station).
+    nwp_rain_frequency_unbiased: bool = False
     nwp_run_hours_utc: List[int] = field(default_factory=lambda: [0, 12])
     nwp_availability_delay_h: int = 6
     nwp_season_window_days: int = 30
-    # Degraded scenarios -> factor applied to the calibrated error magnitudes
-    # (see ARCHITECTURE.md "Noise-magnitude sensitivity" for what is scaled
-    # in each error model; precipitation event detection is not scaled).
-    # 'degraded' is the calibrated error model; degraded_x050 / degraded_x150
-    # are the noise-magnitude sensitivity scenarios. All use the same seeds.
+    # Degraded scenarios -> factor applied to the calibrated error magnitudes.
+    # 'degraded' is the calibrated error model. Noise-magnitude sensitivity
+    # scenarios are not run since 2 Oct 2026 (the errors are measured per
+    # city); to run them, add e.g. "degraded_x050": 0.5 / "degraded_x150": 1.5
+    # here and to weather_scenarios. All degraded scenarios of a (horizon,
+    # fold) use the same random numbers (see ARCHITECTURE.md
+    # "Noise-magnitude sensitivity" for what is scaled).
     degradation_scales: Dict[str, float] = field(default_factory=lambda: {
         "degraded": 1.0,
-        "degraded_x050": 0.5,
-        "degraded_x150": 1.5,
     })
     weather_scenarios: List[str] = field(default_factory=lambda: [
         "all_weather",
         "clean_only",
         "degraded",
-        "degraded_x050",
-        "degraded_x150",
     ])
 
     # --- Output (shared) ---
@@ -124,9 +129,12 @@ class ForecastConfig:
 
     def degradation_label(self) -> str:
         """Error model and its settings, as written to the results
-        ('degradation_model' column), e.g. 'nwp_measured(fresh,no_bias)'."""
+        ('degradation_model' column), e.g. 'nwp_measured(fresh,no_bias,seasonal_rain)'."""
         if self.degradation_model != "nwp_measured":
             return self.degradation_model
         age = "fresh" if self.nwp_fresh_forecast else f"age_delay{self.nwp_availability_delay_h}h"
         bias = "no_bias" if self.nwp_remove_bias else "with_bias"
-        return f"nwp_measured({age},{bias})"
+        rain = "seasonal_rain" if self.nwp_seasonal_rain else "yearround_rain"
+        if self.nwp_rain_frequency_unbiased:
+            rain += ",rain_freq_unbiased"
+        return f"nwp_measured({age},{bias},{rain})"

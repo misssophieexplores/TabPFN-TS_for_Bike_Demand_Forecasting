@@ -4,8 +4,8 @@ Weather Degradation Baseline Experiments
 Runs complete baseline with weather scenarios:
 - clean_only: 7 degradable variables, no degradation (NEW baseline)
 - degraded: 7 degradable variables, with forecast errors (robustness test)
-- degraded_x050 / degraded_x150: as degraded, error magnitudes x0.5 / x1.5
-  (noise-magnitude sensitivity; config.degradation_scales)
+- further degraded scenarios only if added to config.degradation_scales
+  (noise-magnitude sensitivity, e.g. degraded_x150; not run by default)
 
 Optimizations:
 - Models without covariates automatically skipped in the degraded scenarios

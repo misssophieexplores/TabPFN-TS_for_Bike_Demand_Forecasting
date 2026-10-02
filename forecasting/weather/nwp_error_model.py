@@ -40,7 +40,11 @@ How one test window is degraded
    measured lognormal amount error (mean-preserving if remove_bias); false
    alarms the measured amount distribution. The false-alarm ratio is
    converted into a probability per dry hour with the wet-hour share of the
-   training fold.
+   training fold. seasonal_rain=True (default): miss rate, false-alarm ratio
+   and hit amount error are those of the time of year (12 monthly bins,
+   interpolated linearly by the day of year of the forecast start); False:
+   year-round values. Reference: Seoul = the station, London and Washington =
+   ERA5 (see build_nwp_calibration.py).
 5. Visibility: lognormal error in log space, persistent (AR(1));
    mean-preserving if remove_bias. For a city whose covariate is capped
    (Seoul 20 km, Washington 16 km), an hour at the cap stays at the cap unless
@@ -48,7 +52,12 @@ How one test window is degraded
 
 remove_bias does not change event rates: precipitation misses and false
 alarms, false-alarm amounts, and visibility falling below its cap stay as
-measured.
+measured. rain_frequency_unbiased=True (option, default False): false alarms
+are set so that the forecast is wet as often as the observations (frequency
+bias 1; the false-alarm ratio then equals the miss rate), i.e. the rain
+"lean" of the raw forecast is removed as well. Against the Seoul station the
+raw forecast is wet about twice as often as observed; against ERA5 (London,
+Washington) about 0.8-0.9 times.
 
 noise_scale multiplies every error magnitude (additive errors, including
 their bias if it is kept; the log errors of visibility and precipitation
@@ -158,6 +167,15 @@ class NWPErrorModel:
         self.rho_miss = float(z["precip_rho_miss"])
         self.rho_fa = float(z["precip_rho_fa"])
         self.hit_phi = float(z["precip_hit_phi"])
+        # per time of year [12, lead] (calibration files from 2 Oct 2026 on)
+        if "precip_miss_rate_seasonal" in z.files:
+            self.season_doy = z["precip_season_doy"].astype(float)
+            self.miss_rate_seasonal = z["precip_miss_rate_seasonal"]
+            self.far_seasonal = z["precip_far_seasonal"]
+            self.hit_mean_log_seasonal = z["precip_hit_mean_log_seasonal"]
+            self.hit_sd_log_seasonal = z["precip_hit_sd_log_seasonal"]
+        else:
+            self.season_doy = None
         cap = float(z["vis_cap_km"])
         self.vis_cap = None if np.isnan(cap) else cap
         self.vis_below_mean_log = float(z["vis_below_mean_log"])
@@ -193,11 +211,13 @@ class NWPErrorModel:
     # ------------------------------------------------------------------
     def degrade(self, df, times_utc, column_mapping, degradation_params, seed,
                 rain_col=None, noise_scale=1.0, run_hours=(0, 12), delay_h=6,
-                season_days=30, fresh_forecast=True, remove_bias=True):
+                season_days=30, fresh_forecast=True, remove_bias=True, seasonal_rain=True,
+                rain_frequency_unbiased=False):
         """
         Degrade one test window. Returns (degraded DataFrame, info dict).
         df rows must be the consecutive test hours, times_utc their UTC times.
-        fresh_forecast / remove_bias: see the module docstring.
+        fresh_forecast / remove_bias / seasonal_rain / rain_frequency_unbiased:
+        see the module docstring.
         """
         if noise_scale < 0:
             raise ValueError(f"noise_scale must be >= 0, got {noise_scale}")
@@ -254,12 +274,16 @@ class NWPErrorModel:
             if "wet_fraction" not in degradation_params:
                 raise ValueError("degradation_params has no 'wet_fraction'")
             fa_col = rain_col if rain_col in precip_cols else precip_cols[0]
+            params = self.rain_params(start.dayofyear, seasonal_rain)
             p = self._precipitation(df[precip_cols], leads, degradation_params["wet_fraction"],
-                                    u_miss, u_fa, z_hit, z_fa_amount, s, fa_col, remove_bias)
+                                    u_miss, u_fa, z_hit, z_fa_amount, s, fa_col, remove_bias, params,
+                                    rain_frequency_unbiased)
             for c in precip_cols:
                 out[c] = p[c].to_numpy(dtype=float)
 
         info = dict(fresh_forecast=bool(fresh_forecast), remove_bias=bool(remove_bias),
+                    seasonal_rain=bool(seasonal_rain and self.season_doy is not None),
+                    rain_frequency_unbiased=bool(rain_frequency_unbiased),
                     forecast_start_utc=str(start), start_hour_utc=int(start_hour),
                     lead_first=int(leads[0]), lead_last=int(leads[-1]),
                     replayed_run_utc=str(self.run_init[k]), n_candidate_runs=int(len(cand)),
@@ -267,7 +291,32 @@ class NWPErrorModel:
         return out, info
 
     # ------------------------------------------------------------------
-    def false_alarm_prob(self, lead, wet_fraction):
+    def season_weights(self, dayofyear):
+        """Weights of the 12 monthly bins for a day of year: linear
+        interpolation between the two nearest bin centres (circular)."""
+        c = self.season_doy
+        d = (float(dayofyear) - c + 182.5) % 365.0 - 182.5      # signed distance
+        after = np.flatnonzero(d >= 0)
+        i = after[np.argmin(d[after])]                              # nearest centre before
+        j = (i + 1) % len(c)
+        gap = (c[j] - c[i]) % 365.0
+        w = np.zeros(len(c))
+        w[j] = d[i] / gap
+        w[i] = 1.0 - w[j]
+        return w
+
+    def rain_params(self, dayofyear=None, seasonal=True):
+        """(miss_rate, far, hit_mean_log, hit_sd_log) per lead: of the time of
+        year if seasonal and the calibration has seasonal values, else the
+        year-round values."""
+        if not seasonal or self.season_doy is None or dayofyear is None:
+            return self.miss_rate, self.far, self.hit_mean_log, self.hit_sd_log
+        w = self.season_weights(dayofyear)
+        return tuple(w @ a for a in (self.miss_rate_seasonal, self.far_seasonal,
+                                     self.hit_mean_log_seasonal, self.hit_sd_log_seasonal))
+
+    def false_alarm_prob(self, lead, wet_fraction, miss_rate=None, far=None,
+                         frequency_unbiased=False):
         """P(false alarm | dry hour) from the measured false-alarm ratio and
         miss rate at this lead time and the wet-hour share p of the training
         fold: FAR / (1 - FAR) * POD * p / (1 - p) (reproduces the FAR)."""
@@ -276,24 +325,31 @@ class NWPErrorModel:
             raise ValueError(f"wet_fraction must be in [0, 1], got {wet_fraction}")
         if p in (0.0, 1.0):
             return 0.0
-        far, pod = self.far[lead], 1.0 - self.miss_rate[lead]
-        return min(far / (1.0 - far) * pod * p / (1.0 - p), 1.0)
+        miss = (self.miss_rate if miss_rate is None else miss_rate)[lead]
+        if frequency_unbiased:
+            # false alarms = misses: forecast wet as often as observed
+            return min(miss * p / (1.0 - p), 1.0)
+        far = (self.far if far is None else far)[lead]
+        return min(far / (1.0 - far) * (1.0 - miss) * p / (1.0 - p), 1.0)
 
     def _precipitation(self, precip, leads, wet_fraction, u_miss, u_fa, z_hit,
-                       z_fa_amount, s, fa_col, remove_bias=False):
+                       z_fa_amount, s, fa_col, remove_bias=False, params=None,
+                       frequency_unbiased=False):
+        miss_rate, far, hit_mean_log, hit_sd_log = params or self.rain_params(seasonal=False)
         vals = precip.to_numpy(dtype=float)
         out = np.zeros_like(vals)
         fa_idx = list(precip.columns).index(fa_col)
         for i, L in enumerate(leads):
             if np.all(vals[i] == 0):
-                if u_fa[i] < self.false_alarm_prob(L, wet_fraction):
+                if u_fa[i] < self.false_alarm_prob(L, wet_fraction, miss_rate, far,
+                                                   frequency_unbiased):
                     out[i, fa_idx] = np.exp(self.fa_mean_log + self.fa_sd_log * z_fa_amount[i])
-            elif u_miss[i] >= self.miss_rate[L]:
-                sd = s * self.hit_sd_log[L]
+            elif u_miss[i] >= miss_rate[L]:
+                sd = s * hit_sd_log[L]
                 if remove_bias:   # mean-preserving: E[exp(log_err)] = 1
                     log_err = sd * z_hit[i] - 0.5 * sd * sd
                 else:
-                    log_err = s * self.hit_mean_log[L] + sd * z_hit[i]
+                    log_err = s * hit_mean_log[L] + sd * z_hit[i]
                 out[i] = vals[i] * np.exp(log_err)
             # else: missed event, forecast stays 0
         return pd.DataFrame(out, index=precip.index, columns=precip.columns)

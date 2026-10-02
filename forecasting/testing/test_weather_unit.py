@@ -21,6 +21,11 @@ from weather.weather_degradation import (
 )
 from weather.weather_processor import WeatherProcessor
 
+# Noise-magnitude sensitivity scenarios: not in the default config since
+# 2 Oct 2026, but the mechanism stays available and tested.
+SENSITIVITY_SCALES = {"degraded": 1.0, "degraded_x050": 0.5, "degraded_x150": 1.5}
+
+
 class TestWeatherDegradation:
     """Unit tests for individual degradation functions"""
     
@@ -231,7 +236,8 @@ class TestWeatherDegradation:
         X_train_clean = processor.prepare_weather_data(
             df, 'clean_only', horizon=24, fold_idx=0, split='train'
         )
-        # every degraded scenario, including the noise-magnitude sensitivity ones
+        # every degraded scenario, including optional sensitivity ones
+        processor.config.degradation_scales = dict(SENSITIVITY_SCALES)
         for scenario in processor.config.degradation_scales:
             X_train_deg = processor.prepare_weather_data(
                 df, scenario, horizon=24, fold_idx=0, split='train'
@@ -361,10 +367,13 @@ class TestWeatherDegradation:
     # Noise-magnitude sensitivity (degraded scenarios with noise_scale)
     # ------------------------------------------------------------------
     def test_degraded_scenarios_in_config(self):
-        """'degraded' is the calibrated model (1.0); every degraded scenario is
-        in weather_scenarios and recognised by is_degraded()."""
+        """'degraded' is the calibrated model (1.0) and, since 2 Oct 2026, the
+        only degraded scenario by default (no sensitivity runs); every
+        degraded scenario is in weather_scenarios and recognised by
+        is_degraded()."""
         config = ForecastConfig()
-        assert config.degradation_scales['degraded'] == 1.0
+        assert config.degradation_scales == {'degraded': 1.0}
+        assert config.weather_scenarios == ['all_weather', 'clean_only', 'degraded']
         for scenario in config.degradation_scales:
             assert config.is_degraded(scenario)
             assert scenario in config.weather_scenarios
@@ -397,6 +406,7 @@ class TestWeatherDegradation:
         the wet/dry pattern of precipitation (event detection, not scaled) is
         the same in every scenario."""
         processor = self._make_weather_processor()
+        processor.config.degradation_scales = dict(SENSITIVITY_SCALES)
         horizon = 48
         df = self._make_test_df(n_rows=horizon)
         df['Temperature'] = 25.0                          # far from the 2 °C rain/snow threshold
@@ -458,6 +468,7 @@ class TestWeatherDegradation:
 # Measured NWP error model (config.degradation_model = "nwp_measured")
 # ======================================================================
 import importlib
+import json
 from weather.nwp_error_model import (
     load_error_model, run_init_and_leads, fresh_start_and_leads, to_utc, ar1, MAX_LEAD,
 )
@@ -511,8 +522,8 @@ class TestMeasuredNWPModel:
     def test_default_model_and_city_settings(self):
         cfg = ForecastConfig()
         assert cfg.degradation_model == "nwp_measured"
-        assert cfg.nwp_fresh_forecast and cfg.nwp_remove_bias
-        assert cfg.degradation_label() == "nwp_measured(fresh,no_bias)"
+        assert cfg.nwp_fresh_forecast and cfg.nwp_remove_bias and cfg.nwp_seasonal_rain
+        assert cfg.degradation_label() == "nwp_measured(fresh,no_bias,seasonal_rain)"
         for city in CITY_MODULES:
             config = _city_config(city)
             assert config.timezone
@@ -538,6 +549,55 @@ class TestMeasuredNWPModel:
             times = pd.date_range(pd.Timestamp("2016-01-10") + pd.Timedelta(hours=h), periods=168, freq="h")
             _, leads = run_init_and_leads(times)
             assert 7 <= leads[0] <= 18 and leads[-1] <= MAX_LEAD
+
+    def test_seasonal_rain_parameters(self):
+        """Rain error rates per time of year: 12 monthly bins, linear
+        interpolation by day of year (weights sum to 1, a bin centre gets its
+        own values); year-round values when switched off. Seoul rain is
+        measured against the station, London and Washington against ERA5.
+        Washington's forecast misses summer rain more often than winter rain."""
+        for city in CITY_MODULES:
+            model = load_error_model(_city_config(city).nwp_calibration_file)
+            assert model.season_doy is not None and model.miss_rate_seasonal.shape == (12, MAX_LEAD + 1)
+            for doy in [1, 15, 100, 196, 300, 365]:
+                w = model.season_weights(doy)
+                assert w.sum() == pytest.approx(1.0) and (w >= 0).all() and (w > 0).sum() <= 2
+            k = 6                                                      # 15 July
+            np.testing.assert_allclose(model.rain_params(model.season_doy[k])[0],
+                                       model.miss_rate_seasonal[k])
+            for got, year_round in zip(model.rain_params(196, seasonal=False),
+                                       (model.miss_rate, model.far, model.hit_mean_log, model.hit_sd_log)):
+                assert got is year_round
+            for arr in (model.miss_rate_seasonal, model.far_seasonal, model.hit_sd_log_seasonal):
+                assert np.isfinite(arr[:, 1:169]).all()
+            ref = json.loads(model.summary)["precipitation"]["reference"]
+            assert ("NOAA ISD" in ref) if city == "seoul" else ("era5" in ref.lower())
+        dc = load_error_model(_city_config("washington").nwp_calibration_file)
+        assert dc.rain_params(196)[0][24] > dc.rain_params(15)[0][24]
+
+    def test_rain_frequency_option(self):
+        """Option nwp_rain_frequency_unbiased: false alarms equal misses, so
+        the degraded data are wet about as often as the clean data (Seoul,
+        whose raw forecast is wet about twice as often as the station);
+        default off (measured false-alarm ratio)."""
+        assert not ForecastConfig().nwp_rain_frequency_unbiased
+        ratio = {}
+        for unbiased in (False, True):
+            proc = _processor("seoul")
+            proc.config.nwp_rain_frequency_unbiased = unbiased
+            n_obs = n_fc = 0
+            for fold in range(120):
+                start = pd.Timestamp("2018-06-01") + pd.Timedelta(hours=int(31 * fold))
+                df = _synthetic_city_data(proc.config, start, 720 + 48, seed=fold, rain_every=9)
+                train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+                proc.prepare_weather_data(train, "degraded", horizon=48, fold_idx=fold, split="train")
+                X = proc.prepare_weather_data(test, "degraded", horizon=48, fold_idx=fold, split="test")
+                assert proc.last_degradation_info["rain_frequency_unbiased"] == unbiased
+                n_obs += int((test["Rainfall"] > 0).sum())
+                n_fc += int((X[["Rainfall", "Snowfall"]] > 0).any(axis=1).sum())
+            ratio[unbiased] = n_fc / n_obs
+        assert ratio[True] == pytest.approx(1.0, abs=0.2)
+        assert ratio[False] > 1.4
 
     def test_fresh_forecast_leads(self):
         """Fresh forecast: lead times 1..n for any start hour; errors replayed
@@ -614,6 +674,7 @@ class TestMeasuredNWPModel:
         and identical visibility-below-cap decisions."""
         proc = _processor("seoul")
         cfg = proc.config
+        cfg.degradation_scales = dict(SENSITIVITY_SCALES)
         df = _synthetic_city_data(cfg, "2018-03-01", 720 + 168, rain_every=7)
         df.loc[df.index % 3 == 0, "Visibility"] = 20.0            # at the Seoul cap
         train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
@@ -639,6 +700,7 @@ class TestMeasuredNWPModel:
             cfg = proc.config
             m = cfg.weather_degradation_mapping
             col = {t: c for c, t in m.items() if t != "precipitation"}
+            cfg.degradation_scales = dict(SENSITIVITY_SCALES)
             df = _synthetic_city_data(cfg, "2016-11-01", 720 + 168)
             if city == "seoul":
                 df[col["visibility"]] = np.minimum(df[col["visibility"]], 20.0)
@@ -658,7 +720,7 @@ class TestMeasuredNWPModel:
 
     def test_reproduces_measured_error_statistics(self):
         """Over many test windows the simulated errors match the calibration:
-        precipitation miss rate and false-alarm ratio, visibility falling
+        precipitation miss rate and false-alarm ratio (of the time of year), visibility falling
         below the Seoul cap, and the temperature error: average ~0 with the
         lean removed (default), the measured Seoul lean (about -1 C or more)
         with nwp_remove_bias=False; spread as in the replayed runs."""
@@ -667,7 +729,7 @@ class TestMeasuredNWPModel:
             cfg = proc.config
             model = load_error_model(cfg.nwp_calibration_file)
             horizon, n_folds = 24, 300
-            t_err, leads_all, exp_var = [], [], []
+            t_err, leads_all, exp_var, exp_miss, exp_far = [], [], [], [], []
             H = M = F = 0
             vis_below, vis_at = 0, 0
             for fold in range(n_folds):
@@ -683,6 +745,9 @@ class TestMeasuredNWPModel:
                 t_err.append((X["Temperature"] - test["Temperature"]).to_numpy())
                 leads_all.append(leads)
                 fs = pd.Timestamp(info["forecast_start_utc"])
+                assert info["seasonal_rain"]
+                miss_r, far_r, _, _ = model.rain_params(fs.dayofyear)
+                exp_miss.append(miss_r[leads].mean()); exp_far.append(far_r[leads].mean())
                 cand, _ = model.candidate_runs(info["start_hour_utc"], fs.dayofyear, leads, cfg.nwp_season_window_days)
                 exp_var.append(model.tqw_errors[cand][:, leads, 0].var(axis=0).mean())
                 ow = test["Rainfall"] > 0
@@ -690,8 +755,8 @@ class TestMeasuredNWPModel:
                 H += int((ow & fw).sum()); M += int((ow & ~fw).sum()); F += int((~ow & fw).sum())
                 vis_below += int((X["Visibility"] < 20.0 - 1e-9).sum()); vis_at += len(X)
             leads_all = np.concatenate(leads_all)
-            assert M / (H + M) == pytest.approx(model.miss_rate[leads_all].mean(), abs=0.06)
-            assert F / (H + F) == pytest.approx(model.far[leads_all].mean(), abs=0.08)
+            assert M / (H + M) == pytest.approx(np.mean(exp_miss), abs=0.06)
+            assert F / (H + F) == pytest.approx(np.mean(exp_far), abs=0.08)
             assert vis_below / vis_at == pytest.approx(model.vis_at_cap_p_below, abs=0.06)
             e = np.concatenate(t_err)
             if remove_bias:

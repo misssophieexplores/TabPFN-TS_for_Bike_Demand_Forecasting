@@ -29,8 +29,9 @@ class WeatherProcessor:
     - all_weather: All 8 variables, no degradation
     - clean_only: 7 degradable variables (exclude Dew point), no degradation
     - degraded: 7 degradable variables (exclude Dew point), with degradation
-    - degraded_x050 / degraded_x150: as degraded, error magnitudes x0.5 / x1.5
-      (every key of config.degradation_scales is a degraded scenario)
+    - optional noise-magnitude sensitivity scenarios (e.g. degraded_x150:
+      error magnitudes x1.5), not run by default; every key of
+      config.degradation_scales is a degraded scenario
     
     Parameters
     ----------
@@ -260,7 +261,9 @@ class WeatherProcessor:
           weather forecast starts when the demand forecast is issued (first
           test hour - 1 h); row i gets lead time i + 1. With
           config.nwp_remove_bias=True (default) the average forecast error
-          (lean) is removed. See weather/nwp_error_model.py.
+          (lean) is removed; with config.nwp_seasonal_rain=True (default)
+          the rain error rates are those of the time of year. See
+          weather/nwp_error_model.py.
         - "nwp_measured", config.nwp_fresh_forecast=False: the newest ECMWF
           run available at the issue time is used (runs at
           config.nwp_run_hours_utc, available config.nwp_availability_delay_h
@@ -314,6 +317,8 @@ class WeatherProcessor:
                 season_days=self.config.nwp_season_window_days,
                 fresh_forecast=self.config.nwp_fresh_forecast,
                 remove_bias=self.config.nwp_remove_bias,
+                seasonal_rain=self.config.nwp_seasonal_rain,
+                rain_frequency_unbiased=self.config.nwp_rain_frequency_unbiased,
             )
             self.last_degradation_info = info
             # Rain/snow phase from the degraded temperature (as in the

@@ -29,9 +29,17 @@ What is stored per city
 2. Solar radiation (reference ERA5): per lead, the heteroscedastic error model
    error = obs * (b + s * z): b and s by weighted least squares over daylight
    hours, z standard normal with lag-1 correlation phi (AR(1)).
-3. Precipitation (reference ERA5; wet = >= 0.1 mm/h): per lead (pooled over
-   +/-12 lead hours) miss rate and false-alarm ratio; for hits the mean and SD
-   of log(forecast/observed); amounts of false alarms (lognormal, all leads);
+3. Precipitation (wet = >= 0.1 mm/h). Reference: Seoul = the station
+   (hourly SYNOP 1-hour amounts, Mar 2024 - Aug 2025; dry hours = routine
+   reports without an amount and without precipitation in the present-weather
+   group, see analyze_nwp_errors.SYNOP_HOURLY_PRECIP); London, Washington =
+   ERA5, the source of their covariates. Per lead (pooled over +/-12 lead
+   hours) miss rate and false-alarm ratio; for hits the mean and SD of
+   log(forecast/observed). These four are stored year-round and per time of
+   year (12 bins centred on the 15th of each month; runs starting within
+   +/- PRECIP_SEASON_DAYS days of the centre, widened in 15-day steps until
+   every lead has >= PRECIP_MIN_EVENTS wet and forecast-wet hours).
+   Year-round only: amounts of false alarms (lognormal, all leads);
    persistence of misses and of false alarms from one hour to the next
    (tetrachoric correlation of consecutive hours) and of the hit log ratio.
 4. Visibility (reference: the station; capped at the city's data cap C):
@@ -64,6 +72,13 @@ WET_MM = 0.1 - 1e-9          # wet = >= 0.1 mm/h (data resolution 0.1 mm)
 POOL = 12                    # +/- lead hours pooled for precipitation rates
 TQW = ["temperature_2m", "relative_humidity_2m", "wind_speed_10m"]
 REF_TQW = {"seoul": "isd", "london": "era5s", "washington": "era5s"}
+# Precipitation reference: Seoul = the station (its bike data are this
+# station's rain; checked 2 Oct 2026), London/Washington = ERA5
+REF_PRECIP = {"seoul": "isd", "london": "era5s", "washington": "era5s"}
+PRECIP_SEASON_DAYS = 30         # +/- days of year around each monthly centre
+PRECIP_MIN_EVENTS = 200         # wet (and forecast-wet) hours per pooled lead window
+PRECIP_MIN_HITS = 50            # hits per pooled lead window for the amount error
+SEASON_CENTRES = np.array([15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349])
 # Visibility cap of each city's bike-data covariate (km); None = no cap.
 # Checked on the bike data (1 Oct 2026): Seoul 2000 x 10 m = 20 km (26 % of
 # hours), Washington 16.0 km (80 % of hours), London no cap (max 65 km).
@@ -114,6 +129,68 @@ def interp_leads(v):
     s.iloc[0] = np.nan
     s = s.interpolate(limit_direction="both")
     return s.to_numpy()
+
+
+def precip_counts(p):
+    """Per-lead hits, misses, false alarms, dry hours of a precipitation table."""
+    g = p.groupby("lead")
+    idx = range(0, MAX_LEAD + 1)
+    H = g.apply(lambda d: int((d.ow & d.fw).sum())).reindex(idx, fill_value=0)
+    M = g.apply(lambda d: int((d.ow & ~d.fw).sum())).reindex(idx, fill_value=0)
+    F = g.apply(lambda d: int((~d.ow & d.fw).sum())).reindex(idx, fill_value=0)
+    D = g.apply(lambda d: int((~d.ow).sum())).reindex(idx, fill_value=0)
+    return H, M, F, D
+
+
+def precip_rates(p):
+    """Per lead 1..MAX_LEAD (pooled over +/-POOL lead hours): miss rate,
+    false-alarm ratio, POFD, mean / SD of log(forecast/observed) of hits, and
+    the smallest pooled numbers of wet hours, forecast-wet hours and hits."""
+    H, M, F, D = precip_counts(p)
+    hits = p[p.ow & p.fw]
+    lr_by_lead = {L: v.to_numpy() for L, v in np.log(hits.fc / hits.ob).groupby(hits.lead)}
+    miss, far, pofd, hm, hs = (np.full(MAX_LEAD + 1, np.nan) for _ in range(5))
+    n_wet, n_fwet, n_hit = [], [], []
+    for L in range(1, MAX_LEAD + 1):
+        win = list(range(max(1, L - POOL), min(MAX_LEAD, L + POOL) + 1))
+        h_, m_, f_, d_ = H[win].sum(), M[win].sum(), F[win].sum(), D[win].sum()
+        miss[L] = m_ / (h_ + m_) if h_ + m_ else np.nan
+        far[L] = f_ / (h_ + f_) if h_ + f_ else np.nan
+        pofd[L] = f_ / d_ if d_ else np.nan
+        lr = np.concatenate([lr_by_lead.get(l, np.empty(0)) for l in win])
+        if len(lr) > 1:
+            hm[L], hs[L] = lr.mean(), lr.std(ddof=1)
+        if L <= 168:
+            n_wet.append(h_ + m_); n_fwet.append(h_ + f_); n_hit.append(h_)
+    return miss, far, pofd, hm, hs, dict(min_wet=int(min(n_wet)), min_fc_wet=int(min(n_fwet)),
+                                          min_hits=int(min(n_hit)))
+
+
+def seasonal_precip(p):
+    """Miss rate, false-alarm ratio and hit log-ratio mean / SD per time of
+    year: 12 bins centred on SEASON_CENTRES (day of year of the run start),
+    window +/- PRECIP_SEASON_DAYS, widened by 15 days until the counts in
+    every pooled lead window (leads 1-168) reach PRECIP_MIN_EVENTS (wet and
+    forecast-wet hours) and PRECIP_MIN_HITS (hits)."""
+    doy = pd.DatetimeIndex(p["init"]).dayofyear.to_numpy()
+    arrs = {k: np.full((len(SEASON_CENTRES), MAX_LEAD + 1), np.nan)
+            for k in ("miss", "far", "hm", "hs")}
+    days_used, counts = [], []
+    for m, c in enumerate(SEASON_CENTRES):
+        d = np.abs(doy - c)
+        d = np.minimum(d, 366 - d)
+        days = PRECIP_SEASON_DAYS
+        while True:
+            miss, far, _, hm, hs, n = precip_rates(p[d <= days])
+            ok = (n["min_wet"] >= PRECIP_MIN_EVENTS and n["min_fc_wet"] >= PRECIP_MIN_EVENTS
+                  and n["min_hits"] >= PRECIP_MIN_HITS)
+            if ok or days >= 183:
+                break
+            days += 15
+        for k, v in zip(("miss", "far", "hm", "hs"), (miss, far, hm, hs)):
+            arrs[k][m] = interp_leads(v)
+        days_used.append(int(days)); counts.append(n)
+    return arrs, days_used, counts
 
 
 def build_city(city, fc, refs, vis_cap):
@@ -169,34 +246,25 @@ def build_city(city, fc, refs, vis_cap):
                             sd_rel_24h=round(float(out["solar_sd_rel"][24]), 3),
                             relmae_measured_24h=round(float(relmae[24]), 3))
 
-    # ---------------- 3. precipitation (ERA5 reference)
+    # ---------------- 3. precipitation (reference REF_PRECIP)
+    pref = refs[REF_PRECIP[city]]
     p = f[["init", "lead", "valid", "precipitation"]].rename(columns={"precipitation": "fc"})
-    p["ob"] = era["precipitation"].reindex(p["valid"]).values
+    p["ob"] = pref["precipitation"].reindex(p["valid"]).values
     p = p.dropna(subset=["fc", "ob"])
     p["ow"], p["fw"] = p.ob > WET_MM, p.fc > WET_MM
-    g = p.groupby("lead")
-    H = g.apply(lambda d: int((d.ow & d.fw).sum()))
-    M = g.apply(lambda d: int((d.ow & ~d.fw).sum()))
-    F = g.apply(lambda d: int((~d.ow & d.fw).sum()))
-    D = g.apply(lambda d: int((~d.ow).sum()))
+    miss, far, pofd, hm, hs, n_year = precip_rates(p)
     hits = p[p.ow & p.fw].copy()
     hits["lr"] = np.log(hits.fc / hits.ob)
-    miss = np.full(MAX_LEAD + 1, np.nan)
-    far = np.full(MAX_LEAD + 1, np.nan)
-    pofd = np.full(MAX_LEAD + 1, np.nan)
-    hm = np.full(MAX_LEAD + 1, np.nan)
-    hs = np.full(MAX_LEAD + 1, np.nan)
-    for L in range(1, MAX_LEAD + 1):
-        win = [l for l in range(L - POOL, L + POOL + 1) if 1 <= l <= MAX_LEAD and l in H.index]
-        h_, m_, f_, d_ = H[win].sum(), M[win].sum(), F[win].sum(), D[win].sum()
-        miss[L] = m_ / (h_ + m_)
-        far[L] = f_ / (h_ + f_)
-        pofd[L] = f_ / d_
-        lr = hits.lr[hits.lead.isin(win)]
-        hm[L], hs[L] = lr.mean(), lr.std(ddof=1)
-    out["precip_miss_rate"], out["precip_far"] = miss, far
+    out["precip_miss_rate"], out["precip_far"] = interp_leads(miss), interp_leads(far)
     out["precip_pofd_measured"] = pofd
-    out["precip_hit_mean_log"], out["precip_hit_sd_log"] = hm, hs
+    out["precip_hit_mean_log"], out["precip_hit_sd_log"] = interp_leads(hm), interp_leads(hs)
+    seas, seas_days, seas_n = seasonal_precip(p)
+    out["precip_season_doy"] = SEASON_CENTRES
+    out["precip_season_window_days"] = np.array(seas_days)
+    out["precip_miss_rate_seasonal"] = seas["miss"]
+    out["precip_far_seasonal"] = seas["far"]
+    out["precip_hit_mean_log_seasonal"] = seas["hm"]
+    out["precip_hit_sd_log_seasonal"] = seas["hs"]
     fa = p[~p.ow & p.fw]
     out["precip_fa_mean_log"] = float(np.log(fa.fc).mean())
     out["precip_fa_sd_log"] = float(np.log(fa.fc).std(ddof=1))
@@ -215,7 +283,14 @@ def build_city(city, fc, refs, vis_cap):
     lrm = lead_matrix(hits, "lr", runs).to_numpy()
     out["precip_hit_phi"], n_hh = ar1_from_runs(lrm)
     summary["precipitation"] = dict(
-        reference=A.OBS_NAMES["era5s"], wet_threshold_mm=0.1,
+        reference=A.OBS_NAMES[REF_PRECIP[city]].format(station=A.CITIES[city]["isd"]),
+        wet_threshold_mm=0.1, n_hours=int(len(p)),
+        runs_used=int(p["init"].nunique()),
+        min_pooled_counts_year_round=n_year,
+        seasonal=dict(window_days=seas_days,
+                      miss_24h=[round(float(v), 3) for v in seas["miss"][:, 24]],
+                      far_24h=[round(float(v), 3) for v in seas["far"][:, 24]],
+                      min_pooled_counts=seas_n),
         wet_share_ref=round(out["precip_wet_share_ref"], 3),
         miss_24h=round(float(miss[24]), 3), far_24h=round(float(far[24]), 3),
         miss_168h=round(float(miss[168]), 3), far_168h=round(float(far[168]), 3),
