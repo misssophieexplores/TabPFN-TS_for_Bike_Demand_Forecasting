@@ -45,7 +45,8 @@ forecasting/
 │   ├── test_max_degradation.py
 │   ├── test_weather_single_model.py
 │   ├── test_weather_unit.py
-│   └── test_pipeline_unit.py   # CV folds, metrics, comparative metrics, XGBoost tuning = experiment (with and without weather)
+│   ├── test_pipeline_unit.py   # CV folds, metrics, comparative metrics, XGBoost tuning = experiment (with and without weather)
+│   └── preflight.py            # Pre-flight check before the paper runs: params files, build_models, CV, one fold per model (incl. TabPFN/TimesFM weights), W&B; writes nothing
 ├── run_experiments.py       # ForecastingExperiment class with W&B logging and checkpointing; load_and_prepare_data(); comparative metrics
 └── run_weather_baseline.py  # Per-city experiment runner (called by main.py, or directly with --city)
 
