@@ -16,7 +16,6 @@ from config import ForecastConfig
 from weather.weather_degradation import (
     prepare_degradation_parameters,
     degrade_weather_dataset,
-    fix_precipitation_type,
 )
 from weather.nwp_error_model import load_error_model, to_utc
 
@@ -300,12 +299,15 @@ class WeatherProcessor:
                 "(degraded scenario) before the test split"
             )
 
-        # Columns for the rain/snow phase correction
-        temp_cols = [c for c, t in self.config.weather_degradation_mapping.items() if t == "temperature"]
-        if len(temp_cols) != 1 or not self.config.rain_col or not self.config.snow_col:
+        # One total-precipitation column per city (mm, rain + melted snow);
+        # snow depth has its own type ('snow_depth', persistence forecast)
+        precip_cols = [c for c, t in self.config.weather_degradation_mapping.items()
+                       if t == "precipitation"]
+        if len(precip_cols) > 1:
             raise ValueError(
-                "Rain/snow correction needs exactly one 'temperature' column in "
-                "weather_degradation_mapping and config.rain_col / config.snow_col set"
+                f"weather_degradation_mapping has {len(precip_cols)} precipitation columns "
+                f"{precip_cols}; expected one total-precipitation column (snow depth: "
+                f"type 'snow_depth')"
             )
 
         if self.config.degradation_model == "nwp_measured":
@@ -326,7 +328,6 @@ class WeatherProcessor:
                 self.config.weather_degradation_mapping,
                 self.degradation_params,
                 seed=horizon_seed,
-                rain_col=self.config.rain_col,
                 noise_scale=noise_scale,
                 run_hours=tuple(self.config.nwp_run_hours_utc),
                 delay_h=self.config.nwp_availability_delay_h,
@@ -337,12 +338,7 @@ class WeatherProcessor:
                 rain_frequency_unbiased=self.config.nwp_rain_frequency_unbiased,
             )
             self.last_degradation_info = info
-            # Rain/snow phase from the degraded temperature (as in the
-            # literature model)
-            return fix_precipitation_type(
-                df_degraded, temp_col=temp_cols[0],
-                rain_col=self.config.rain_col, snow_col=self.config.snow_col,
-            )
+            return df_degraded
 
         # "literature": per-row lead times 1..h
         lead_times = np.arange(1, len(df) + 1)
@@ -353,9 +349,6 @@ class WeatherProcessor:
             column_mapping=self.config.weather_degradation_mapping,
             seed=horizon_seed,
             lead_times=lead_times,
-            temp_col=temp_cols[0],
-            rain_col=self.config.rain_col,
-            snow_col=self.config.snow_col,
             noise_scale=noise_scale
         )
         

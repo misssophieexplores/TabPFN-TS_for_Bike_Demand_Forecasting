@@ -20,7 +20,7 @@ from evaluation.metrics import MetricsCalculator as M
 
 N_HOURS = 8760  # one year, as Seoul (shortest dataset)
 COVS = ["Temperature", "Humidity", "Wind speed", "Dew point temperature",
-        "Solar Radiation", "Rainfall", "Snowfall", "Visibility"]
+        "Solar Radiation", "precipitation_mm", "snow_depth_cm", "Visibility"]
 
 
 def make_df(n=N_HOURS, seed=0):
@@ -37,8 +37,8 @@ def make_df(n=N_HOURS, seed=0):
     for c in COVS:
         df[c] = rng.normal(size=n)
     df["Solar Radiation"] = df["Solar Radiation"].abs()
-    df["Rainfall"] = df["Rainfall"].clip(0)
-    df["Snowfall"] = df["Snowfall"].clip(0)
+    df["precipitation_mm"] = df["precipitation_mm"].clip(0)
+    df["snow_depth_cm"] = df["snow_depth_cm"].clip(0)
     return df
 
 

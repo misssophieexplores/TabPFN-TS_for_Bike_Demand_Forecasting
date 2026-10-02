@@ -91,6 +91,9 @@ def select_covariates(config: ForecastConfig, df: pd.DataFrame, scenario: str) -
     if scenario == "all_weather":
         return [c for c in config.weather_covariates if c in df.columns]
     # clean_only
+    missing = [c for c in config.weather_degradation_mapping if c not in df.columns]
+    if missing:
+        raise ValueError(f"data file has no column(s) {missing}: replace the data folder (2 Oct 2026)")
     covariates = [c for c in config.weather_degradation_mapping.keys() if c in df.columns]
     for col in [config.holiday_col, config.season_col]:
         if col and col in df.columns:

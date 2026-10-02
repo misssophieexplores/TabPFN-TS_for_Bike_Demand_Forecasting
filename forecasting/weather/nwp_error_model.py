@@ -37,7 +37,7 @@ How one test window is degraded
 3. Solar radiation: X' = X * (1 + b(lead) + s(lead) * z), z AR(1) with the
    measured lag-1 correlation; b = 0 if remove_bias; 0 at night; capped at
    the training-fold cap.
-4. Precipitation (rain and snow together, one decision per hour): miss rate
+4. Precipitation (total precipitation in mm, one decision per hour): miss rate
    and false-alarm ratio per lead time; misses and false alarms persist from
    hour to hour (latent AR(1) with the measured correlation); hits get the
    measured lognormal amount error (mean-preserving if remove_bias); false
@@ -54,6 +54,10 @@ How one test window is degraded
    mean-preserving if remove_bias. For a city whose covariate is capped
    (Seoul 20 km, Washington 16 km), an hour at the cap stays at the cap unless
    the forecast falls below it, which happens with the measured probability.
+6. Snow depth (since 2 Oct 2026): persistence, i.e. the value of the last
+   training hour (the issue time) for the whole window; no forecast errors of
+   snow depth were measured. Snow depth is not precipitation (no event draw,
+   not in the wet-hour share). There is no rain/snow phase correction.
 
 remove_bias does not change event rates: precipitation misses and false
 alarms, false-alarm amounts, and visibility falling below its cap stay as
@@ -222,7 +226,7 @@ class NWPErrorModel:
 
     # ------------------------------------------------------------------
     def degrade(self, df, times_utc, column_mapping, degradation_params, seed,
-                rain_col=None, noise_scale=1.0, run_hours=(0, 12), delay_h=6,
+                noise_scale=1.0, run_hours=(0, 12), delay_h=6,
                 season_days=30, fresh_forecast=True, remove_bias=True, seasonal_rain=True,
                 rain_frequency_unbiased=False):
         """
@@ -278,6 +282,13 @@ class NWPErrorModel:
             elif vtype == "visibility":
                 y = self._visibility(x, z_vis, s, degradation_params.get("visibility_max"),
                                      remove_bias)
+            elif vtype == "snow_depth":
+                # persistence: snow depth at the issue time (last training
+                # hour) for the whole window; no snow-depth errors measured
+                persist = degradation_params.get("persist", {})
+                if col not in persist:
+                    raise ValueError(f"degradation_params has no persistence value for '{col}'")
+                y = np.full(n, persist[col], dtype=float)
             else:
                 raise ValueError(f"Unknown variable type: '{vtype}'")
             out[col] = y.astype(float)
@@ -285,7 +296,7 @@ class NWPErrorModel:
         if precip_cols:
             if "wet_fraction" not in degradation_params:
                 raise ValueError("degradation_params has no 'wet_fraction'")
-            fa_col = rain_col if rain_col in precip_cols else precip_cols[0]
+            fa_col = precip_cols[0]   # one total-precipitation column per city
             params = self.rain_params(start.dayofyear, seasonal_rain)
             p = self._precipitation(df[precip_cols], leads, degradation_params["wet_fraction"],
                                     u_miss, u_fa, z_hit, z_fa_amount, s, fa_col, remove_bias, params,

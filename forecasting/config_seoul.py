@@ -28,8 +28,8 @@ def get_config() -> ForecastConfig:
         "Wind speed",
         "Dew point temperature",
         "Solar Radiation",
-        "Rainfall",
-        "Snowfall",
+        "precipitation_mm",
+        "snow_depth_cm",
         "Visibility",
         "Seasons",
         "Holiday",
@@ -39,22 +39,20 @@ def get_config() -> ForecastConfig:
         "Humidity": "humidity",
         "Wind speed": "wind_speed",
         "Solar Radiation": "solar_radiation",
-        "Rainfall": "precipitation",
-        "Snowfall": "precipitation",
+        "precipitation_mm": "precipitation",   # KMA 강수량 (= Rainfall); Nov-Mar 3-h totals spread over their 3 hours (mm/h)
+        "snow_depth_cm": "snow_depth",         # KMA 적설 (= Snowfall): snow depth on the ground (cm)
         "Visibility": "visibility"
     }
-    config.rain_col = "Rainfall"
     config.timezone = "Asia/Seoul"   # local time of the date column (KST, no daylight saving)
     config.nwp_calibration_file = "weather/nwp/calibration/seoul.npz"
-    config.snow_col = "Snowfall"
     config.column_scale_factors = {"Visibility": 0.01}  # raw unit is 10 m -> km (as London/Washington)
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_seoul_720_20261001_170419.json"
-    config.sarimax_params_file = "results/tuning/sarimax_best_params_seoul_clean_only_720_20261001_215224.json"
-    config.xgb_params_file = "results/tuning/xgboost_best_params_seoul_clean_only_720_20261001_215653.json"
+    config.sarimax_params_file = None   # re-tune: precipitation_mm (winter 3-h totals spread), 2 Oct 2026
+    config.xgb_params_file = None   # re-tune: covariates changed 2 Oct 2026
     config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_seoul_no_weather_720_20261002_024216.json"
     config.prophet_params_file = "results/tuning/prophet_best_params_seoul_720_20261001_170843.json"
-    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_seoul_clean_only_720_20261001_173039.json"
+    config.neuralprophet_params_file = None   # re-tune: covariates changed 2 Oct 2026
     config.neuralprophet_noweather_params_file ="results/tuning/neuralprophet_best_params_seoul_no_weather_720_20261001_183244.json"
     return config

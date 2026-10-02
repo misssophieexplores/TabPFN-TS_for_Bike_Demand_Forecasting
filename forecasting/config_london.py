@@ -27,8 +27,8 @@ def get_config() -> ForecastConfig:
         "wind_speed",
         "dew_point_c",
         "solar_radiation_wm2",
-        "rainfall_mm",
-        "snowfall_cm",
+        "precipitation_mm",
+        "snow_depth_cm",
         "visibility_km"
     ]
     config.weather_degradation_mapping = {
@@ -36,22 +36,20 @@ def get_config() -> ForecastConfig:
         "hum": "humidity",
         "wind_speed": "wind_speed",
         "solar_radiation_wm2": "solar_radiation",
-        "rainfall_mm": "precipitation",
-        "snowfall_cm": "precipitation",
+        "precipitation_mm": "precipitation",   # rain + snowfall / 0.7 (mm), Open-Meteo/ERA5
+        "snow_depth_cm": "snow_depth",         # snow depth on the ground (cm), ERA5-Land
         "visibility_km": "visibility"
     }
-    config.rain_col = "rainfall_mm"
     config.timezone = "Europe/London"   # local time of the date column (daylight saving included)
     config.nwp_calibration_file = "weather/nwp/calibration/london.npz"
-    config.snow_col = "snowfall_cm"
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_london_720_20261001_170305.json"
-    config.sarimax_params_file = "results/tuning/sarimax_best_params_london_clean_only_720_20261001_194055.json"
-    config.xgb_params_file = "results/tuning/xgboost_best_params_london_clean_only_720_20261001_225940.json"
+    config.sarimax_params_file = None   # re-tune: covariates changed 2 Oct 2026 (precipitation, snow depth, DST alignment)
+    config.xgb_params_file = None   # re-tune: covariates changed 2 Oct 2026
     config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_london_no_weather_720_20261002_014031.json"
     config.prophet_params_file = "results/tuning/prophet_best_params_london_720_20261001_170855.json"
-    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_london_clean_only_720_20261001_175145.json"
+    config.neuralprophet_params_file = None   # re-tune: covariates changed 2 Oct 2026
     config.neuralprophet_noweather_params_file ="results/tuning/neuralprophet_best_params_london_no_weather_720_20261001_185249.json"
 
     return config

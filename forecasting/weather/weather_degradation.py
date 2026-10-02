@@ -8,10 +8,11 @@ This module holds the "literature" error model (config.degradation_model =
 "literature"): error growth functions calibrated to published NWP verification
 statistics, the same for every city. The default model is the per-city
 measured model in nwp_error_model.py ("nwp_measured"); it uses
-prepare_degradation_parameters() and fix_precipitation_type() from here.
+prepare_degradation_parameters() from here.
 See weather_methodology.md for detailed documentation and validation evidence.
 
-Version: 1.4.0
+Version: 1.5.0 (2 Oct 2026: one total-precipitation column per city; snow
+depth by persistence; rain/snow phase correction removed)
 """
 
 import numpy as np
@@ -354,10 +355,10 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
     dict
         Dictionary containing:
         - 'solar_cap': 99.5th percentile of observed solar radiation
-        - 'wet_fraction': share of hours with precipitation in any
-          precipitation column (rain or snow > 0); only if column_mapping
-          has precipitation columns present in training_data. Converts the
-          false alarm ratio into a probability per dry hour.
+        - 'wet_fraction': share of hours with precipitation > 0 (columns of
+          type 'precipitation'; snow depth is not precipitation); only if
+          column_mapping has precipitation columns present in training_data.
+          Converts the false alarm ratio into a probability per dry hour.
         - 'precip_max': {column: largest value in the training data} for the
           precipitation columns; upper limit of degraded precipitation in the
           measured NWP error model (an hour's measured value is never cut).
@@ -365,6 +366,9 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
           column_mapping has a visibility column present in training_data.
           Upper limit of degraded visibility in the measured NWP error model
           for cities without a visibility cap (London).
+        - 'persist': {column: value of the last training hour} for the
+          snow-depth columns (type 'snow_depth'): the persistence forecast
+          of snow depth, see persistence_forecast().
 
     Examples
     --------
@@ -395,7 +399,7 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
         'solar_cap': np.percentile(training_data[solar_col], 99.5)
     }
 
-    # Share of wet hours (any precipitation column > 0): base rate for the
+    # Share of wet hours (precipitation > 0): base rate for the
     # false-alarm probability (see precipitation_detection_rates())
     precip_cols = [
         c for c, t in (column_mapping or {}).items()
@@ -412,82 +416,44 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
     if vis_cols:
         params['visibility_max'] = float(training_data[vis_cols].max().max())
 
+    # Snow depth: value at the issue time (last training hour), held for the
+    # whole test window (persistence_forecast())
+    depth_cols = [
+        c for c, t in (column_mapping or {}).items()
+        if t == 'snow_depth' and c in training_data.columns
+    ]
+    if depth_cols:
+        params['persist'] = {c: float(training_data[c].iloc[-1]) for c in depth_cols}
+
     return params
 
 
-def fix_precipitation_type(df_degraded, temp_col='Temperature', 
-                          rain_col='Rainfall', snow_col='Snowfall'):
+def persistence_forecast(col, degradation_params, n):
     """
-    Swap rain/snow based on degraded temperature to maintain physical consistency.
-    
-    After independent degradation, temperature and precipitation type may be
-    inconsistent (e.g., snowfall at 15°C or rainfall at -5°C). This function
-    corrects precipitation type based on the degraded temperature.
-    
-    Rule: precipitation type determined by degraded temperature
-    - Above 2°C: convert snow to rain
-    - Below 2°C: convert rain to snow
-    
-    Parameters
-    ----------
-    df_degraded : pd.DataFrame
-        Degraded dataframe
-    temp_col : str, default='Temperature'
-        Temperature column name
-    rain_col : str, default='Rainfall'
-        Rainfall column name
-    snow_col : str, default='Snowfall'
-        Snowfall column name
-    
-    Returns
-    -------
-    pd.DataFrame
-        Dataframe with corrected precipitation types
-        
-    Notes
-    -----
-    The 2°C threshold is a simplification. Real precipitation phase transition
-    occurs over a range (typically 0-4°C) with mixed precipitation possible.
-    This threshold represents typical operational forecast practice.
-    
-    Examples
-    --------
-    >>> # After degradation, fix inconsistencies
-    >>> df_corrected = fix_precipitation_type(
-    ...     df_degraded,
-    ...     temp_col='Temperature',
-    ...     rain_col='Rainfall',
-    ...     snow_col='Snowfall'
-    ... )
+    Snow-depth forecast: the value observed at the issue time (the last hour
+    of the training fold, degradation_params['persist'][col]) for all n test
+    rows. No forecast errors of snow depth were measured; persistence is the
+    forecast an operator has without a snow model. Used by both error models.
     """
-    df = df_degraded.copy()
-    
-    # Skip if columns missing
-    if temp_col not in df.columns or rain_col not in df.columns or snow_col not in df.columns:
-        return df
-    
-    # Condition 1: Warm temperatures (>2°C) with snow → convert to rain
-    warm_with_snow = (df[temp_col] > 2) & (df[snow_col] > 0)
-    df.loc[warm_with_snow, rain_col] = df.loc[warm_with_snow, rain_col] + df.loc[warm_with_snow, snow_col]
-    df.loc[warm_with_snow, snow_col] = 0
-    
-    # Condition 2: Cold temperatures (<2°C) with rain → convert to snow
-    cold_with_rain = (df[temp_col] < 2) & (df[rain_col] > 0)
-    df.loc[cold_with_rain, snow_col] = df.loc[cold_with_rain, snow_col] + df.loc[cold_with_rain, rain_col]
-    df.loc[cold_with_rain, rain_col] = 0
-    
-    return df
+    persist = degradation_params.get('persist', {})
+    if col not in persist:
+        raise ValueError(
+            f"degradation_params has no persistence value for '{col}': compute it "
+            f"with prepare_degradation_parameters(training_data, column_mapping)"
+        )
+    return np.full(n, persist[col], dtype=float)
 
 
 def _degrade_precipitation_hours(precip, lead_times, wet_fraction, rng, false_alarm_col,
                                  noise_scale=1.0):
     """
     Event-detection and magnitude errors for all precipitation columns
-    together (e.g. rain and snow): one draw per hour.
+    together: one draw per hour (since 2 Oct 2026 every city has one
+    total-precipitation column).
 
     - Dry hour (all columns 0): false alarm with probability
       P(false alarm | dry) from precipitation_detection_rates(); the amount
-      goes to false_alarm_col (the rain/snow correction assigns the phase).
+      goes to false_alarm_col.
     - Wet hour (any column > 0): missed with probability miss_rate (all
       columns 0); otherwise every column is multiplied by the same
       mean-preserving lognormal multiplier.
@@ -513,19 +479,18 @@ def _degrade_precipitation_hours(precip, lead_times, wet_fraction, rng, false_al
 
 def degrade_weather_dataset(df, horizon_hours, degradation_params,
                             column_mapping=None, seed=42, lead_times=None,
-                            temp_col=None, rain_col=None, snow_col=None,
                             noise_scale=1.0):
     """
     Apply forecast degradation to all weather variables in a dataset.
     
-    Degradation is applied in two passes:
-    1. All variables degraded independently. All precipitation columns
-       (rain and snow) together are one precipitation variable: one
-       event-detection draw per hour and, for a detected event, one
-       magnitude multiplier applied to every non-zero precipitation column.
-       A false-alarm amount is written to rain_col (or to the first
-       precipitation column if rain_col is not given).
-    2. Precipitation types corrected based on degraded temperature
+    All variables are degraded independently. The precipitation columns
+    (since 2 Oct 2026 one total-precipitation column per city) together are
+    one precipitation variable: one event-detection draw per hour and, for a
+    detected event, one magnitude multiplier applied to every non-zero
+    precipitation column; a false-alarm amount goes to the first
+    precipitation column. Snow depth (type 'snow_depth') is not
+    precipitation: it gets the persistence forecast (persistence_forecast()).
+    There is no rain/snow phase correction (removed 2 Oct 2026).
 
     Parameters
     ----------
@@ -536,7 +501,8 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
         Ignored when lead_times is provided.
     degradation_params : dict
         Parameters from prepare_degradation_parameters() of the training
-        data ('solar_cap'; 'wet_fraction' if there are precipitation columns)
+        data ('solar_cap'; 'wet_fraction' if there are precipitation columns;
+        'persist' if there are snow-depth columns)
     column_mapping : dict, optional
         Maps actual column names to variable types.
         Example: {'Temperature': 'temperature', 'Rainfall': 'precipitation'}
@@ -549,9 +515,6 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
         the scalar horizon_hours.  Pass np.arange(1, horizon+1) for a test
         window so that the first predicted hour uses 1-hour noise and the last
         uses full-horizon noise — which is the physically correct behaviour.
-    temp_col, rain_col, snow_col : str, optional
-        Column names for the rain/snow phase correction (pass 2). If any of
-        them is None, the correction is skipped.
     noise_scale : float, default=1.0
         Factor applied to the error magnitudes (see degrade_weather_forecast).
         The random draws do not depend on it: the same seed gives errors that
@@ -598,9 +561,13 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
     precip_cols = [c for c, t in column_mapping.items() if t == 'precipitation' and c in df.columns]
     precip_done = False
 
-    # Pass 1: Degrade all variables independently
+    # Degrade all variables independently
     for col, var_type in column_mapping.items():
         if col not in df.columns:
+            continue
+
+        if var_type == 'snow_depth':
+            df_degraded[col] = persistence_forecast(col, degradation_params, len(df))
             continue
 
         if var_type == 'precipitation':
@@ -611,7 +578,7 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
                         "degradation_params has no 'wet_fraction': compute it with "
                         "prepare_degradation_parameters(training_data, column_mapping)"
                     )
-                fa_col = rain_col if rain_col in precip_cols else precip_cols[0]
+                fa_col = precip_cols[0]
                 degraded_precip = _degrade_precipitation_hours(
                     df[precip_cols], lead_times, degradation_params['wet_fraction'],
                     rng, false_alarm_col=fa_col, noise_scale=noise_scale,
@@ -630,16 +597,6 @@ def degrade_weather_dataset(df, horizon_hours, degradation_params,
         # float dtype: degrade_weather_forecast returns int 0 for night rows
         # (solar); keep every degraded column float
         df_degraded[col] = np.asarray(degraded_values, dtype=float)
-
-    # Pass 2: Fix precipitation types based on degraded temperature
-    # This MUST happen after temperature degradation
-    if temp_col and rain_col and snow_col:
-        df_degraded = fix_precipitation_type(
-            df_degraded,
-            temp_col=temp_col,
-            rain_col=rain_col,
-            snow_col=snow_col
-        )
 
     return df_degraded
 
@@ -684,7 +641,7 @@ def create_forecast_scenarios(df, degradation_params, column_mapping,
     >>> column_mapping = {
     ...     'Temperature': 'temperature',
     ...     'Rainfall': 'precipitation',
-    ...     'Snowfall': 'precipitation'
+    ...     'Snowfall': 'snow_depth'
     ... }
     >>> 
     >>> # REPRODUCIBLE (recommended, default seed=42)

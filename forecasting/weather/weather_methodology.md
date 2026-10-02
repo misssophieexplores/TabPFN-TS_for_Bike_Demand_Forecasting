@@ -9,7 +9,7 @@ Two error models are implemented (`config.degradation_model`):
 
 ### Summary
 
-Observed weather covariates in the test windows were degraded with forecast errors measured for each city from 1,828 operational-resolution ECMWF IFS HRES (9 km) forecasts issued at 00 and 12 UTC between 14 March 2024 and 16 September 2026 (Open-Meteo Single Runs API). Errors were measured against the data source of each city's covariates: the Seoul weather station (WMO 47108, the station of the Seoul data) for Seoul (precipitation included since 2 Oct 2026), and ERA5/ERA5-Land reanalysis for London and Washington, whose covariates come from the Open-Meteo archive. For temperature, humidity and wind speed, the actual errors of a whole forecast run are replayed; solar radiation, precipitation and visibility errors are simulated from per-city, per-lead-time error statistics with measured hour-to-hour persistence.
+Observed weather covariates in the test windows were degraded with forecast errors measured for each city from 1,828 operational-resolution ECMWF IFS HRES (9 km) forecasts issued at 00 and 12 UTC between 14 March 2024 and 16 September 2026 (Open-Meteo Single Runs API). Errors were measured against the data source of each city's covariates: the Seoul weather station (WMO 47108, the station of the Seoul data) for Seoul (precipitation included since 2 Oct 2026), and ERA5/ERA5-Land reanalysis for London and Washington, whose covariates come from the Open-Meteo archive. For temperature, humidity and wind speed, the actual errors of a whole forecast run are replayed; solar radiation, precipitation and visibility errors are simulated from per-city, per-lead-time error statistics with measured hour-to-hour persistence. Precipitation is total precipitation including melted snow in every city; snow depth on the ground, for which no forecast errors are available, is forecast by persistence (its value at the time the forecast is issued).
 
 Default setting (revised 1 Oct 2026): an operator with an up-to-date, locally corrected weather forecast. The weather forecast starts when the demand forecast is made, so test hour *i* gets the error of an (*i*+1)-hour forecast in every city (`config.nwp_fresh_forecast = True`), and the average error (bias) of the forecasts is removed (`config.nwp_remove_bias = True`). Both can be switched off; with both off the model is the version first delivered on 1 Oct 2026 (6–17 h old forecast, bias kept). Since 2 Oct 2026 the rain errors also depend on the time of year (`config.nwp_seasonal_rain = True`), Seoul rain is measured against the station, and the rain-frequency bias of the raw forecast is removed (`config.nwp_rain_frequency_unbiased = True`).
 
@@ -44,15 +44,19 @@ b(L) and s(L) are weighted least-squares estimates over daylight hours of the er
 
 ### Precipitation
 
-Rainfall and snowfall are one precipitation variable with one decision per hour (wet = any column > 0):
+Precipitation is total precipitation including melted snow (mm, column `precipitation_mm` in every city; Seoul = KMA station amounts, November–March 3-hour totals spread evenly over their three hours; London/Washington = Open-Meteo rain + snowfall / 0.7), one decision per hour (wet = > 0):
 - Wet hour: missed (forecast 0) with the measured miss rate m(L, season); otherwise every precipitation column is multiplied by exp(μ_h(L) + σ_h(L)·zₜ), the measured distribution of log(forecast/observed) for hits. With `nwp_remove_bias = True`, μ_h = −σ_h²/2 (mean-preserving multiplier, no systematic over- or underestimate); the miss rate and false-alarm amounts are event rates and stay as measured; false alarms follow `nwp_rain_frequency_unbiased` (below).
 - Cap: degraded amounts are at most the training fold's maximum of the column, or the hour's measured amount if larger (since 2 Oct 2026; the lognormal amount error has no upper limit: without the cap, Seoul's degraded rain reached 306 mm/h against a data maximum of 35 mm/h, Washington 52 against 13).
-- Dry hour: false alarm with probability FAR(L)/(1 − FAR(L)) · (1 − m(L)) · p/(1 − p) (p = wet-hour share of the training fold; reproduces the measured false-alarm ratio FAR; with `nwp_rain_frequency_unbiased`, the default, m(L)·p/(1 − p), see below), amount lognormal with the measured median and spread of ECMWF amounts in false alarms; written to the rain column.
+- Dry hour: false alarm with probability FAR(L)/(1 − FAR(L)) · (1 − m(L)) · p/(1 − p) (p = wet-hour share of the training fold; reproduces the measured false-alarm ratio FAR; with `nwp_rain_frequency_unbiased`, the default, m(L)·p/(1 − p), see below), amount lognormal with the measured median and spread of ECMWF amounts in false alarms; written to the precipitation column.
 - Persistence: the miss and false-alarm decisions use latent Gaussian AR(1) series whose lag-1 correlations ρ are the tetrachoric correlations of consecutive hours in the ECMWF data (an event that is missed tends to be missed for hours); the hit amount errors follow an AR(1) series with the measured lag-1 correlation φ.
 - Rates are pooled over ±12 h of lead time; wet = ≥ 0.1 mm/h (the data resolution).
 - Time of year (`nwp_seasonal_rain = True`, default): miss rate, false-alarm ratio and the hit amount error (μ_h, σ_h) are estimated for 12 bins centred on the 15th of each month, from runs starting within ±30 days of the centre (any year); the window is widened in 15-day steps until every pooled lead window (leads 1–168 h) has ≥ 200 wet hours, ≥ 200 forecast-wet hours and ≥ 50 hits. A test window uses the values of its forecast start date, interpolated linearly between the two nearest bin centres. Windows used: London and Washington ±30 days in every month; Seoul ±30 to ±120 days (few wet hours at the station in winter). False-alarm amounts and the persistence parameters are year-round.
 - Reference: London and Washington ERA5 (the source of their covariates). Seoul: the station (its bike-data rain is this station's rain: 2017–18 6-/12-hour station totals equal the bike-data sums in 99 % of cases). From 2024 the station reports hourly SYNOPs with a 1-hour amount in every wet hour (the hourly amounts add up to the station's running 24-hour totals, median ratio 1.00); a routine report without an amount and without precipitation in the present-weather group is a dry hour, one with precipitation in the present-weather group but no amount (mostly snow or traces, 5 % of hours) is left out. The resulting series (Mar 2024 – Aug 2025, 1,049 runs) has 5.7 % wet hours and 0.89 % hours ≥ 5 mm, as the bike data in 2017–18 (6.0 % and 0.8 %); ERA5 has 10.7 % and 0.3 %.
 - Rain frequency (`nwp_rain_frequency_unbiased = True`, default since 2 Oct 2026): false alarms are set equal to misses, so the forecast is wet as often as observed (P(false alarm | dry) = m(L)·p/(1 − p); the applied false-alarm ratio equals the miss rate). This removes the rain-frequency bias of the raw forecast, as the temperature, humidity and wind biases are removed: against the Seoul station the raw forecast is wet about 2.2 times as often as observed (FAR 0.65 at 24 h), against ERA5 about 0.8–0.9 times (London, Washington). `False`: the measured false-alarm ratio.
+
+### Snow depth
+
+Snow depth on the ground (cm, column `snow_depth_cm` in every city; Seoul = KMA 적설 at the station, London/Washington = ERA5-Land) has no measured forecast errors. It is forecast by persistence: every test hour gets the value of the last training hour (the issue time). Snow depth is not precipitation: it does not enter the event draw, the wet-hour share or the rain cap. There is no rain/snow phase correction (removed 2 Oct 2026): with total precipitation and snow depth there is no rain/snow split to correct.
 
 ### Visibility
 
@@ -206,11 +210,11 @@ The miss rate (1 − POD) is conditional on an observed event, P(no forecast | p
 
 **P(false alarm | dry) = FAR / (1 − FAR) · POD · p / (1 − p)**
 
-where *p* is the share of wet hours (rain or snow > 0), computed from the clean training window of each fold (in the same way as the solar cap). With this probability the simulated forecasts reproduce the source statistics: the simulated FAR equals the reported FAR and the simulated POD equals the reported POD. For a wet-hour share of 6%, P(false alarm | dry) is 2.2% at 24 h. A training window without any precipitation gives *p* = 0 and therefore no false alarms in that fold.
+where *p* is the share of wet hours (precipitation > 0), computed from the clean training window of each fold (in the same way as the solar cap). With this probability the simulated forecasts reproduce the source statistics: the simulated FAR equals the reported FAR and the simulated POD equals the reported POD. For a wet-hour share of 6%, P(false alarm | dry) is 2.2% at 24 h. A training window without any precipitation gives *p* = 0 and therefore no false alarms in that fold.
 
 **Implementation:**
-- **One precipitation variable:** Rainfall and snowfall are treated as one precipitation variable. An hour is wet if rain or snow > 0. Each hour receives one event-detection draw.
-- **False alarms** (actual = 0, forecast > 0): Generated with probability P(false alarm | dry). When triggered, a small precipitation amount is sampled from a lognormal distribution with median 0.5 mm (σ_log = 0.5, mean 0.57 mm), representing typical light false alarm precipitation. The amount is written to the rain column; the phase correction (below) converts it to snow when the degraded temperature is below 2 °C.
+- **One precipitation variable:** total precipitation (one column per city). An hour is wet if precipitation > 0. Each hour receives one event-detection draw. Snow depth gets the persistence forecast, as in the measured model.
+- **False alarms** (actual = 0, forecast > 0): Generated with probability P(false alarm | dry). When triggered, a small precipitation amount is sampled from a lognormal distribution with median 0.5 mm (σ_log = 0.5, mean 0.57 mm), representing typical light false alarm precipitation. The amount is written to the precipitation column.
   
 - **Missed events** (actual > 0, forecast = 0): Occur with probability = miss_rate. When triggered, forecast returns 0 regardless of actual amount.
   
@@ -250,15 +254,9 @@ The noise at 1 h is not zero: every error formula has an intercept. At 1 h the e
 
 This is physically correct because a horizon-*h* NWP forecast covers *h* consecutive future hours, and error grows continuously with lead time. The previous implementation applied the maximum-horizon noise uniformly to every row, which overestimated degradation for all but the final prediction step.
 
-### Two-Phase Degradation Process
+### Degradation Process
 
-Weather degradation is applied in two sequential phases to maintain physical consistency:
-
-**Phase 1: Independent Variable Degradation**
-All weather variables are degraded independently according to their respective error models, using per-row lead times as described above. Rainfall and snowfall are degraded together as one precipitation variable (one event-detection draw per hour).
-
-**Phase 2: Physical Consistency Correction**
-After independent degradation, precipitation types (rain vs. snow) are corrected based on degraded temperature to prevent physically impossible combinations (e.g., snowfall at 15°C or rainfall at -5°C).
+All weather variables are degraded independently according to their respective error models, using per-row lead times as described above. Precipitation is one variable (one event-detection draw per hour); snow depth is forecast by persistence. Until 2 Oct 2026 a second phase re-assigned rain and snow by the degraded temperature (2 °C threshold). It was removed because every city now has total precipitation and snow depth instead of a rain/snow split (Seoul's snow column is snow depth, which the correction had turned into rain).
 
 ### Additive Homoscedastic Gaussian (Temperature, Humidity, Wind)
 
@@ -321,7 +319,7 @@ For production pipelines, the default reproducible behavior is recommended.
 
 1. **Timing and displacement errors not modeled**: The degradation model perturbs variable magnitudes and simulates event detection errors, but does not simulate timing errors (temporal phase shifts) or spatial displacement. These factors contribute to precipitation forecast errors beyond 48 hours (Jolliffe & Stephenson, 2008) and temperature/wind errors at longer lead times.
 
-2. **Independent errors across variables**: Errors were treated as independent across weather variables, except for the temperature-precipitation type coupling. Actual NWP forecast errors exhibit substantial cross-variable correlations—for example, temperature and humidity errors are coupled through thermodynamic relationships, and wind errors correlate with temperature gradients. This independence assumption may underestimate error in derived quantities or physically coupled processes.
+2. **Independent errors across variables**: Errors were treated as independent across weather variables. Actual NWP forecast errors exhibit substantial cross-variable correlations—for example, temperature and humidity errors are coupled through thermodynamic relationships, and wind errors correlate with temperature gradients. This independence assumption may underestimate error in derived quantities or physically coupled processes.
 
 3. **Independent errors from hour to hour**: Each hour of a test window receives an independent error draw. Actual NWP forecast errors persist over many hours (e.g. a forecast that is too warm stays too warm for most of a day). The per-hour error magnitude matches the error formulas, but the temporal structure of the errors is not represented.
 
@@ -329,7 +327,7 @@ For production pipelines, the default reproducible behavior is recommended.
 
 5. **Linear error growth**: Error growth was modeled as linear in forecast lead time. Actual verification curves show modest nonlinearity, with error growth accelerating slightly beyond 5-7 days as predictability limits are approached, and asymptotic behavior at very long ranges (>10 days) where forecast skill approaches climatology.
 
-6. **Simplified precipitation phase transition**: The 2°C threshold for rain/snow conversion is a simplification. Real precipitation phase transitions occur over a range (typically 0-4°C) with mixed precipitation possible. This threshold represents typical operational practice but does not capture the full complexity of precipitation phase physics.
+6. **Snow depth by persistence**: No forecast errors of snow depth are available; snow depth is held at its value at the issue time, so melting and new snow within the horizon are missed.
 
 7. **Assumption-based parameters**: Precipitation magnitude CV (30% + 0.15%/h) is an assumption; no published verification of the magnitude error of correctly detected hourly precipitation by lead time was found. Solar radiation linear growth (0.15%/h) interpolates between verified 1-day and 7-day endpoints. These parameters represent defensible estimates but have not been independently validated against held-out verification datasets.
 

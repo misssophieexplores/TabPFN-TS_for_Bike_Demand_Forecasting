@@ -129,16 +129,21 @@ class TestWeatherDegradation:
             assert false_alarms / (false_alarms + hits) == pytest.approx(far_source, abs=0.02)
             assert hits / obs.sum() == pytest.approx(pod_source, abs=0.02)
 
-    def test_wet_fraction_from_training_data(self):
-        """Wet hour = rain OR snow > 0 (one precipitation variable)."""
+    def test_wet_fraction_ignores_snow_depth(self):
+        """Wet hour = precipitation > 0. Snow depth (type 'snow_depth') is not
+        precipitation: not in the wet-hour share or the rain cap; its value in
+        the last training hour is the persistence forecast."""
         df = pd.DataFrame({
             'Solar Radiation': np.ones(10),
             'Rainfall': [0, 1, 0, 0, 0, 2, 0, 0, 0, 0],
-            'Snowfall': [0, 1, 0, 3, 0, 0, 0, 0, 0, 0],
+            'Snowfall': [0, 1, 0, 3, 5, 5, 4, 4, 3, 2],
         })
         mapping = {'Solar Radiation': 'solar_radiation',
-                   'Rainfall': 'precipitation', 'Snowfall': 'precipitation'}
-        assert prepare_degradation_parameters(df, mapping)['wet_fraction'] == pytest.approx(0.3)
+                   'Rainfall': 'precipitation', 'Snowfall': 'snow_depth'}
+        params = prepare_degradation_parameters(df, mapping)
+        assert params['wet_fraction'] == pytest.approx(0.2)
+        assert params['precip_max'] == {'Rainfall': 2.0}
+        assert params['persist'] == {'Snowfall': 2.0}
 
     def test_prepare_degradation_parameters(self):
         """Test degradation parameter computation"""
@@ -202,12 +207,10 @@ class TestWeatherDegradation:
             'Wind speed': 'wind_speed',
             'Solar Radiation': 'solar_radiation',
             'Rainfall': 'precipitation',
-            'Snowfall': 'precipitation',
+            'Snowfall': 'snow_depth',
         }
         config.holiday_col = None
         config.season_col = None
-        config.rain_col = 'Rainfall'
-        config.snow_col = 'Snowfall'
         return WeatherProcessor(config)
 
     def _make_test_df(self, n_rows=24):
@@ -323,10 +326,9 @@ class TestWeatherDegradation:
             out.append(X['Temperature'].values - df['Temperature'].values)
         assert not np.allclose(out[0], out[1])
 
-    def test_dry_window_with_phase_correction(self):
-        """Cold, dry test window: precipitation columns come out as all-zero
-        before the phase correction moves false-alarm rain into snow. Must not
-        fail on dtype (pandas >= 3 rejects floats in an int column)."""
+    def test_dry_cold_window_float_columns(self):
+        """Cold, dry test window: the precipitation and snow-depth columns
+        come out as float (pandas >= 3 rejects floats in an int column)."""
         processor = self._make_weather_processor()
         df = self._make_test_df(n_rows=6)
         df['Temperature'] = -5.0
@@ -336,20 +338,21 @@ class TestWeatherDegradation:
             assert X['Rainfall'].dtype.kind == 'f' and X['Snowfall'].dtype.kind == 'f'
 
     def test_one_false_alarm_draw_per_hour(self):
-        """Dry test window, rain AND snow columns: the share of hours with
-        forecast precipitation equals P(false alarm | dry) once, not
-        1 - (1 - P)^2 from separate draws per column. The wet-hour share
-        comes from the training fold."""
+        """Dry test window: the share of hours with forecast precipitation
+        equals P(false alarm | dry). The wet-hour share comes from the
+        training fold; snow lying on the ground does not make an hour wet."""
         processor = self._make_weather_processor()
         horizon, n_folds = 24, 400
         train = self._make_test_df(n_rows=720)
         train['Rainfall'] = np.where(np.arange(720) % 20 == 0, 1.0, 0.0)   # 5 % wet hours
+        train['Snowfall'] = 3.0                                           # snow on the ground: not wet
         test = self._make_test_df(n_rows=horizon)                         # completely dry
         shares = []
         for fold_idx in range(n_folds):
             processor.prepare_weather_data(train, 'degraded', horizon=horizon, fold_idx=fold_idx, split='train')
             X = processor.prepare_weather_data(test, 'degraded', horizon=horizon, fold_idx=fold_idx, split='test')
-            shares.append(((X['Rainfall'] > 0) | (X['Snowfall'] > 0)).mean())
+            shares.append((X['Rainfall'] > 0).mean())
+            assert (X['Snowfall'] == 3.0).all()                           # persistence
         assert processor.degradation_params['wet_fraction'] == pytest.approx(0.05)
         expected = np.mean([precipitation_detection_rates(lt, 0.05)[1] for lt in range(1, horizon + 1)])
         assert np.mean(shares) == pytest.approx(expected, abs=0.006)
@@ -395,7 +398,6 @@ class TestWeatherDegradation:
             processor.config.weather_degradation_mapping,
             seed=processor.config.degradation_seed + 10000 * horizon + fold_idx,
             lead_times=np.arange(1, horizon + 1),
-            temp_col='Temperature', rain_col='Rainfall', snow_col='Snowfall',
         )
         pd.testing.assert_frame_equal(X, expected)
 
@@ -409,7 +411,7 @@ class TestWeatherDegradation:
         processor.config.degradation_scales = dict(SENSITIVITY_SCALES)
         horizon = 48
         df = self._make_test_df(n_rows=horizon)
-        df['Temperature'] = 25.0                          # far from the 2 °C rain/snow threshold
+        df['Temperature'] = 25.0
         df['Rainfall'] = np.tile([0.0, 2.0], horizon // 2)
         out = {}
         for scenario in processor.config.degradation_scales:
@@ -418,11 +420,11 @@ class TestWeatherDegradation:
                 df, scenario, horizon=horizon, fold_idx=3, split='test'
             )
         err_1 = out['degraded']['Temperature'] - df['Temperature']
-        wet_1 = (out['degraded']['Rainfall'] + out['degraded']['Snowfall']) > 0
+        wet_1 = out['degraded']['Rainfall'] > 0
         for scenario, scale in processor.config.degradation_scales.items():
             err = out[scenario]['Temperature'] - df['Temperature']
             np.testing.assert_allclose(err, scale * err_1, rtol=1e-9, atol=1e-9)
-            wet = (out[scenario]['Rainfall'] + out[scenario]['Snowfall']) > 0
+            wet = out[scenario]['Rainfall'] > 0
             assert (wet == wet_1).all(), f"{scenario}: precipitation events differ from 'degraded'"
 
     def test_negative_noise_scale_raises(self):
@@ -437,31 +439,46 @@ class TestWeatherDegradation:
         with pytest.raises(ValueError):
             processor.prepare_weather_data(df, 'degraded', horizon=24, fold_idx=10000, split='test')
 
-    def test_rain_snow_phase_correction_uses_config_columns(self):
-        """Phase correction with non-Seoul column names (London/Washington)."""
+    def test_no_phase_correction_snow_depth_persistence(self):
+        """London/Washington column names: precipitation stays in the
+        precipitation column at any temperature (no rain/snow phase correction
+        since 2 Oct 2026); snow depth is the value of the last training hour in
+        every test hour, whatever the test window's own snow depth."""
         config = ForecastConfig()
         config.dataset_name = "test"
-        config.weather_covariates = ['temperature_c', 'solar_radiation_wm2', 'rainfall_mm', 'snowfall_cm']
+        config.weather_covariates = ['temperature_c', 'solar_radiation_wm2', 'precipitation_mm', 'snow_depth_cm']
         config.weather_degradation_mapping = {
             'temperature_c': 'temperature', 'solar_radiation_wm2': 'solar_radiation',
-            'rainfall_mm': 'precipitation', 'snowfall_cm': 'precipitation',
+            'precipitation_mm': 'precipitation', 'snow_depth_cm': 'snow_depth',
         }
         config.holiday_col = None
         config.season_col = None
-        config.rain_col = 'rainfall_mm'
-        config.snow_col = 'snowfall_cm'
         config.degradation_seed = 42
         config.degradation_model = "literature"
         processor = WeatherProcessor(config)
         n = 48
-        df = pd.DataFrame({'temperature_c': np.full(n, 20.0),      # warm: snow must become rain
-                           'solar_radiation_wm2': np.full(n, 100.0),
-                           'rainfall_mm': np.zeros(n), 'snowfall_cm': np.full(n, 5.0)})
-        processor.prepare_weather_data(df, 'degraded', horizon=n, fold_idx=0, split='train')
-        X = processor.prepare_weather_data(df, 'degraded', horizon=n, fold_idx=0, split='test')
-        warm = X['temperature_c'] > 2
-        assert warm.any()
-        assert (X.loc[warm, 'snowfall_cm'] == 0).all()
+        train = pd.DataFrame({'temperature_c': np.full(720, -5.0),
+                              'solar_radiation_wm2': np.full(720, 100.0),
+                              'precipitation_mm': np.where(np.arange(720) % 4 == 0, 1.0, 0.0),
+                              'snow_depth_cm': np.linspace(10.0, 6.0, 720)})
+        test = pd.DataFrame({'temperature_c': np.full(n, -5.0),         # cold: the old code moved rain to snow
+                             'solar_radiation_wm2': np.full(n, 100.0),
+                             'precipitation_mm': np.full(n, 2.0),
+                             'snow_depth_cm': np.linspace(0.0, 20.0, n)})
+        processor.prepare_weather_data(train, 'degraded', horizon=n, fold_idx=0, split='train')
+        X = processor.prepare_weather_data(test, 'degraded', horizon=n, fold_idx=0, split='test')
+        assert (X['precipitation_mm'] > 0).sum() > n // 3      # hits stay precipitation
+        assert (X['snow_depth_cm'] == 6.0).all()                # last training hour
+
+    def test_two_precipitation_columns_rejected(self):
+        """Snowfall or snow depth mapped as 'precipitation' next to rain is
+        rejected (one total-precipitation column per city)."""
+        processor = self._make_weather_processor()
+        processor.config.weather_degradation_mapping['Snowfall'] = 'precipitation'
+        df = self._make_test_df()
+        processor.prepare_weather_data(df, 'degraded', horizon=24, fold_idx=0, split='train')
+        with pytest.raises(ValueError):
+            processor.prepare_weather_data(df, 'degraded', horizon=24, fold_idx=0, split='test')
 
 
 # ======================================================================
@@ -478,6 +495,13 @@ CITY_MODULES = {"seoul": "config_seoul", "london": "config_london", "washington"
 
 def _city_config(city):
     return importlib.import_module(CITY_MODULES[city]).get_config()
+
+
+def _precip_col(config):
+    """The city's total-precipitation column (exactly one since 2 Oct 2026)."""
+    cols = [c for c, t in config.weather_degradation_mapping.items() if t == "precipitation"]
+    assert len(cols) == 1, cols
+    return cols[0]
 
 
 def _synthetic_city_data(config, start, n_hours, seed=0, rain_every=None):
@@ -497,10 +521,10 @@ def _synthetic_city_data(config, start, n_hours, seed=0, rain_every=None):
             df[col] = np.where((t.hour >= 7) & (t.hour <= 17), 300.0, 0.0)
         elif typ == "visibility":
             df[col] = rng.uniform(2, 30, n_hours)
-        elif typ == "precipitation":
+        elif typ in ("precipitation", "snow_depth"):
             df[col] = 0.0
     if rain_every:
-        df[config.rain_col] = np.where(np.arange(n_hours) % rain_every == 0, 1.5, 0.0)
+        df[_precip_col(config)] = np.where(np.arange(n_hours) % rain_every == 0, 1.5, 0.0)
     for col in [config.holiday_col, config.season_col]:
         if col:
             df[col] = 0
@@ -594,8 +618,8 @@ class TestMeasuredNWPModel:
                 proc.prepare_weather_data(train, "degraded", horizon=48, fold_idx=fold, split="train")
                 X = proc.prepare_weather_data(test, "degraded", horizon=48, fold_idx=fold, split="test")
                 assert proc.last_degradation_info["rain_frequency_unbiased"] == unbiased
-                n_obs += int((test["Rainfall"] > 0).sum())
-                n_fc += int((X[["Rainfall", "Snowfall"]] > 0).any(axis=1).sum())
+                n_obs += int((test["precipitation_mm"] > 0).sum())
+                n_fc += int((X["precipitation_mm"] > 0).sum())
             ratio[unbiased] = n_fc / n_obs
         assert ratio[True] == pytest.approx(1.0, abs=0.2)
         assert ratio[False] > 1.4
@@ -610,17 +634,16 @@ class TestMeasuredNWPModel:
         for fold in range(60):
             df = _synthetic_city_data(cfg, pd.Timestamp("2018-07-01") + pd.Timedelta(hours=37 * fold),
                                       720 + 168, seed=fold, rain_every=3)
-            df.loc[df.index < 720, "Rainfall"] = np.where(df.index[df.index < 720] % 3 == 0, 2.0, 0.0)
-            df.loc[df.index == 720 + 30, "Rainfall"] = 10.0             # above the training maximum
+            df.loc[df.index < 720, "precipitation_mm"] = np.where(df.index[df.index < 720] % 3 == 0, 2.0, 0.0)
+            df.loc[df.index == 720 + 30, "precipitation_mm"] = 10.0     # above the training maximum
             train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
             proc.prepare_weather_data(train, "degraded", horizon=168, fold_idx=fold, split="train")
-            assert proc.degradation_params["precip_max"]["Rainfall"] == 2.0
+            assert proc.degradation_params["precip_max"] == {"precipitation_mm": 2.0}
             X = proc.prepare_weather_data(test, "degraded", horizon=168, fold_idx=fold, split="test")
-            cap = np.maximum(2.0, test["Rainfall"].to_numpy())
-            # rain/snow phase correction may move amounts between the columns
-            tot = X[["Rainfall", "Snowfall"]].max(axis=1).to_numpy()
+            cap = np.maximum(2.0, test["precipitation_mm"].to_numpy())
+            tot = X["precipitation_mm"].to_numpy()
             assert (tot <= cap + 1e-9).all()
-            wet = (test["Rainfall"] > 0).to_numpy() & (tot > 0)
+            wet = (test["precipitation_mm"] > 0).to_numpy() & (tot > 0)
             n_wet += int(wet.sum()); n_below += int((tot[wet] < cap[wet] - 1e-9).sum())
         assert n_below > 0.3 * n_wet          # the cap does not flatten every hour
 
@@ -783,11 +806,11 @@ class TestMeasuredNWPModel:
             proc.prepare_weather_data(train, scen, horizon=168, fold_idx=4, split="train")
             out[scen] = proc.prepare_weather_data(test, scen, horizon=168, fold_idx=4, split="test")
         e1 = out["degraded"]["Temperature"] - test["Temperature"]
-        wet1 = (out["degraded"][["Rainfall", "Snowfall"]] > 0).any(axis=1)
+        wet1 = out["degraded"]["precipitation_mm"] > 0
         below1 = out["degraded"]["Visibility"] < 20.0 - 1e-9
         for scen, scale in cfg.degradation_scales.items():
             np.testing.assert_allclose(out[scen]["Temperature"] - test["Temperature"], scale * e1, atol=1e-9)
-            assert ((out[scen][["Rainfall", "Snowfall"]] > 0).any(axis=1) == wet1).all()
+            assert ((out[scen]["precipitation_mm"] > 0) == wet1).all()
             at = test["Visibility"] >= 20.0
             assert ((out[scen]["Visibility"] < 20.0 - 1e-9)[at] == below1[at]).all() or scale == 0
 
@@ -851,8 +874,8 @@ class TestMeasuredNWPModel:
                 exp_miss.append(miss_r[leads].mean()); exp_far.append(far_r[leads].mean())
                 cand, _ = model.candidate_runs(info["start_hour_utc"], fs.dayofyear, leads, cfg.nwp_season_window_days)
                 exp_var.append(model.tqw_errors[cand][:, leads, 0].var(axis=0).mean())
-                ow = test["Rainfall"] > 0
-                fw = (X[["Rainfall", "Snowfall"]] > 0).any(axis=1)
+                ow = test["precipitation_mm"] > 0
+                fw = X["precipitation_mm"] > 0
                 H += int((ow & fw).sum()); M += int((ow & ~fw).sum()); F += int((~ow & fw).sum())
                 vis_below += int((X["Visibility"] < 20.0 - 1e-9).sum()); vis_at += len(X)
             leads_all = np.concatenate(leads_all)
@@ -866,6 +889,37 @@ class TestMeasuredNWPModel:
                 assert e.std() == pytest.approx(np.sqrt(np.mean(exp_var)), rel=0.2)
             else:
                 assert e.mean() < -0.5
+
+    def test_snow_depth_persistence_all_cities(self):
+        """Since 2 Oct 2026 every city has one total-precipitation column (mm)
+        and one snow-depth column (cm), both covariates. Snow depth gets the
+        value of the last training hour in every test hour; it is not
+        precipitation (not in the wet-hour share, the rain cap or the event
+        draw); precipitation is never moved between columns, also below 2 °C."""
+        for city in CITY_MODULES:                                     # same names in every city
+            pcol, scol = "precipitation_mm", "snow_depth_cm"
+            cfg_full = _city_config(city)
+            assert pcol in cfg_full.weather_covariates and scol in cfg_full.weather_covariates
+            assert not hasattr(cfg_full, "rain_col") and not hasattr(cfg_full, "snow_col")
+            proc = _processor(city)
+            cfg = proc.config
+            assert _precip_col(cfg) == pcol
+            assert [c for c, t in cfg.weather_degradation_mapping.items() if t == "snow_depth"] == [scol]
+            tcol = [c for c, t in cfg.weather_degradation_mapping.items() if t == "temperature"][0]
+            n_hit = 0
+            for fold in range(10):
+                df = _synthetic_city_data(cfg, pd.Timestamp("2016-01-05") + pd.Timedelta(hours=53 * fold),
+                                          720 + 48, seed=fold, rain_every=5)
+                df[tcol] = -5.0                                       # cold: the old code moved rain to snow
+                df[scol] = np.where(df.index < 720, 4.0 + fold, 0.0)  # snow on the ground until the issue time
+                train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+                proc.prepare_weather_data(train, "degraded", horizon=48, fold_idx=fold, split="train")
+                assert proc.degradation_params["wet_fraction"] == pytest.approx(0.2)
+                assert set(proc.degradation_params["precip_max"]) == {pcol}
+                X = proc.prepare_weather_data(test, "degraded", horizon=48, fold_idx=fold, split="test")
+                assert (X[scol] == 4.0 + fold).all()
+                n_hit += int(((test[pcol] > 0) & (X[pcol] > 0)).sum())
+            assert n_hit > 0                                          # cold precipitation stays in its column
 
     def test_ar1_persistence(self):
         z = ar1(200000, 0.8, np.random.default_rng(1))

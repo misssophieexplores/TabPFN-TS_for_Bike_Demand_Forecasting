@@ -28,8 +28,11 @@ class ForecastConfig:
     season_mapping: Optional[Dict] = None
     weather_covariates: Optional[List[str]] = None
     weather_degradation_mapping: Optional[Dict[str, str]] = None
-    rain_col: Optional[str] = None   # used for rain/snow phase correction in the degraded scenarios
-    snow_col: Optional[str] = None
+    # Variable types in weather_degradation_mapping: temperature, humidity,
+    # wind_speed, solar_radiation, visibility, precipitation (total
+    # precipitation incl. melted snow, mm; one column per city) and snow_depth
+    # (snow on the ground, cm; persistence forecast). Since 2 Oct 2026 there is
+    # no rain/snow split and no rain_col / snow_col.
     # Local time zone of the date column (IANA name); the measured NWP error
     # model converts the test hours to UTC to find the ECMWF run in use
     timezone: Optional[str] = None

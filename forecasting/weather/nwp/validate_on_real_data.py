@@ -43,8 +43,9 @@ for city, mod in [("seoul", "config_seoul"), ("london", "config_london"), ("wash
             te = te.reset_index(drop=True); X = X.reset_index(drop=True)
             info = proc.last_degradation_info
             leads = np.arange(info["lead_first"], info["lead_last"] + 1)
-            ow = (te[[cfg.rain_col, cfg.snow_col]] > 0).any(axis=1)
-            fw = (X[[cfg.rain_col, cfg.snow_col]] > 0).any(axis=1)
+            pcols = [c for c, t in m.items() if t == "precipitation"]
+            ow = (te[pcols] > 0).any(axis=1)
+            fw = (X[pcols] > 0).any(axis=1)
             for i in range(len(te)):
                 rows.append(dict(city=city, horizon=h, fold=fold, step=i + 1, lead=int(leads[i]),
                                  dT=X[col["temperature"]][i] - te[col["temperature"]][i],

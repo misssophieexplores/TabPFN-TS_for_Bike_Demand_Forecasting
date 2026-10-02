@@ -25,7 +25,7 @@ def get_config() -> ForecastConfig:
         4.0: 2  # autumn
         }
       
-    # CSV columns: timestamp,season,holiday,casual,registered,cnt,temperature_c,humidity_percent,dew_point_c,rainfall_mm,snowfall_cm,wind_speed_ms,solar_radiation_wm2,solar_radiation_mjm2,Functioning Day,visibility_km
+    # CSV columns: timestamp,season,holiday,casual,registered,cnt,temperature_c,humidity_percent,dew_point_c,rainfall_mm,snowfall_cm,precipitation_mm,snow_depth_cm,wind_speed_ms,solar_radiation_wm2,solar_radiation_mjm2,Functioning Day,visibility_km
     # --- Weather ---
     config.weather_covariates = [
         "temperature_c",
@@ -33,8 +33,8 @@ def get_config() -> ForecastConfig:
         "wind_speed_ms",
         "dew_point_c",
         "solar_radiation_wm2",
-        "rainfall_mm",
-        "snowfall_cm",
+        "precipitation_mm",
+        "snow_depth_cm",
         "visibility_km"
     ]
     config.weather_degradation_mapping = {
@@ -42,22 +42,20 @@ def get_config() -> ForecastConfig:
         "humidity_percent": "humidity",
         "wind_speed_ms": "wind_speed",
         "solar_radiation_wm2": "solar_radiation",
-        "rainfall_mm": "precipitation",
-        "snowfall_cm": "precipitation",
+        "precipitation_mm": "precipitation",   # rain + snowfall / 0.7 (mm), Open-Meteo/ERA5
+        "snow_depth_cm": "snow_depth",         # snow depth on the ground (cm), ERA5-Land
         "visibility_km": "visibility"
     }
-    config.rain_col = "rainfall_mm"
     config.timezone = "America/New_York"   # local time of the date column (daylight saving included)
     config.nwp_calibration_file = "weather/nwp/calibration/washington.npz"
-    config.snow_col = "snowfall_cm"
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_washington_720_20261001_170345.json"
-    config.sarimax_params_file = "results/tuning/sarimax_best_params_washington_clean_only_720_20261001_202237.json"
-    config.xgb_params_file = "results/tuning/xgboost_best_params_washington_clean_only_720_20261002_003430.json"
+    config.sarimax_params_file = None   # re-tune: covariates changed 2 Oct 2026 (precipitation, snow depth, DST alignment)
+    config.xgb_params_file = None   # re-tune: covariates changed 2 Oct 2026
     config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_washington_no_weather_720_20261002_031600.json"
     config.prophet_params_file = "results/tuning/prophet_best_params_washington_720_20261001_170949.json"
-    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_washington_clean_only_720_20261001_181241.json"
+    config.neuralprophet_params_file = None   # re-tune: covariates changed 2 Oct 2026
     config.neuralprophet_noweather_params_file = "results/tuning/neuralprophet_best_params_washington_no_weather_720_20261001_191248.json"
     
     return config

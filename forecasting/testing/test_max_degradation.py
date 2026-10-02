@@ -49,9 +49,8 @@ print("\nComputing degradation parameters...")
 params = prepare_degradation_parameters(df, COLUMN_MAPPING)
 print(f"Solar cap: {params['solar_cap']:.2f} (units of the solar column)")
 
-# Apply worst-case degradation (168h lead time on every row), including the
-# rain/snow phase correction used in the experiments
-temp_cols = [c for c, t in COLUMN_MAPPING.items() if t == "temperature"]
+# Apply worst-case degradation (168h lead time on every row); snow depth gets
+# the persistence forecast (here: last value of the whole dataset)
 print("\nApplying 168h degradation (worst case)...")
 df_degraded = degrade_weather_dataset(
     df=df,
@@ -59,9 +58,6 @@ df_degraded = degrade_weather_dataset(
     degradation_params=params,
     column_mapping=COLUMN_MAPPING,
     seed=config.degradation_seed,
-    temp_col=temp_cols[0],
-    rain_col=config.rain_col,
-    snow_col=config.snow_col,
 )
 
 # Save degraded dataset alongside the original, with a descriptive suffix
