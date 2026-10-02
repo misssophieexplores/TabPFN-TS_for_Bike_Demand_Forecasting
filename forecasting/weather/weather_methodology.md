@@ -46,7 +46,8 @@ b(L) and s(L) are weighted least-squares estimates over daylight hours of the er
 
 Rainfall and snowfall are one precipitation variable with one decision per hour (wet = any column > 0):
 - Wet hour: missed (forecast 0) with the measured miss rate m(L, season); otherwise every precipitation column is multiplied by exp(μ_h(L) + σ_h(L)·zₜ), the measured distribution of log(forecast/observed) for hits. With `nwp_remove_bias = True`, μ_h = −σ_h²/2 (mean-preserving multiplier, no systematic over- or underestimate); the miss rate and false-alarm amounts are event rates and stay as measured; false alarms follow `nwp_rain_frequency_unbiased` (below).
-- Dry hour: false alarm with probability FAR(L)/(1 − FAR(L)) · (1 − m(L)) · p/(1 − p) (p = wet-hour share of the training fold; reproduces the measured false-alarm ratio FAR), amount lognormal with the measured median and spread of ECMWF amounts in false alarms; written to the rain column.
+- Cap: degraded amounts are at most the training fold's maximum of the column, or the hour's measured amount if larger (since 2 Oct 2026; the lognormal amount error has no upper limit: without the cap, Seoul's degraded rain reached 306 mm/h against a data maximum of 35 mm/h, Washington 52 against 13).
+- Dry hour: false alarm with probability FAR(L)/(1 − FAR(L)) · (1 − m(L)) · p/(1 − p) (p = wet-hour share of the training fold; reproduces the measured false-alarm ratio FAR; with `nwp_rain_frequency_unbiased`, the default, m(L)·p/(1 − p), see below), amount lognormal with the measured median and spread of ECMWF amounts in false alarms; written to the rain column.
 - Persistence: the miss and false-alarm decisions use latent Gaussian AR(1) series whose lag-1 correlations ρ are the tetrachoric correlations of consecutive hours in the ECMWF data (an event that is missed tends to be missed for hours); the hit amount errors follow an AR(1) series with the measured lag-1 correlation φ.
 - Rates are pooled over ±12 h of lead time; wet = ≥ 0.1 mm/h (the data resolution).
 - Time of year (`nwp_seasonal_rain = True`, default): miss rate, false-alarm ratio and the hit amount error (μ_h, σ_h) are estimated for 12 bins centred on the 15th of each month, from runs starting within ±30 days of the centre (any year); the window is widened in 15-day steps until every pooled lead window (leads 1–168 h) has ≥ 200 wet hours, ≥ 200 forecast-wet hours and ≥ 50 hits. A test window uses the values of its forecast start date, interpolated linearly between the two nearest bin centres. Windows used: London and Washington ±30 days in every month; Seoul ±30 to ±120 days (few wet hours at the station in winter). False-alarm amounts and the persistence parameters are year-round.
@@ -56,6 +57,10 @@ Rainfall and snowfall are one precipitation variable with one decision per hour 
 ### Visibility
 
 Lognormal error in log space with persistence (AR(1), measured φ). For hours below the covariate's cap: X' = X · exp(μ_b + σ_b·zₜ), with μ_b and σ_b the mean and SD of log(forecast/observed) against the station; with `nwp_remove_bias = True`, μ_b = −σ_b²/2 (mean-preserving). The probability of falling below the cap is an event rate and stays as measured. Seoul (cap 20 km) and Washington (cap 16 km) have capped visibility covariates: an hour at the cap stays at the cap unless Φ(zₜ) is below the measured probability that the forecast falls below the cap when the station reports the cap (0.30 and 0.11); the depth below the cap, −log(X'/C), is then lognormal as measured. Results are cut at the cap (London: at the training fold's maximum).
+
+### Random numbers
+
+Seed per test window = `degradation_seed` + 10000 × horizon + fold + a city term (10,000,000 × CRC32 of the dataset name mod 1000; since 2 Oct 2026), so the three cities draw different random numbers for the same horizon and fold.
 
 ### Noise-magnitude sensitivity (not run by default since 2 Oct 2026)
 
@@ -88,7 +93,7 @@ Optional scenarios in `config.degradation_scales` (e.g. `degraded_x050`, `degrad
 | Visibility below the cap: mean / SD of log(forecast/observed) | +0.46 / 0.98 | +0.12 / 0.94 | +0.47 / 1.03 |
 | Visibility: hour-to-hour correlation φ | 0.82 | 0.77 | 0.67 |
 
-Precipitation rates here use wet = ≥ 0.1 mm/h and ±12 h pooling; the verification report quotes > 0.1 mm/h per lead hour (slightly higher miss rates and false-alarm ratios). The table lists the measured values; the default model removes the biases (temperature, humidity and wind bias, solar b, mean log errors of rain amounts and visibility).
+Precipitation rates here use wet = ≥ 0.1 mm/h and ±12 h pooling; the verification report quotes > 0.1 mm/h per lead hour (slightly higher miss rates and false-alarm ratios). In `nwp_error_statistics.csv` the `gt0.1` statistics are strictly > 0.1 mm/h: for the Seoul station, whose amounts come in 0.1 mm steps, this drops every 0.1 mm hour (wet share per lead about 2 % instead of 5.7 %); for statistics comparable with the model use the `gt0` rows (= ≥ 0.1 mm/h for these data). The table lists the measured values; the default model removes the biases (temperature, humidity and wind bias, solar b, mean log errors of rain amounts and visibility).
 
 Errors applied by the default model (fresh forecast, bias removed), from the calibration files; typical error = mean absolute error after removing each run pool's average error (`weather/nwp/expected_errors.py`):
 

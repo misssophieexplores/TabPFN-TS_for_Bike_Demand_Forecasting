@@ -7,6 +7,8 @@ Orchestrates weather data preparation including:
 - Integration with weather_degradation module
 """
 
+import zlib
+
 import pandas as pd
 import numpy as np
 from typing import List, Optional
@@ -19,6 +21,16 @@ from weather.weather_degradation import (
 from weather.nwp_error_model import load_error_model, to_utc
 
 DEGRADATION_MODELS = ("nwp_measured", "literature")
+
+
+def city_seed_term(dataset_name):
+    """City part of the degradation seed (measured model): 10,000,000 x
+    (CRC32 of the dataset name mod 1000), so the cities draw different random
+    numbers for the same horizon and fold (seoul 782, london 181,
+    washington 182). 0 if no name."""
+    if not dataset_name:
+        return 0
+    return 10_000_000 * (zlib.crc32(str(dataset_name).encode()) % 1000)
 
 
 class WeatherProcessor:
@@ -247,7 +259,9 @@ class WeatherProcessor:
         Notes
         -----
         Seed calculation:
-        - seed = base_seed + 10000 * horizon + fold_idx
+        - seed = base_seed + 10000 * horizon + fold_idx; measured NWP model:
+          + city_seed_term(config.dataset_name), so the cities draw different
+          random numbers (literature model unchanged, reproduces earlier runs)
         - The seed does not depend on noise_scale, so all degraded scenarios
           of a (horizon, fold) use the same random numbers; only the error
           magnitude differs (common random numbers).
@@ -304,6 +318,8 @@ class WeatherProcessor:
                 raise ValueError("config.nwp_calibration_file is not set for this city")
             model = load_error_model(self.config.nwp_calibration_file)
             times_utc = to_utc(timestamps, self.config.timezone)
+            # different random numbers per city (since 2 Oct 2026)
+            horizon_seed += city_seed_term(self.config.dataset_name)
             df_degraded, info = model.degrade(
                 df,
                 times_utc,

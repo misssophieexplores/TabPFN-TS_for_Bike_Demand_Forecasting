@@ -27,7 +27,7 @@ ERA5 is calculated, not measured: ECMWF re-runs its weather model over past date
 - London and Washington against their weather stations instead of ERA5: spread larger by up to 0.4 °C (temperature), 1.6 % (humidity) and 0.9 m/s (wind).
 - The model removes the average bias (step 4), which takes out most of this difference; the differences in spread remain.
 
-**3. Measuring the errors.** Error = forecast − truth, per city, variable and hour ahead (lead time). The full statistics are in `nwp_error_statistics.csv` (119,051 values, including Seoul rain against the station), together with the report "Measured weather-forecast errors".
+**3. Measuring the errors.** Error = forecast − truth, per city, variable and hour ahead (lead time). The full statistics are in `nwp_error_statistics.csv` (119,051 values, including Seoul rain against the station; for rain use the `gt0` rows: the `gt0.1` rows count only amounts above 0.1 mm and drop the Seoul station's 0.1 mm hours), together with the report "Measured weather-forecast errors".
 
 **4. Applying the errors to the bike data.** Every test period is handled the same way. The model represents a bike-sharing operator with an up-to-date weather forecast that is corrected to local measurements:
 
@@ -35,7 +35,7 @@ ERA5 is calculated, not measured: ECMWF re-runs its weather model over past date
 - *Temperature, humidity, wind.* We pick one real forecast of the same city, started at the 00 or 12 UTC run time closest to the time of day of the demand forecast, at the same time of year (±30 days, any year), and add its actual errors hour by hour to the measured values. This carries over the real error sizes, how long errors last, and how the three variables go wrong together.
 - *Bias removed.* A forecast corrected to local measurements does not have the average error of the raw forecast. So the average error of all comparable forecasts (same start time, same season) is subtracted, e.g. Seoul's forecast being on average 1.5 °C colder than the city-centre station. What remains are the hour-to-hour errors. The same applies to the average error of solar radiation, rain amounts and visibility, and to how often it rains: the forecast is set to be wet as often as observed (false rain as often as missed rain). How often rain is missed stays as measured.
 - *Solar radiation, rain, visibility.* These errors depend on the weather itself (a rain error from a rainy day cannot be added to a dry day), so they are simulated with the measured values: error size per lead time; for rain, how often wet hours are missed, how often dry hours get false rain, and how wrong the amounts are, each for the time of year (monthly values; e.g. Washington's forecast misses 50 % of rainy hours in July and 30 % in January); for visibility, the error size and, where the data are capped, how often the forecast drops below the cap. These errors also persist from hour to hour as measured.
-- *Physical limits.* No sun at night; solar radiation at most the 99.5th percentile of the training period; humidity 0–100 %; no negative wind; visibility at most the city's cap (Seoul 20 km, Washington 16 km) or, in London, the training maximum. Rain becomes snow below 2 °C and snow becomes rain above.
+- *Physical limits.* No sun at night; solar radiation at most the 99.5th percentile of the training period; humidity 0–100 %; no negative wind; visibility at most the city's cap (Seoul 20 km, Washington 16 km) or, in London, the training maximum; rain at most the training maximum (or the hour's measured amount if larger). Rain becomes snow below 2 °C and snow becomes rain above.
 - *No sensitivity runs.* Runs with all error sizes ×0.5 and ×1.5 were planned when the error sizes came from the literature. With measured errors they are no longer run by default (they would triple the degraded runs); they can be switched back on in the configuration.
 
 **5. Checks.**
@@ -43,7 +43,8 @@ ERA5 is calculated, not measured: ECMWF re-runs its weather model over past date
 - Seoul rain: the Seoul bike-data rain is the station's rain (2017–18: the station's 6- and 12-hour totals equal the bike-data sums in 99 % of cases). The station's hourly rain reports for 2024–25 add up to its own daily totals (no rainy hours missing).
 - Seoul: the Seoul bike data are identical to the station used as truth (median difference 0.0 °C).
 - London and Washington: their weather data are close to, but not identical with, the ERA5 data used as truth (median difference 0.3–0.5 °C); the original download settings are unknown.
-- 38 automated tests (`testing/test_weather_unit.py`).
+- Each city draws its own random numbers (before, fold k used the same random numbers in all three cities).
+- 40 automated tests (`testing/test_weather_unit.py`).
 
 ## Expected forecast errors at different time horizons
 

@@ -40,7 +40,9 @@ How one test window is degraded
    measured lognormal amount error (mean-preserving if remove_bias); false
    alarms the measured amount distribution. The false-alarm ratio is
    converted into a probability per dry hour with the wet-hour share of the
-   training fold. seasonal_rain=True (default): miss rate, false-alarm ratio
+   training fold. Degraded amounts are capped at the training fold's maximum
+   of the column (or the hour's measured amount if larger), as solar
+   radiation is capped. seasonal_rain=True (default): miss rate, false-alarm ratio
    and hit amount error are those of the time of year (12 monthly bins,
    interpolated linearly by the day of year of the forecast start); False:
    year-round values. Reference: Seoul = the station, London and Washington =
@@ -277,7 +279,7 @@ class NWPErrorModel:
             params = self.rain_params(start.dayofyear, seasonal_rain)
             p = self._precipitation(df[precip_cols], leads, degradation_params["wet_fraction"],
                                     u_miss, u_fa, z_hit, z_fa_amount, s, fa_col, remove_bias, params,
-                                    rain_frequency_unbiased)
+                                    rain_frequency_unbiased, degradation_params.get("precip_max"))
             for c in precip_cols:
                 out[c] = p[c].to_numpy(dtype=float)
 
@@ -334,7 +336,7 @@ class NWPErrorModel:
 
     def _precipitation(self, precip, leads, wet_fraction, u_miss, u_fa, z_hit,
                        z_fa_amount, s, fa_col, remove_bias=False, params=None,
-                       frequency_unbiased=False):
+                       frequency_unbiased=False, caps=None):
         miss_rate, far, hit_mean_log, hit_sd_log = params or self.rain_params(seasonal=False)
         vals = precip.to_numpy(dtype=float)
         out = np.zeros_like(vals)
@@ -352,6 +354,11 @@ class NWPErrorModel:
                     log_err = s * hit_mean_log[L] + sd * z_hit[i]
                 out[i] = vals[i] * np.exp(log_err)
             # else: missed event, forecast stays 0
+        # cap: training-fold maximum of the column, never below the hour's
+        # measured amount (the lognormal amount error has no upper limit)
+        for j, c in enumerate(precip.columns):
+            if caps and caps.get(c) is not None:
+                out[:, j] = np.minimum(out[:, j], np.maximum(caps[c], vals[:, j]))
         return pd.DataFrame(out, index=precip.index, columns=precip.columns)
 
     def _visibility(self, x, z, s, vis_max, remove_bias=False):

@@ -358,6 +358,9 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
           precipitation column (rain or snow > 0); only if column_mapping
           has precipitation columns present in training_data. Converts the
           false alarm ratio into a probability per dry hour.
+        - 'precip_max': {column: largest value in the training data} for the
+          precipitation columns; upper limit of degraded precipitation in the
+          measured NWP error model (an hour's measured value is never cut).
         - 'visibility_max': largest visibility of the training data; only if
           column_mapping has a visibility column present in training_data.
           Upper limit of degraded visibility in the measured NWP error model
@@ -400,6 +403,7 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
     ]
     if precip_cols:
         params['wet_fraction'] = float((training_data[precip_cols] > 0).any(axis=1).mean())
+        params['precip_max'] = {c: float(training_data[c].max()) for c in precip_cols}
 
     vis_cols = [
         c for c, t in (column_mapping or {}).items()

@@ -600,6 +600,48 @@ class TestMeasuredNWPModel:
         assert ratio[True] == pytest.approx(1.0, abs=0.2)
         assert ratio[False] > 1.4
 
+    def test_rain_capped_at_training_maximum(self):
+        """Degraded rain never exceeds the training fold's maximum of the
+        column, or the hour's measured amount if that is larger (the
+        lognormal amount error has no upper limit)."""
+        proc = _processor("seoul")
+        cfg = proc.config
+        n_below = n_wet = 0
+        for fold in range(60):
+            df = _synthetic_city_data(cfg, pd.Timestamp("2018-07-01") + pd.Timedelta(hours=37 * fold),
+                                      720 + 168, seed=fold, rain_every=3)
+            df.loc[df.index < 720, "Rainfall"] = np.where(df.index[df.index < 720] % 3 == 0, 2.0, 0.0)
+            df.loc[df.index == 720 + 30, "Rainfall"] = 10.0             # above the training maximum
+            train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+            proc.prepare_weather_data(train, "degraded", horizon=168, fold_idx=fold, split="train")
+            assert proc.degradation_params["precip_max"]["Rainfall"] == 2.0
+            X = proc.prepare_weather_data(test, "degraded", horizon=168, fold_idx=fold, split="test")
+            cap = np.maximum(2.0, test["Rainfall"].to_numpy())
+            # rain/snow phase correction may move amounts between the columns
+            tot = X[["Rainfall", "Snowfall"]].max(axis=1).to_numpy()
+            assert (tot <= cap + 1e-9).all()
+            wet = (test["Rainfall"] > 0).to_numpy() & (tot > 0)
+            n_wet += int(wet.sum()); n_below += int((tot[wet] < cap[wet] - 1e-9).sum())
+        assert n_below > 0.3 * n_wet          # the cap does not flatten every hour
+
+    def test_city_seed_term(self):
+        """Measured model: the three cities get different random numbers for
+        the same horizon and fold; the same city always the same."""
+        from weather.weather_processor import city_seed_term
+        terms = {c: city_seed_term(c) for c in CITY_MODULES}
+        assert len(set(terms.values())) == 3 and city_seed_term(None) == 0
+        out = []
+        for name in ("seoul", "seoul", "london"):
+            proc = _processor("seoul")
+            proc.config.dataset_name = name
+            df = _synthetic_city_data(proc.config, "2018-05-01", 720 + 24)
+            train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+            proc.prepare_weather_data(train, "degraded", horizon=24, fold_idx=3, split="train")
+            X = proc.prepare_weather_data(test, "degraded", horizon=24, fold_idx=3, split="test")
+            out.append(X["Temperature"].to_numpy())
+        np.testing.assert_array_equal(out[0], out[1])
+        assert not np.allclose(out[0], out[2])
+
     def test_fresh_forecast_leads(self):
         """Fresh forecast: lead times 1..n for any start hour; errors replayed
         from the 00/12 UTC run closest to the issue time of day (tie: the
