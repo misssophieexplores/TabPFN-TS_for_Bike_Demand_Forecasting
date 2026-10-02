@@ -11,17 +11,16 @@ This dataset is redistributed under the terms of the Creative Commons Attributio
 
 
 ## London Bike Sharing Dataset
-- **Source:** UCI Machine Learning Repository
-- **DOI:** 10.24432/C5W894
-- **URL:** https://archive.ics.uci.edu/dataset/275/bike+sharing+dataset
-- **License:** CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)
+- **Source:** Kaggle ("London bike sharing dataset", Hristo Mavrodiev; bike counts from TfL Open Data)
+- **URL:** https://www.kaggle.com/datasets/hmavrodiev/london-bike-sharing-dataset
+- **License:** Transport for London open data terms, based on the Open Government Licence v2.0
 
-This dataset is redistributed under the terms of the Creative Commons Attribution 4.0 International licence.
+Powered by TfL Open Data. Contains OS data © Crown copyright and database rights 2016. Geomni UK Map data © and database rights [2019].
 
 
 ## Bike Sharing in Washington D.C. Dataset
 - **Source:** Kaggle
-- **DOI:** 110.1007/s13748-013-0040-3
+- **DOI:** 10.1007/s13748-013-0040-3
 - **URL:** http://dx.doi.org/10.1007/s13748-013-0040-3
 - **License:** CC0 Public Domain
 
