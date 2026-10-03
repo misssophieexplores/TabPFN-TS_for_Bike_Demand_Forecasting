@@ -27,77 +27,249 @@
  },
  "precipitation": {
   "reference": "NOAA ISD station 47108099999 (nearest report within +/-30 min)",
-  "wet_threshold_mm": 0.1,
-  "n_hours": 185164,
+  "wet_threshold_mm": "Nov-Mar (KST): station and forecast split over KMA 3-hour windows, wet = 3-hour total >=0.1; otherwise >=0.1 per hour",
+  "intensity_classes_mm": [
+   "wet and <1",
+   ">=1"
+  ],
+  "intensity_min_pooled_counts_year_round": [
+   513,
+   391
+  ],
+  "intensity_wet_share_year_round": [
+   0.567,
+   0.433
+  ],
+  "intensity_miss_24h": [
+   0.281,
+   0.155
+  ],
+  "intensity_miss_168h": [
+   0.612,
+   0.527
+  ],
+  "intensity_seasonal": {
+   "window_days": [
+    [
+     105,
+     165
+    ],
+    [
+     90,
+     150
+    ],
+    [
+     75,
+     120
+    ],
+    [
+     75,
+     105
+    ],
+    [
+     60,
+     75
+    ],
+    [
+     45,
+     45
+    ],
+    [
+     60,
+     45
+    ],
+    [
+     60,
+     60
+    ],
+    [
+     75,
+     75
+    ],
+    [
+     90,
+     105
+    ],
+    [
+     120,
+     135
+    ],
+    [
+     120,
+     150
+    ]
+   ],
+   "min_pooled_wet": [
+    [
+     204,
+     257
+    ],
+    [
+     239,
+     249
+    ],
+    [
+     230,
+     209
+    ],
+    [
+     238,
+     287
+    ],
+    [
+     250,
+     284
+    ],
+    [
+     230,
+     233
+    ],
+    [
+     231,
+     207
+    ],
+    [
+     215,
+     232
+    ],
+    [
+     210,
+     227
+    ],
+    [
+     204,
+     230
+    ],
+    [
+     236,
+     242
+    ],
+    [
+     229,
+     254
+    ]
+   ],
+   "miss_24h": [
+    [
+     0.326,
+     0.155
+    ],
+    [
+     0.261,
+     0.151
+    ],
+    [
+     0.271,
+     0.154
+    ],
+    [
+     0.252,
+     0.129
+    ],
+    [
+     0.275,
+     0.131
+    ],
+    [
+     0.24,
+     0.149
+    ],
+    [
+     0.289,
+     0.174
+    ],
+    [
+     0.264,
+     0.163
+    ],
+    [
+     0.262,
+     0.189
+    ],
+    [
+     0.31,
+     0.186
+    ],
+    [
+     0.32,
+     0.184
+    ],
+    [
+     0.308,
+     0.146
+    ]
+   ]
+  },
+  "n_hours": 186311,
   "runs_used": 1049,
   "min_pooled_counts_year_round": {
-   "min_wet": 785,
-   "min_fc_wet": 1752,
-   "min_hits": 593
+   "min_wet": 904,
+   "min_fc_wet": 1930,
+   "min_hits": 689
   },
   "seasonal": {
    "window_days": [
-    120,
     90,
+    75,
     60,
-    45,
+    30,
     45,
     30,
     30,
     30,
     60,
     75,
-    105,
-    120
+    75,
+    105
    ],
    "miss_24h": [
-    0.219,
-    0.207,
-    0.16,
-    0.185,
+    0.278,
+    0.229,
+    0.139,
+    0.14,
     0.219,
     0.288,
     0.195,
     0.178,
-    0.209,
-    0.277,
-    0.305,
-    0.3
+    0.214,
+    0.289,
+    0.337,
+    0.278
    ],
    "far_24h": [
-    0.523,
-    0.493,
-    0.5,
-    0.497,
+    0.535,
+    0.529,
+    0.495,
+    0.476,
     0.543,
     0.686,
     0.684,
     0.709,
-    0.71,
-    0.733,
-    0.729,
-    0.674
+    0.712,
+    0.717,
+    0.572,
+    0.572
    ],
    "min_pooled_counts": [
     {
-     "min_wet": 297,
-     "min_fc_wet": 537,
-     "min_hits": 194
+     "min_wet": 240,
+     "min_fc_wet": 414,
+     "min_hits": 179
     },
     {
-     "min_wet": 247,
-     "min_fc_wet": 403,
-     "min_hits": 167
+     "min_wet": 225,
+     "min_fc_wet": 392,
+     "min_hits": 191
     },
     {
-     "min_wet": 204,
-     "min_fc_wet": 340,
-     "min_hits": 153
+     "min_wet": 269,
+     "min_fc_wet": 450,
+     "min_hits": 205
     },
     {
-     "min_wet": 243,
-     "min_fc_wet": 391,
-     "min_hits": 156
+     "min_wet": 219,
+     "min_fc_wet": 360,
+     "min_hits": 157
     },
     {
      "min_wet": 317,
@@ -120,42 +292,42 @@
      "min_hits": 105
     },
     {
-     "min_wet": 314,
-     "min_fc_wet": 854,
-     "min_hits": 129
+     "min_wet": 315,
+     "min_fc_wet": 858,
+     "min_hits": 139
     },
     {
-     "min_wet": 200,
-     "min_fc_wet": 580,
-     "min_hits": 96
-    },
-    {
-     "min_wet": 217,
-     "min_fc_wet": 616,
-     "min_hits": 109
-    },
-    {
-     "min_wet": 225,
-     "min_fc_wet": 568,
+     "min_wet": 235,
+     "min_fc_wet": 624,
      "min_hits": 127
+    },
+    {
+     "min_wet": 212,
+     "min_fc_wet": 382,
+     "min_hits": 131
+    },
+    {
+     "min_wet": 284,
+     "min_fc_wet": 523,
+     "min_hits": 194
     }
    ]
   },
-  "wet_share_ref": 0.061,
-  "miss_24h": 0.228,
-  "far_24h": 0.649,
-  "miss_168h": 0.585,
-  "far_168h": 0.834,
-  "hit_mean_log_24h": -0.22,
-  "hit_sd_log_24h": 1.655,
-  "fa_amount_median_mm": 0.358,
-  "fa_amount_sd_log": 1.19,
-  "rho_miss": 0.887,
-  "n_wetwet": 3196,
-  "rho_false_alarm": 0.92,
-  "n_drydry": 77148,
-  "hit_phi": 0.451,
-  "n_hithit": 2277
+  "wet_share_ref": 0.07,
+  "miss_24h": 0.226,
+  "far_24h": 0.633,
+  "miss_168h": 0.575,
+  "far_168h": 0.817,
+  "hit_mean_log_24h": -0.159,
+  "hit_sd_log_24h": 1.594,
+  "fa_amount_median_mm": 0.328,
+  "fa_amount_sd_log": 1.235,
+  "rho_miss": 0.928,
+  "n_wetwet": 3970,
+  "rho_false_alarm": 0.93,
+  "n_drydry": 77034,
+  "hit_phi": 0.531,
+  "n_hithit": 2804
  },
  "visibility": {
   "reference": "NOAA ISD station 47108099999 (nearest report within +/-30 min)",
@@ -168,7 +340,7 @@
   "phi": 0.822,
   "n_pairs": 88252
  },
- "created_utc": "2026-10-02T08:31:47+00:00",
+ "created_utc": "2026-10-03T08:49:23+00:00",
  "forecast_source": "ECMWF IFS HRES 9km (Open-Meteo Single Runs, 00/12 UTC runs; hourly as served, leads >90 h interpolated by Open-Meteo from 3-/6-hourly output)",
  "run_period": "2024-03-14 00:00:00 .. 2026-09-16 12:00:00"
 }

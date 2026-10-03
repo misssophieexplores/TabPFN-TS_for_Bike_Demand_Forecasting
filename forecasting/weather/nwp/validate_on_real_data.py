@@ -44,7 +44,8 @@ for city, mod in [("seoul", "config_seoul"), ("london", "config_london"), ("wash
             info = proc.last_degradation_info
             leads = np.arange(info["lead_first"], info["lead_last"] + 1)
             pcols = [c for c, t in m.items() if t == "precipitation"]
-            ow = (te[pcols] > 0).any(axis=1)
+            precip_ob = te[pcols].clip(lower=0).sum(axis=1)
+            ow = precip_ob > 0
             fw = (X[pcols] > 0).any(axis=1)
             for i in range(len(te)):
                 rows.append(dict(city=city, horizon=h, fold=fold, step=i + 1, lead=int(leads[i]),
@@ -53,6 +54,9 @@ for city, mod in [("seoul", "config_seoul"), ("london", "config_london"), ("wash
                                  dWS=X[col["wind_speed"]][i] - te[col["wind_speed"]][i],
                                  sol_c=te[col["solar_radiation"]][i], sol_d=X[col["solar_radiation"]][i],
                                  vis_c=te[col["visibility"]][i], vis_d=X[col["visibility"]][i],
+                                 precip_ob_mm=float(precip_ob[i]),
+                                 precip_class=("light_lt1" if 0 < precip_ob[i] < 1 else
+                                               "strong_ge1" if precip_ob[i] >= 1 else "dry"),
                                  ow=bool(ow[i]), fw=bool(fw[i]), n_cand=info["n_candidate_runs"],
                                  start=info["forecast_start_utc"],
                                  season_days=info["season_window_days"]))

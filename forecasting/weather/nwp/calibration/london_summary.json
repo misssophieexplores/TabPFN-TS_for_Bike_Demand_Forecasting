@@ -28,6 +28,178 @@
  "precipitation": {
   "reference": "Open-Meteo archive era5_seamless (ERA5-Land T/RH + ERA5), nearest grid cell",
   "wet_threshold_mm": 0.1,
+  "intensity_classes_mm": [
+   "wet and <1",
+   ">=1"
+  ],
+  "intensity_min_pooled_counts_year_round": [
+   3670,
+   525
+  ],
+  "intensity_wet_share_year_round": [
+   0.872,
+   0.128
+  ],
+  "intensity_miss_24h": [
+   0.433,
+   0.111
+  ],
+  "intensity_miss_168h": [
+   0.719,
+   0.65
+  ],
+  "intensity_seasonal": {
+   "window_days": [
+    [
+     30,
+     75
+    ],
+    [
+     30,
+     90
+    ],
+    [
+     30,
+     90
+    ],
+    [
+     30,
+     90
+    ],
+    [
+     30,
+     105
+    ],
+    [
+     30,
+     90
+    ],
+    [
+     30,
+     75
+    ],
+    [
+     30,
+     75
+    ],
+    [
+     30,
+     75
+    ],
+    [
+     30,
+     60
+    ],
+    [
+     30,
+     60
+    ],
+    [
+     30,
+     60
+    ]
+   ],
+   "min_pooled_wet": [
+    [
+     618,
+     233
+    ],
+    [
+     705,
+     245
+    ],
+    [
+     587,
+     229
+    ],
+    [
+     669,
+     229
+    ],
+    [
+     830,
+     233
+    ],
+    [
+     722,
+     234
+    ],
+    [
+     487,
+     229
+    ],
+    [
+     627,
+     235
+    ],
+    [
+     624,
+     269
+    ],
+    [
+     514,
+     234
+    ],
+    [
+     528,
+     206
+    ],
+    [
+     434,
+     203
+    ]
+   ],
+   "miss_24h": [
+    [
+     0.35,
+     0.058
+    ],
+    [
+     0.369,
+     0.049
+    ],
+    [
+     0.416,
+     0.084
+    ],
+    [
+     0.454,
+     0.114
+    ],
+    [
+     0.445,
+     0.146
+    ],
+    [
+     0.442,
+     0.161
+    ],
+    [
+     0.533,
+     0.176
+    ],
+    [
+     0.522,
+     0.163
+    ],
+    [
+     0.469,
+     0.119
+    ],
+    [
+     0.447,
+     0.114
+    ],
+    [
+     0.401,
+     0.08
+    ],
+    [
+     0.35,
+     0.061
+    ]
+   ]
+  },
   "n_hours": 349762,
   "runs_used": 1823,
   "min_pooled_counts_year_round": {
@@ -168,7 +340,7 @@
   "phi": 0.773,
   "n_pairs": 86442
  },
- "created_utc": "2026-10-02T08:31:55+00:00",
+ "created_utc": "2026-10-02T23:00:28+00:00",
  "forecast_source": "ECMWF IFS HRES 9km (Open-Meteo Single Runs, 00/12 UTC runs; hourly as served, leads >90 h interpolated by Open-Meteo from 3-/6-hourly output)",
  "run_period": "2024-03-14 00:00:00 .. 2026-09-16 12:00:00"
 }

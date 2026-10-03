@@ -15,7 +15,9 @@ from weather.nwp_error_model import NWPErrorModel
 
 BASE = str(Path(__file__).resolve().parent / "calibration") + "/"
 from config import ForecastConfig  # noqa: E402
-UNBIASED = ForecastConfig().nwp_rain_frequency_unbiased
+DEFAULTS = ForecastConfig()
+UNBIASED = DEFAULTS.nwp_rain_frequency_unbiased
+INTENSITY = DEFAULTS.nwp_rain_intensity_dependent
 out = {}
 for city in ["seoul", "london", "washington"]:
     m = NWPErrorModel(BASE + f"{city}.npz")
@@ -41,12 +43,24 @@ for city in ["seoul", "london", "washington"]:
         # applied false-alarm ratio: = miss rate with nwp_rain_frequency_unbiased
         # (config default); the measured ratio is kept as far_measured
         r["miss"] = float(m.miss_rate[L]); r["far_measured"] = float(m.far[L])
-        r["far"] = r["miss"] if UNBIASED else r["far_measured"]
+        # With intensity-dependent misses + frequency-unbiased rain there is
+        # no single applied FAR from the calibration file alone: it depends
+        # on the training fold's light/strong wet-hour mix. The runtime sets
+        # false alarms to balance the combined misses in expectation.
+        r["far"] = (None if (UNBIASED and INTENSITY)
+                    else r["miss"] if UNBIASED else r["far_measured"])
+        if INTENSITY and m.has_intensity_miss:
+            r["miss_light_lt1"] = float(m.miss_rate_intensity[0, L])
+            r["miss_strong_ge1"] = float(m.miss_rate_intensity[1, L])
         r["pcv"] = float(np.sqrt(np.exp(m.hit_sd_log[L] ** 2) - 1))
         if m.season_doy is not None:      # time of year: 15 Jan and 15 Jul
             for name, k in (("jan", 0), ("jul", 6)):
                 r[f"miss_{name}"] = float(m.miss_rate_seasonal[k, L])
-                r[f"far_{name}"] = (r[f"miss_{name}"] if UNBIASED
+                if INTENSITY and m.has_intensity_miss:
+                    r[f"miss_light_lt1_{name}"] = float(m.miss_rate_intensity_seasonal[k, 0, L])
+                    r[f"miss_strong_ge1_{name}"] = float(m.miss_rate_intensity_seasonal[k, 1, L])
+                r[f"far_{name}"] = (None if (UNBIASED and INTENSITY)
+                                    else r[f"miss_{name}"] if UNBIASED
                                     else float(m.far_seasonal[k, L]))
                 r[f"pcv_{name}"] = float(np.sqrt(np.exp(m.hit_sd_log_seasonal[k, L] ** 2) - 1))
         r["vcv"] = float(np.sqrt(np.exp(m.vis_below_sd_log ** 2) - 1))

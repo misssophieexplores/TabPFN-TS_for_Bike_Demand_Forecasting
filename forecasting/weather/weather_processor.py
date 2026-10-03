@@ -335,6 +335,7 @@ class WeatherProcessor:
                 fresh_forecast=self.config.nwp_fresh_forecast,
                 remove_bias=self.config.nwp_remove_bias,
                 seasonal_rain=self.config.nwp_seasonal_rain,
+                rain_intensity_dependent=self.config.nwp_rain_intensity_dependent,
                 rain_frequency_unbiased=self.config.nwp_rain_frequency_unbiased,
             )
             self.last_degradation_info = info

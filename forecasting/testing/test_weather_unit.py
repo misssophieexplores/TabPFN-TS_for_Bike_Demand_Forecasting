@@ -547,8 +547,9 @@ class TestMeasuredNWPModel:
         cfg = ForecastConfig()
         assert cfg.degradation_model == "nwp_measured"
         assert cfg.nwp_fresh_forecast and cfg.nwp_remove_bias and cfg.nwp_seasonal_rain
+        assert cfg.nwp_rain_intensity_dependent
         assert cfg.nwp_rain_frequency_unbiased
-        assert cfg.degradation_label() == "nwp_measured(fresh,no_bias,seasonal_rain,rain_freq_unbiased)"
+        assert cfg.degradation_label() == "nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased)"
         for city in CITY_MODULES:
             config = _city_config(city)
             assert config.timezone
@@ -584,6 +585,10 @@ class TestMeasuredNWPModel:
         for city in CITY_MODULES:
             model = load_error_model(_city_config(city).nwp_calibration_file)
             assert model.season_doy is not None and model.miss_rate_seasonal.shape == (12, MAX_LEAD + 1)
+            assert model.has_intensity_miss
+            assert model.intensity_split_mm == pytest.approx(1.0)
+            assert model.miss_rate_intensity.shape == (2, MAX_LEAD + 1)
+            assert model.miss_rate_intensity_seasonal.shape == (12, 2, MAX_LEAD + 1)
             for doy in [1, 15, 100, 196, 300, 365]:
                 w = model.season_weights(doy)
                 assert w.sum() == pytest.approx(1.0) and (w >= 0).all() and (w > 0).sum() <= 2
@@ -595,10 +600,42 @@ class TestMeasuredNWPModel:
                 assert got is year_round
             for arr in (model.miss_rate_seasonal, model.far_seasonal, model.hit_sd_log_seasonal):
                 assert np.isfinite(arr[:, 1:169]).all()
+            assert np.isfinite(model.miss_rate_intensity[:, 1:169]).all()
+            assert np.isfinite(model.miss_rate_intensity_seasonal[:, :, 1:169]).all()
+            # The measured effect motivating the two-class model: light
+            # precipitation is missed more often at 24 h in every city.
+            assert model.miss_rate_intensity[0, 24] > model.miss_rate_intensity[1, 24]
             ref = json.loads(model.summary)["precipitation"]["reference"]
             assert ("NOAA ISD" in ref) if city == "seoul" else ("era5" in ref.lower())
         dc = load_error_model(_city_config("washington").nwp_calibration_file)
         assert dc.rain_params(196)[0][24] > dc.rain_params(15)[0][24]
+
+    def test_rain_intensity_switch_changes_miss_detection(self):
+        """With intensity dependence on, the same random draw can miss light
+        precipitation and detect >=1 mm/h precipitation. With it off both
+        hours use the same previous overall miss rate."""
+        model = load_error_model(_city_config("seoul").nwp_calibration_file)
+        intensity = model.rain_miss_rates(196, seasonal=True, intensity_dependent=True)
+        L = 24
+        assert intensity[0, L] > intensity[1, L]
+        u = (intensity[0, L] + intensity[1, L]) / 2.0
+        precip = pd.DataFrame({"precipitation_mm": [0.5, 2.0]})
+        common = dict(
+            precip=precip, leads=np.array([L, L]), wet_fraction=0.1,
+            u_miss=np.array([u, u]), u_fa=np.ones(2), z_hit=np.zeros(2),
+            z_fa_amount=np.zeros(2), s=0.0, fa_col="precipitation_mm",
+            remove_bias=True, params=model.rain_params(196), frequency_unbiased=False,
+        )
+        got = model._precipitation(**common, intensity_miss=intensity)
+        assert got.loc[0, "precipitation_mm"] == 0.0
+        assert got.loc[1, "precipitation_mm"] == pytest.approx(2.0)
+
+        old = model._precipitation(
+            **common,
+            intensity_miss=model.rain_miss_rates(196, seasonal=True,
+                                                 intensity_dependent=False),
+        )
+        assert (old["precipitation_mm"] > 0).nunique() == 1
 
     def test_rain_frequency_option(self):
         """nwp_rain_frequency_unbiased (default on): false alarms equal misses,
@@ -623,6 +660,110 @@ class TestMeasuredNWPModel:
             ratio[unbiased] = n_fc / n_obs
         assert ratio[True] == pytest.approx(1.0, abs=0.2)
         assert ratio[False] > 1.4
+
+    def test_intensity_misses_and_false_alarm_balance_mixed_rain(self):
+        """Intensity-dependent misses with light (<1 mm/h) and stronger rain
+        mixed (70 / 30 % in training and test): each class is missed at its
+        calibrated rate, and false alarms balance the combined misses, so the
+        degraded data are wet about as often as the clean data."""
+        h = 48
+        for city in CITY_MODULES:
+            proc = _processor(city)
+            cfg = proc.config
+            assert cfg.nwp_rain_intensity_dependent and cfg.nwp_rain_frequency_unbiased
+            col = _precip_col(cfg)
+            model = load_error_model(cfg.nwp_calibration_file)
+            rng = np.random.default_rng(7)
+            n = dict(wl=0, ml=0, ws=0, ms=0, obs=0, fc=0)
+            exp_l, exp_s = [], []
+            for fold in range(300):
+                start = pd.Timestamp("2018-07-01") + pd.Timedelta(hours=7 * fold)
+                df = _synthetic_city_data(cfg, start, 720 + h, seed=fold)
+                wet = rng.random(len(df)) < 0.12
+                light = rng.random(len(df)) < 0.7
+                df[col] = np.where(wet, np.where(light, 0.3, 2.5), 0.0)
+                train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+                proc.prepare_weather_data(train, "degraded", horizon=h, fold_idx=fold, split="train")
+                X = proc.prepare_weather_data(test, "degraded", horizon=h, fold_idx=fold, split="test")
+                info = proc.last_degradation_info
+                assert info["rain_intensity_dependent"]
+                leads = np.arange(info["lead_first"], info["lead_last"] + 1)
+                rates = model.rain_miss_rates(pd.Timestamp(info["forecast_start_utc"]).dayofyear,
+                                              True, True)
+                o, f = test[col].to_numpy(), X[col].to_numpy()
+                lt, st = (o > 0) & (o < 1), o >= 1
+                n["wl"] += lt.sum(); n["ml"] += (lt & (f == 0)).sum()
+                n["ws"] += st.sum(); n["ms"] += (st & (f == 0)).sum()
+                n["obs"] += (o > 0).sum(); n["fc"] += (f > 0).sum()
+                exp_l += list(rates[0, leads][lt]); exp_s += list(rates[1, leads][st])
+            assert n["ml"] / n["wl"] == pytest.approx(np.mean(exp_l), abs=0.06), city
+            assert n["ms"] / n["ws"] == pytest.approx(np.mean(exp_s), abs=0.06), city
+            assert n["ml"] / n["wl"] > n["ms"] / n["ws"], city
+            assert n["fc"] / n["obs"] == pytest.approx(1.0, abs=0.15), city
+
+    def test_seoul_winter_split_station_and_forecast(self):
+        """Seoul November-March: the station's 3-hour totals (at 00, 03, ...,
+        21 KST) are split over their three hours, and the forecast is split
+        over the same windows (sum of the run's three hours / 3), so both
+        sides are compared alike. The month is taken in Korean time at the
+        end of the window, as for the bike data (data/build_weather_v7.py)."""
+        nwp_dir = str(Path(__file__).resolve().parent.parent / "weather" / "nwp")
+        if nwp_dir not in sys.path:
+            sys.path.insert(0, nwp_dir)
+        import analyze_nwp_errors as A
+        # window end and the Korean-time month rule
+        t = pd.DatetimeIndex(["2024-12-01 01:00", "2024-12-01 03:00", "2024-12-01 04:00"])
+        assert list(A.seoul_window_end(t)) == list(pd.DatetimeIndex(
+            ["2024-12-01 03:00", "2024-12-01 03:00", "2024-12-01 06:00"]))
+        utc = pd.DatetimeIndex(["2024-10-31 14:00",   # 31 Oct 23 KST, window ends 1 Nov 00 KST
+                                "2024-10-31 11:00",   # 31 Oct 20 KST, window ends 31 Oct 21 KST
+                                "2025-03-31 14:00",   # 31 Mar 23 KST, window ends 1 Apr 00 KST
+                                "2025-03-31 11:00"])  # 31 Mar 20 KST, window ends 31 Mar 21 KST
+        assert list(A.seoul_winter(utc)) == [True, False, False, True]
+        # station: a 3-hour total at 1 Nov 03 KST is split, one at 1 Apr 03 KST is not
+        idx = pd.date_range("2024-10-31 12:00", periods=12, freq="h").append(
+            pd.date_range("2025-03-31 12:00", periods=12, freq="h"))
+        s = pd.Series(0.0, index=idx)
+        s[pd.Timestamp("2024-10-31 18:00")] = 0.6
+        s[pd.Timestamp("2025-03-31 18:00")] = 0.6
+        r = A.spread_seoul_winter_precip(s)
+        np.testing.assert_allclose(r[pd.date_range("2024-10-31 16:00", periods=3, freq="h")], 0.2)
+        assert r[pd.Timestamp("2025-03-31 18:00")] == 0.6
+        assert r[pd.Timestamp("2025-03-31 17:00")] == 0.0
+        # forecast: split per run over the same windows; incomplete window -> NaN;
+        # April-October unchanged
+        v = pd.date_range("2024-12-01 01:00", periods=8, freq="h")
+        p = pd.DataFrame({"init": pd.Timestamp("2024-12-01 00:00"), "valid": v,
+                          "fc": [0.1, 0.0, 0.2, 0.3, 0.0, 0.0, 0.9, 0.0]})
+        q = A.split_seoul_winter_forecast(p)
+        np.testing.assert_allclose(q.fc[:6], [0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+        assert q.fc[6:].isna().all()                     # window 07-09 UTC has only 2 hours
+        assert abs(q.fc[:6].sum() - p.fc[:6].sum()) < 1e-12  # totals kept
+        p2 = p.assign(init=pd.Timestamp("2024-07-01 00:00"),
+                      valid=v - pd.Timestamp("2024-12-01") + pd.Timestamp("2024-07-01"))
+        pd.testing.assert_series_equal(A.split_seoul_winter_forecast(p2).fc, p2.fc)
+        # two runs are split separately
+        p3 = pd.concat([p.iloc[:3], p.iloc[:3].assign(init=pd.Timestamp("2024-11-30 12:00"),
+                                                      fc=[0.3, 0.3, 0.3])])
+        np.testing.assert_allclose(A.split_seoul_winter_forecast(p3).fc, [0.1] * 3 + [0.3] * 3)
+
+    def test_seoul_winter_wet_rule_same_for_station_and_forecast(self):
+        """Wet-hour rule of the calibration: Seoul winter split hours are wet
+        if their 3-hour total is >= 0.1 mm (split value >= 0.1/3), for the
+        station and the forecast alike; otherwise >= 0.1 mm/h."""
+        nwp_dir = str(Path(__file__).resolve().parent.parent / "weather" / "nwp")
+        if nwp_dir not in sys.path:
+            sys.path.insert(0, nwp_dir)
+        import build_nwp_calibration as B
+        vals = [0.1 / 3, 0.03, 0.05, 0.1]
+        winter = pd.DataFrame({"valid": pd.Timestamp("2025-01-10 03:00"), "ob": vals, "fc": vals})
+        summer = winter.assign(valid=pd.Timestamp("2025-07-10 03:00"))
+        ow, fw = B.precipitation_wet_masks(winter, "seoul")
+        assert list(ow) == list(fw) == [True, False, True, True]
+        ow, fw = B.precipitation_wet_masks(summer, "seoul")
+        assert list(ow) == list(fw) == [False, False, False, True]
+        ow, fw = B.precipitation_wet_masks(winter, "london")
+        assert list(ow) == list(fw) == [False, False, False, True]
 
     def test_rain_capped_at_training_maximum(self):
         """Degraded rain never exceeds the training fold's maximum of the
@@ -842,7 +983,8 @@ class TestMeasuredNWPModel:
                 assert X[col["visibility"]].max() <= vmax + 1e-9
 
     def test_reproduces_measured_error_statistics(self):
-        """Over many test windows the simulated errors match the calibration:
+        """With intensity dependence disabled, over many test windows the
+        simulated errors reproduce the overall (all intensities) rain calibration:
         precipitation miss rate and false-alarm ratio (of the time of year), visibility falling
         below the Seoul cap, and the temperature error: average ~0 with the
         lean removed (default), the measured Seoul lean (about -1 C or more)
@@ -850,6 +992,7 @@ class TestMeasuredNWPModel:
         for remove_bias in (True, False):
             proc = _processor("seoul", fresh=True, remove_bias=remove_bias)
             cfg = proc.config
+            cfg.nwp_rain_intensity_dependent = False
             cfg.nwp_rain_frequency_unbiased = False      # measured false-alarm ratio
             model = load_error_model(cfg.nwp_calibration_file)
             horizon, n_folds = 24, 300

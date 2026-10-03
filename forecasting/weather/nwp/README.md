@@ -2,7 +2,7 @@
 
 This folder measures real weather-forecast errors per city and turns them into the calibration files of the degradation model (`weather/nwp_error_model.py`). How the model uses them: `weather/weather_methodology.md` (technical) and `weather/weather_degradation_summary.md` (plain language).
 
-Status 2 Oct 2026.
+Status 3 Oct 2026.
 
 ## Pipeline
 
@@ -13,6 +13,7 @@ Status 2 Oct 2026.
 | 3. Calibration files for the model | `build_nwp_calibration.py --data <nwp_extracts>` | `calibration/<city>.npz`, `calibration/<city>_summary.json` |
 | 4. Check on the bike data (experiment folds) | `validate_on_real_data.py` (run from the folder that contains `data/`; `SEED=42`) | `sim_errors_<seed>.csv` |
 | 5. Errors applied by the default model at 6/24/48/168 h | `expected_errors.py` | `expected_errors.json` |
+| 6. Evidence for the Seoul winter treatment (station format; comparison method tested on Apr–Oct) | `check_seoul_winter_split.py --data <nwp_extracts>` | printed tables |
 
 Raw data: `~/GitHub/nwp_errors/nwp_data` on the Mac (not in the repository).
 
@@ -25,7 +26,7 @@ Raw data: `~/GitHub/nwp_errors/nwp_data` on the Mac (not in the repository).
 
 | City | Temperature, humidity, wind | Rain | Solar radiation | Visibility |
 | --- | --- | --- | --- | --- |
-| Seoul | station 47108 | station 47108 (hourly amounts from 2024) | ERA5 | station 47108 |
+| Seoul | station 47108 | station 47108 (Apr-Oct hourly; Nov-Mar 3-hour totals split evenly over their three hours, the forecast split over the same hours) | ERA5 | station 47108 |
 | London | ERA5 | ERA5 | ERA5 | Heathrow |
 | Washington | ERA5 | ERA5 | ERA5 | Reagan National |
 
@@ -40,17 +41,17 @@ Statistic = a + b·h, h = lead time in hours. "Literature" = the earlier degrada
 | Wind σ (m/s) | 1.8 + 0.010·h | 0.90 + 0.0024·h | 0.51 + 0.0080·h | 0.64 + 0.0051·h |
 | Solar relative MAE (%) | 15 + 0.15·h | 13.5 + 0.10·h | 15.6 + 0.11·h | 12.5 + 0.09·h |
 | Visibility CV | 25 % | ~103 % flat | ~110 % flat | 44 % flat (capped at 16 km) |
-| Rain miss rate (≥ 0.1 mm/h) | 0.25 + 0.0042·h (max 0.5) | 0.23 + 0.0011·h | 0.41 + 0.0003·h | 0.42 + 0.0005·h |
-| Rain false-alarm ratio (≥ 0.1 mm/h) | = miss rate | 0.61 + 0.0016·h | 0.23 + 0.0031·h | 0.24 + 0.0028·h |
-| Rain amount CV, hits | 30 % + 0.15 %·h | 342 % + 7.1 %·h (poor fit, r² 0.09) | 115 % + 1.3 %·h | 158 % + 2.1 %·h |
+| Aggregate rain miss rate | 0.25 + 0.0042·h (max 0.5) | 0.23 + 0.0011·h | 0.41 + 0.0003·h | 0.42 + 0.0005·h |
+| Aggregate rain false-alarm ratio | = miss rate | 0.60 + 0.0016·h | 0.23 + 0.0031·h | 0.24 + 0.0028·h |
+| Rain amount CV, hits | 30 % + 0.15 %·h | 325 % + 6.8 %·h (poor fit, r² 0.09) | 115 % + 1.3 %·h | 158 % + 2.1 %·h |
 
-Rain rows: CSV statistics `*_gt0` (amount > 0, which is ≥ 0.1 mm/h for these data in 0.1 mm steps). The CSV's `*_gt0.1` statistics are strictly > 0.1 mm/h and drop all 0.1 mm hours (Seoul station: wet share per lead about 2 % instead of 5.7 %); do not use them for comparison with the model.
+These fitted rain lines (the `gt0` rows: wet = > 0) are aggregate diagnostics, not the default event model. The calibration files store two miss-rate classes: light precipitation <1 mm/h and stronger precipitation ≥1 mm/h, year-round and by time of year. Calibration wet rule, the same for reference and forecast: ≥0.1 mm/h; Seoul November-March: station and forecast split over the same KMA 3-hour windows, wet if the 3-hour total is ≥0.1 mm (split value ≥0.1/3 mm/h). The window counts as winter if it ends in November-March, Korean time.
 
-The model does not apply these raw values directly: it uses a fresh forecast (lead = hours ahead), removes the biases, matches rain errors to the time of year, sets the forecast to be wet as often as observed, and caps rain at the training maximum. Errors as applied: `expected_errors.py` and `weather_degradation_summary.md`.
+The model does not apply these raw lines directly: it uses a fresh forecast (lead = hours ahead), removes the biases, matches precipitation misses to time of year and observed intensity (`nwp_rain_intensity_dependent=True`: <1 / ≥1 mm/h), sets the forecast to be wet as often as observed, and caps precipitation at the training maximum. The intensity classes use ±12 h lead pooling; seasonal windows widen separately per class until every pooled lead through 168 h has at least 200 observed wet cases. Errors as applied: `expected_errors.py` and `weather_degradation_summary.md`.
 
 ## Gaps
 
 - No ECMWF forecasts for the data years 2011–18 (licensed archive; TIGGE needs an account and has no visibility or usable solar radiation).
 - No station solar radiation; solar is measured against ERA5 for all cities.
-- Seoul station: hourly rain amounts only from 2024; station reports end Aug 2025 (844 complete runs for temperature, humidity and wind; 1,049 with station rain).
+- Seoul station: precipitation reports end Aug 2025 (844 complete runs for temperature, humidity and wind; 1,049 runs with usable precipitation). April-October is hourly; November-March KMA 3-hour totals are spread evenly over their covered hours before calibration, and the forecast is spread over the same hours, so winter rain is verified at 3-hour resolution only (timing errors within the three hours are not counted).
 - Heathrow before 2024 has only 6-/12-h rain totals; no visibility in GEFS or ERA5.

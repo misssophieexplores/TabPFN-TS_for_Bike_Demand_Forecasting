@@ -359,6 +359,10 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
           type 'precipitation'; snow depth is not precipitation); only if
           column_mapping has precipitation columns present in training_data.
           Converts the false alarm ratio into a probability per dry hour.
+        - 'precip_light_fraction': among wet hours, share with total
+          precipitation < 1 mm/h. Used by the measured NWP model to combine
+          the two intensity-dependent miss rates when rain-frequency bias is
+          removed (false alarms = misses in expectation).
         - 'precip_max': {column: largest value in the training data} for the
           precipitation columns; upper limit of degraded precipitation in the
           measured NWP error model (an hour's measured value is never cut).
@@ -406,7 +410,12 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
         if t == 'precipitation' and c in training_data.columns
     ]
     if precip_cols:
-        params['wet_fraction'] = float((training_data[precip_cols] > 0).any(axis=1).mean())
+        precip_total = training_data[precip_cols].clip(lower=0).sum(axis=1)
+        wet = precip_total > 0
+        params['wet_fraction'] = float(wet.mean())
+        params['precip_light_fraction'] = (
+            float((precip_total[wet] < 1.0).mean()) if wet.any() else 0.0
+        )
         params['precip_max'] = {c: float(training_data[c].max()) for c in precip_cols}
 
     vis_cols = [

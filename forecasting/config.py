@@ -86,11 +86,15 @@ class ForecastConfig:
     nwp_fresh_forecast: bool = True
     nwp_remove_bias: bool = True
     nwp_seasonal_rain: bool = True
+    #   nwp_rain_intensity_dependent=True: precipitation miss probability
+    #       uses two calibrated observed-intensity classes (<1 and >=1 mm/h).
+    #       False: one miss-rate curve for all intensities.
+    nwp_rain_intensity_dependent: bool = True
     #   nwp_rain_frequency_unbiased=True: the forecast is wet as often as
     #       observed (false alarms = misses), i.e. the rain-frequency bias of
     #       the raw forecast is removed like the temperature/humidity/wind
-    #       bias. Seoul's raw forecast is wet about 2.2 times as often as the
-    #       station. False: measured false-alarm ratio.
+    #       bias. Seoul's raw forecast is wet about 2.1 times as often as the
+    #       station (24 h). False: measured false-alarm ratio.
     nwp_rain_frequency_unbiased: bool = True
     nwp_run_hours_utc: List[int] = field(default_factory=lambda: [0, 12])
     nwp_availability_delay_h: int = 6
@@ -135,12 +139,14 @@ class ForecastConfig:
     def degradation_label(self) -> str:
         """Error model and its settings, as written to the results
         ('degradation_model' column), e.g.
-        'nwp_measured(fresh,no_bias,seasonal_rain,rain_freq_unbiased)'."""
+        'nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased)'."""
         if self.degradation_model != "nwp_measured":
             return self.degradation_model
         age = "fresh" if self.nwp_fresh_forecast else f"age_delay{self.nwp_availability_delay_h}h"
         bias = "no_bias" if self.nwp_remove_bias else "with_bias"
         rain = "seasonal_rain" if self.nwp_seasonal_rain else "yearround_rain"
+        if self.nwp_rain_intensity_dependent:
+            rain += ",intensity_miss"
         if self.nwp_rain_frequency_unbiased:
             rain += ",rain_freq_unbiased"
         return f"nwp_measured({age},{bias},{rain})"

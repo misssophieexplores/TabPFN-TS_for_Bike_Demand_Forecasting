@@ -53,13 +53,18 @@ LAGS = [1, 3, 6, 12, 24]
 MAX_LEAD = 168
 WET_THRESHOLDS = {"gt0.1": 0.1, "gt0": 0.0}
 ISD_OK_QC = set("014569ACIMPRU")          # accepted ISD quality codes
-# Stations whose hourly SYNOP reports (FM-12) carry a 1-hour precipitation
-# group in every wet hour and omit it in dry hours (checked 2 Oct 2026 for
-# Seoul 47108, 2024-25: the hourly amounts add up to the station's running
-# 24-h totals, median ratio 1.00; Seoul bike-data rain = this station's rain,
-# 2017-18 6-/12-h totals match in 99 % of cases). A routine report without the
-# group and without precipitation in the present-weather group is a dry hour.
+# Stations whose routine SYNOP reports (FM-12) carry the precipitation group
+# needed for an hourly wet/dry series and omit it in dry reports. Seoul's KMA
+# precipitation changes reporting format seasonally: April-October is hourly;
+# November-March the values at 00/03/.../21 KST are 3-hour totals (checked 3
+# Oct 2026 on the 2024-25 SYNOPs: all 82 positive winter amounts sit at those
+# hours, and their sums equal the station's 24-h totals). load_isd() splits
+# those winter totals evenly over their three covered hours, matching the v7
+# Seoul bike data; the forecast is split the same way where it is compared
+# with the station (split_seoul_winter_forecast()).
 SYNOP_HOURLY_PRECIP = {"seoul"}
+SEOUL_WINTER_MONTHS = {11, 12, 1, 2, 3}
+KST = pd.Timedelta(hours=9)               # Seoul local time (no daylight saving)
 
 FC_ECMWF_SERVED = ("ECMWF IFS HRES 9km (Open-Meteo Single Runs, 00/12 UTC runs; hourly as "
                    "served, leads >90 h interpolated by Open-Meteo from 3-/6-hourly output)")
@@ -113,6 +118,68 @@ def rh_from_q(t_c, q, p_pa):
 def cv_from_log_sd(sd):
     """Coefficient of variation equivalent to a log-normal with log-SD sd."""
     return float(np.sqrt(np.expm1(sd ** 2))) if np.isfinite(sd) else np.nan
+
+
+def seoul_window_end(valid_utc):
+    """End of the KMA 3-hour window that contains each hour (UTC): the next
+    hour at 00, 03, ..., 21 KST (= UTC hour divisible by 3), or the hour
+    itself if it is one. The window ending at t covers t-2, t-1, t."""
+    t = pd.DatetimeIndex(valid_utc)
+    return t + pd.to_timedelta((3 - t.hour % 3) % 3, unit="h")
+
+
+def seoul_winter(valid_utc):
+    """True for hours (UTC) whose KMA 3-hour window ends in November-March,
+    Korean time: the rule of data/build_weather_v7.py for the bike data."""
+    end = seoul_window_end(valid_utc) + KST
+    return np.isin(end.month, list(SEOUL_WINTER_MONTHS))
+
+
+def spread_seoul_winter_precip(s):
+    """Spread Seoul Nov-Mar 3-hour precipitation totals over their hours.
+
+    KMA reports a total at 00, 03, ..., 21 KST; the value at t covers t-2,
+    t-1, t. Positive totals are divided equally over those three timestamps.
+    Dry totals remain zero. Index: UTC; the month is taken in Korean time at
+    t. This is the same reconstruction used for data/SeoulBikeData.csv in v7.
+    """
+    s = s.copy().sort_index()
+    idx = pd.DatetimeIndex(s.index)
+    pos = (s.fillna(0).to_numpy() > 0)
+    winter_slot = np.isin((idx + KST).month, list(SEOUL_WINTER_MONTHS)) & (idx.hour % 3 == 0)
+    for t in idx[pos & winter_slot]:
+        covered = pd.DatetimeIndex([t - pd.Timedelta(hours=2),
+                                    t - pd.Timedelta(hours=1), t])
+        if not covered.isin(s.index).all():
+            continue
+        v = float(s.loc[t])
+        # A positive value in either preceding hour would mean overlapping
+        # accumulation windows and make the reconstruction ambiguous.
+        prev = s.reindex(covered[:-1]).fillna(0)
+        if (prev > 0).any():
+            raise RuntimeError(f"Seoul winter precipitation overlaps at {t}")
+        s.loc[covered] = v / 3.0
+    return s
+
+
+def split_seoul_winter_forecast(p, col="fc"):
+    """Treat a Seoul forecast like the station in November-March: per run
+    (`init`), the hourly values are summed over each KMA 3-hour window (see
+    seoul_window_end) and split evenly over its three hours. A window with
+    fewer than three forecast hours in the run (before the first lead)
+    becomes NaN. April-October hours are unchanged. `p` needs the columns
+    init, valid (UTC) and `col`."""
+    p = p.copy()
+    winter = seoul_winter(p["valid"])
+    if not winter.any():
+        return p
+    end = seoul_window_end(p["valid"])
+    g = p[col].groupby([p["init"].to_numpy(), end])
+    total = g.transform("sum")
+    n = g.transform("count")
+    split = (total / 3.0).where(n == 3)
+    p.loc[winter, col] = split[winter]
+    return p
 
 
 def linfit(x, y):
@@ -316,8 +383,10 @@ def load_isd(root, city):
     # present-weather groups is a dry hour.
     fill = metar & raw["year"].isin(hourly_years) & raw["precip_1h"].isna() & ~pw
     raw.loc[fill, "precip_1h"] = 0.0
-    # Hourly SYNOP stations (SYNOP_HOURLY_PRECIP, e.g. Seoul from 2024): same
-    # rule for full-hour FM-12 reports of station-years with hourly groups.
+    # Routine SYNOP stations (SYNOP_HOURLY_PRECIP, e.g. Seoul from 2024): same
+    # rule for full-hour FM-12 reports. Seoul's Nov-Mar positive groups are
+    # 3-hour totals; they are reconstructed below after the hourly series is
+    # assembled.
     if city in SYNOP_HOURLY_PRECIP:
         synop = (rep == "FM-12") & (raw["DATE"].dt.minute == 0)
         n_s = raw.loc[raw.precip_1h.notna() & synop].groupby("year").size()
@@ -349,6 +418,8 @@ def load_isd(root, city):
             hourly["vis_cap"] = s.set_index("H")["vis_cap"]
     hourly = pd.DataFrame(hourly).sort_index()
     hourly = hourly.rename(columns={"precip_1h": "precipitation"})
+    if city == "seoul" and "precipitation" in hourly:
+        hourly["precipitation"] = spread_seoul_winter_precip(hourly["precipitation"])
 
     # multi-hour precipitation windows (3 h and 6 h) as reported
     win = pg[pg.period.isin([3, 6])].copy()
@@ -668,6 +739,11 @@ def analyse_ecmwf(fc, refs, C):
                     x["err"] = x.fc - x.ob
                     autocorr(x, var, city, FC_ECMWF_SERVED, obname, yl, C, LAGS)
                 elif var == "precipitation":
+                    if city == "seoul" and rname == "isd":
+                        # station: Nov-Mar 3-hour totals split over their hours;
+                        # the forecast is split the same way (like for like)
+                        m = split_seoul_winter_forecast(m)
+                        m_main = m[m.lead <= MAX_LEAD]
                     per_lead_precip(m_main, city, FC_ECMWF_SERVED, obname, yl, C)
                     per_lead_precip(m_main, city, FC_ECMWF_NATIVE, obname, yl, C,
                                     leads=set(range(1, 91)))
