@@ -48,12 +48,12 @@ def get_config() -> ForecastConfig:
     config.column_scale_factors = {"Visibility": 0.01}  # raw unit is 10 m -> km (as London/Washington)
 
     # --- Model parameters ---
-    config.arima_params_file = "results/tuning/arima_best_params_seoul_720_20261003_004858.json"
-    config.sarimax_params_file = "results/tuning/sarimax_best_params_seoul_clean_only_720_20261003_041430.json"
-    config.xgb_params_file = "results/tuning/xgboost_best_params_seoul_clean_only_720_20261003_050426.json"
-    config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_seoul_no_weather_720_20261003_095525.json"
-    config.prophet_params_file = "results/tuning/prophet_best_params_seoul_720_20261003_005320.json"
-    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_seoul_clean_only_720_20261003_011523.json"
-    config.neuralprophet_noweather_params_file = "results/tuning/neuralprophet_best_params_seoul_no_weather_720_20261003_021720.json"
+    config.arima_params_file = ""
+    config.sarimax_params_file = ""
+    config.xgb_params_file = ""
+    config.xgb_noweather_params_file = ""
+    config.prophet_params_file = ""
+    config.neuralprophet_params_file = ""
+    config.neuralprophet_noweather_params_file = ""
 
     return config
