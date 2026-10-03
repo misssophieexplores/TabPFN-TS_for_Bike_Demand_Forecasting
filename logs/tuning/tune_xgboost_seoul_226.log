@@ -1,0 +1,36 @@
+Job 226 | xgboost | seoul | DAH2 | CPUs 8 | 2026-10-03 00:23:39
+Commit: unknown
+
+======================================================================
+TUNING XGBOOST FOR: SEOUL
+======================================================================
+Loaded 8760 observations for seoul
+======================================================================
+XGBOOST TUNING (Optuna TPE + early stopping) | city=seoul | horizon=24h | scenario=clean_only
+======================================================================
+Trials: 100
+Tune folds: 90 (90)
+n_lags_options: [12, 24, 48, 168]
+Max train size: 8000
+Early stopping rounds: 50 | Max estimators: 3000
+Cutoff date (held-out test start): 2018-03-30 23:00:00
+Tuning on 2880 observations (pre-cutoff)
+n_train_samples: 720
+Covariates used (9): ['Temperature', 'Humidity', 'Wind speed', 'Solar Radiation', 'precipitation_mm', 'snow_depth_cm', 'Visibility', 'Holiday', 'Seasons']
+======================================================================
+  Trial   0/100 | MAE=107.12 | n_lags=168 | depth=12 | lr=0.0199 | avg_n_estimators=765
+  Trial   1/100 | MAE=112.76 | n_lags=12 | depth=4 | lr=0.1078 | avg_n_estimators=204
+  Trial   2/100 | MAE=107.86 | n_lags=48 | depth=10 | lr=0.0269 | avg_n_estimators=620
+  Trial   3/100 | MAE=109.82 | n_lags=24 | depth=3 | lr=0.0154 | avg_n_estimators=1610
+  Trial   4/100 | MAE=107.65 | n_lags=168 | depth=4 | lr=0.0376 | avg_n_estimators=554
+  Trial   5/100 | MAE=113.77 | n_lags=24 | depth=4 | lr=0.0210 | avg_n_estimators=1279
+  Trial   6/100 | MAE=119.52 | n_lags=12 | depth=10 | lr=0.0051 | avg_n_estimators=2864
+  Trial   7/100 | MAE=109.03 | n_lags=48 | depth=5 | lr=0.0157 | avg_n_estimators=1352
+  Trial   8/100 | MAE=108.63 | n_lags=12 | depth=6 | lr=0.0344 | avg_n_estimators=363
+  Trial   9/100 | MAE=107.65 | n_lags=48 | depth=2 | lr=0.0116 | avg_n_estimators=1549
+  Trial  10/100 | MAE=106.26 | n_lags=168 | depth=9 | lr=0.0184 | avg_n_estimators=1040
+  Trial  11/100 | MAE=106.09 | n_lags=168 | depth=12 | lr=0.0095 | avg_n_estimators=1549
+  Trial  12/100 | MAE=118.52 | n_lags=12 | depth=12 | lr=0.0065 | avg_n_estimators=2736
+  Trial  13/100 | MAE=107.69 | n_lags=168 | depth=7 | lr=0.0109 | avg_n_estimators=1226
+  Trial  14/100 | MAE=105.64 | n_lags=168 | depth=6 | lr=0.0055 | avg_n_estimators=2053
+slurmstepd-DAH2: error: *** JOB 226 ON DAH2 CANCELLED AT 2026-10-03T00:46:31 ***

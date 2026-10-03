@@ -1,0 +1,37 @@
+Job 244 | sarimax | seoul | DAH2 | CPUs 4 | 2026-10-03 00:47:12
+Commit: unknown
+
+======================================================================
+TUNING SARIMAX FOR: SEOUL
+======================================================================
+Loaded 8760 observations for seoul
+======================================================================
+SARIMAX TUNING | city=seoul | horizon=24h | scenario=clean_only | m=24
+======================================================================
+Cutoff date (held-out test start): 2018-03-30 23:00:00
+Candidate folds (auto_arima): [0, 18, 36, 53, 71, 89] | scoring folds: all 90 tune folds
+Covariates (9): ['Temperature', 'Humidity', 'Wind speed', 'Solar Radiation', 'precipitation_mm', 'snow_depth_cm', 'Visibility', 'Holiday', 'Seasons']
+  fold 0: auto_arima -> order=(0, 1, 0) seasonal=(1, 0, 0, 24) intercept=False AIC=8361.7
+  fold 18: auto_arima -> order=(2, 0, 2) seasonal=(1, 0, 1, 24) intercept=True AIC=7956.1
+  fold 36: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=7808.4
+  fold 53: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=7858.8
+  fold 71: auto_arima -> order=(3, 0, 0) seasonal=(2, 0, 0, 24) intercept=True AIC=8612.6
+  fold 89: auto_arima -> order=(2, 0, 0) seasonal=(2, 0, 0, 24) intercept=True AIC=9143.0
+  candidate ((0, 1, 0), (1, 0, 0, 24), False): ok MAE=107.50
+  candidate ((2, 0, 2), (1, 0, 1, 24), True): ok MAE=92.43
+  candidate ((2, 0, 0), (1, 0, 0, 24), True): ok MAE=92.99
+  candidate ((3, 0, 0), (2, 0, 0, 24), True): ok MAE=93.15
+  candidate ((2, 0, 0), (2, 0, 0, 24), True): ok MAE=93.37
+
+======================================================================
+SELECTED: order=[2, 0, 2] seasonal_order=[1, 0, 1, 24] with_intercept=True (trend=c) | search MAE=92.43
+======================================================================
+
+Results saved to: results/tuning/sarimax_best_params_seoul_clean_only_720_20261003_041430.json
+  --> config.sarimax_params_file = 'results/tuning/sarimax_best_params_seoul_clean_only_720_20261003_041430.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================
+[W1003 04:14:30.763102058 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Finished: 2026-10-03 04:14:30

@@ -1,0 +1,47 @@
+{
+  "city": "washington",
+  "n_train_samples": 720,
+  "tuning_period": {
+    "first_timestamp": "2011-01-01T00:00:00",
+    "last_timestamp": "2012-04-30T23:00:00"
+  },
+  "prophet_params": {
+    "changepoint_prior_scale": 0.06208151674064551,
+    "seasonality_prior_scale": 0.16563823126217705,
+    "seasonality_mode": "multiplicative"
+  },
+  "tuning": {
+    "search_type": "random_search",
+    "trials": 50,
+    "tune_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 84.58879654322101,
+    "best_tune_rmse_mean": 113.69804484346864
+  },
+  "mae_mean": 84.58879654322101,
+  "mae_std": 30.210427947885677,
+  "rmse_mean": 113.69804484346864,
+  "rmse_std": 37.3445739647014,
+  "validation_folds": 90,
+  "provenance": {
+    "git_commit": "code:71e5151a24a2feb6",
+    "git_dirty": null,
+    "library_versions": {
+      "python": "3.11.2",
+      "numpy": "1.26.4",
+      "pandas": "2.3.3",
+      "scikit-learn": "1.6.1",
+      "statsmodels": "0.14.6",
+      "pmdarima": "2.1.1",
+      "xgboost": "3.1.3",
+      "optuna": "4.7.0",
+      "prophet": "1.3.0",
+      "neuralprophet": "0.9.0",
+      "torch": "2.9.1",
+      "tabpfn": "6.4.1",
+      "tabpfn-time-series": "1.0.9",
+      "timesfm (.timesfm_venv)": "3.0.2"
+    }
+  }
+}

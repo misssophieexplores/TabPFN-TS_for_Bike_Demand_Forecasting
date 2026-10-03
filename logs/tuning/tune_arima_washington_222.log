@@ -1,0 +1,36 @@
+Job 222 | arima | washington | DAH2 | CPUs 4 | 2026-10-03 00:23:39
+Commit: unknown
+
+======================================================================
+TUNING ARIMA FOR: WASHINGTON
+======================================================================
+Loaded 17544 observations for washington
+======================================================================
+ARIMA TUNING | city=washington | horizon=24h
+======================================================================
+Cutoff date (held-out test start): 2012-04-30 23:00:00
+Candidate folds (auto_arima): [155, 173, 191, 208, 226, 244] | scoring folds: all 90 tune folds
+Covariates (0): []
+  fold 155: auto_arima -> order=(6, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=8120.4
+  fold 173: auto_arima -> order=(6, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=8237.6
+  fold 191: auto_arima -> order=(6, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=8299.2
+  fold 208: auto_arima -> order=(2, 1, 0) seasonal=(0, 0, 0, 0) intercept=False AIC=8644.4
+  fold 226: auto_arima -> order=(7, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=8743.8
+  fold 244: auto_arima -> order=(2, 0, 3) seasonal=(0, 0, 0, 0) intercept=True AIC=8673.4
+  candidate ((6, 0, 0), (0, 0, 0, 0), True): ok MAE=125.71
+  candidate ((2, 1, 0), (0, 0, 0, 0), False): ok MAE=156.34
+  candidate ((7, 0, 0), (0, 0, 0, 0), True): ok MAE=124.63
+  candidate ((2, 0, 3), (0, 0, 0, 0), True): ok MAE=124.30
+
+======================================================================
+SELECTED: order=[2, 0, 3] with_intercept=True (trend=c) | search MAE=124.30
+======================================================================
+
+Results saved to: results/tuning/arima_best_params_washington_720_20261003_002450.json
+  --> config.arima_params_file = 'results/tuning/arima_best_params_washington_720_20261003_002450.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================
+[W1003 00:24:51.221909156 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Finished: 2026-10-03 00:24:51

@@ -1,0 +1,35 @@
+Job 200 | arima | london | DAH2 | CPUs 4 | 2026-10-01 17:02:34
+Commit: unknown
+
+======================================================================
+TUNING ARIMA FOR: LONDON
+======================================================================
+Loaded 17544 observations for london
+======================================================================
+ARIMA TUNING | city=london | horizon=24h
+======================================================================
+Cutoff date (held-out test start): 2016-05-03 23:00:00
+Candidate folds (auto_arima): [155, 173, 191, 208, 226, 244] | scoring folds: all 90 tune folds
+Covariates (0): []
+  fold 155: auto_arima -> order=(6, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=11104.4
+  fold 173: auto_arima -> order=(3, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=11101.2
+  fold 191: auto_arima -> order=(2, 0, 1) seasonal=(0, 0, 0, 0) intercept=True AIC=11148.2
+  fold 208: auto_arima -> order=(6, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=11034.9
+  fold 226: auto_arima -> order=(6, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=11125.2
+  fold 244: auto_arima -> order=(6, 0, 0) seasonal=(0, 0, 0, 0) intercept=True AIC=11199.5
+  candidate ((6, 0, 0), (0, 0, 0, 0), True): ok MAE=658.21
+  candidate ((3, 0, 0), (0, 0, 0, 0), True): ok MAE=661.35
+  candidate ((2, 0, 1), (0, 0, 0, 0), True): ok MAE=665.29
+
+======================================================================
+SELECTED: order=[6, 0, 0] with_intercept=True (trend=c) | search MAE=658.21
+======================================================================
+
+Results saved to: results/tuning/arima_best_params_london_720_20261001_170305.json
+  --> config.arima_params_file = 'results/tuning/arima_best_params_london_720_20261001_170305.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================
+[W1001 17:03:06.507084080 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Finished: 2026-10-01 17:03:06

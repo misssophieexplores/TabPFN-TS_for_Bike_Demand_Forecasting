@@ -1,0 +1,59 @@
+Job 218 | neuralprophet_noweather | london | DAH2 | CPUs 4 | 2026-10-01 18:33:04
+Commit: unknown
+
+======================================================================
+TUNING NEURALPROPHET FOR: LONDON
+======================================================================
+
+Loading data for london...
+Loaded 17544 observations
+======================================================================
+NEURALPROPHET TUNING | city=london | horizon=24h | scenario=no_weather
+======================================================================
+Trials: 20
+Search folds: 6 spread over 90 tune folds: [155, 173, 191, 208, 226, 244]
+n_lags_options: [12, 24, 48, 168]
+Cutoff date: 2016-05-03 23:00:00
+Tune obs: 11664
+Covariates (0): []
+======================================================================
+Importing plotly failed. Interactive plots will not work.
+Importing plotly failed. Interactive plots will not work.
+[   1/20] MAE=451.40 RMSE=585.95 | lr=0.02098 n_lags=48 *
+[   2/20] MAE=458.09 RMSE=583.27 | lr=0.03765 n_lags=24
+[   3/20] MAE=408.02 RMSE=550.09 | lr=0.01236 n_lags=12 *
+[   4/20] MAE=418.90 RMSE=557.58 | lr=0.08450 n_lags=12
+[   5/20] MAE=450.92 RMSE=585.02 | lr=0.01921 n_lags=48
+[   6/20] MAE=553.32 RMSE=708.08 | lr=0.00024 n_lags=168
+[   7/20] MAE=528.95 RMSE=694.85 | lr=0.00224 n_lags=48
+[   8/20] MAE=461.63 RMSE=587.75 | lr=0.06030 n_lags=24
+[   9/20] MAE=470.77 RMSE=601.31 | lr=0.00854 n_lags=24
+[  10/20] MAE=362.56 RMSE=508.82 | lr=0.00214 n_lags=168 *
+[  11/20] MAE=524.83 RMSE=709.59 | lr=0.00048 n_lags=12
+[  12/20] MAE=772.58 RMSE=961.85 | lr=0.00016 n_lags=48
+[  13/20] MAE=456.40 RMSE=581.29 | lr=0.03040 n_lags=24
+[  14/20] MAE=450.82 RMSE=584.85 | lr=0.01880 n_lags=48
+[  15/20] MAE=465.70 RMSE=638.79 | lr=0.00116 n_lags=12
+[  16/20] MAE=446.72 RMSE=610.24 | lr=0.04779 n_lags=168
+[  17/20] MAE=410.29 RMSE=553.40 | lr=0.02163 n_lags=168
+[  18/20] MAE=455.54 RMSE=619.26 | lr=0.00251 n_lags=12
+[  19/20] MAE=836.28 RMSE=1030.88 | lr=0.00014 n_lags=48
+[  20/20] MAE=408.14 RMSE=550.60 | lr=0.01120 n_lags=12
+
+======================================================================
+BEST PARAMETERS FROM SEARCH
+======================================================================
+Search MAE=362.56  RMSE=508.82
+{
+  "learning_rate": 0.0021391566866988724,
+  "n_lags": 168
+}
+
+Results saved to: results/tuning/neuralprophet_best_params_london_no_weather_720_20261001_185249.json
+  --> config.neuralprophet_noweather_params_file = 'results/tuning/neuralprophet_best_params_london_no_weather_720_20261001_185249.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================
+[W1001 18:52:50.552991661 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Finished: 2026-10-01 18:52:50

@@ -1,0 +1,20 @@
+Job 223 | sarimax | seoul | DAH2 | CPUs 4 | 2026-10-03 00:23:39
+Commit: unknown
+
+======================================================================
+TUNING SARIMAX FOR: SEOUL
+======================================================================
+Loaded 8760 observations for seoul
+======================================================================
+SARIMAX TUNING | city=seoul | horizon=24h | scenario=clean_only | m=24
+======================================================================
+Cutoff date (held-out test start): 2018-03-30 23:00:00
+Candidate folds (auto_arima): [0, 18, 36, 53, 71, 89] | scoring folds: all 90 tune folds
+Covariates (9): ['Temperature', 'Humidity', 'Wind speed', 'Solar Radiation', 'precipitation_mm', 'snow_depth_cm', 'Visibility', 'Holiday', 'Seasons']
+  fold 0: auto_arima -> order=(0, 1, 0) seasonal=(1, 0, 0, 24) intercept=False AIC=8361.7
+  fold 18: auto_arima -> order=(2, 0, 2) seasonal=(1, 0, 1, 24) intercept=True AIC=7956.1
+  fold 36: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=7808.4
+  fold 53: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=7858.8
+  fold 71: auto_arima -> order=(3, 0, 0) seasonal=(2, 0, 0, 24) intercept=True AIC=8612.6
+  fold 89: auto_arima -> order=(2, 0, 0) seasonal=(2, 0, 0, 24) intercept=True AIC=9143.0
+slurmstepd-DAH2: error: *** JOB 223 ON DAH2 CANCELLED AT 2026-10-03T00:46:31 ***

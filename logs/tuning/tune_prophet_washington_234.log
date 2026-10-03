@@ -1,0 +1,147 @@
+Job 234 | prophet | washington | DAH2 | CPUs 4 | 2026-10-03 00:25:44
+Commit: unknown
+
+======================================================================
+TUNING PROPHET FOR: WASHINGTON
+======================================================================
+
+Loading data for washington...
+Loaded 17544 observations
+======================================================================
+PROPHET TUNING (random search) | city=washington | horizon=24h
+======================================================================
+Trials: 50
+Folds: 90 (90)
+Cutoff date (held-out test start): 2012-04-30 23:00:00
+Tuning on 11664 observations (pre-cutoff)
+n_train_samples: 720
+======================================================================
+[   1/50] MAE=85.17 RMSE=114.38 | cps=0.1227 sps=0.2073 mode=multiplicative
+[   2/50] MAE=87.79 RMSE=116.60 | cps=0.0762 sps=0.0192 mode=additive
+[   3/50] MAE=87.92 RMSE=115.44 | cps=0.4297 sps=1.9205 mode=additive
+[   4/50] MAE=89.08 RMSE=115.83 | cps=0.0022 sps=0.2245 mode=additive
+[   5/50] MAE=85.62 RMSE=113.59 | cps=0.0100 sps=6.0297 mode=additive
+[   6/50] MAE=87.16 RMSE=114.92 | cps=0.1662 sps=0.2139 mode=additive
+[   7/50] MAE=86.91 RMSE=114.35 | cps=0.0041 sps=0.4611 mode=additive
+[   8/50] MAE=85.45 RMSE=114.69 | cps=0.1713 sps=0.7852 mode=multiplicative
+[   9/50] MAE=85.56 RMSE=114.67 | cps=0.1112 sps=0.1158 mode=multiplicative
+[  10/50] MAE=87.61 RMSE=115.26 | cps=0.2573 sps=2.1635 mode=additive
+[  20/50] MAE=118.81 RMSE=143.24 | cps=0.0695 sps=0.0263 mode=multiplicative
+[  30/50] MAE=92.87 RMSE=119.14 | cps=0.0043 sps=0.0150 mode=additive
+[  40/50] MAE=89.05 RMSE=117.78 | cps=0.0021 sps=7.6859 mode=multiplicative
+[  50/50] MAE=140.53 RMSE=169.54 | cps=0.0133 sps=0.0133 mode=multiplicative
+
+======================================================================
+BEST PARAMETERS FOUND
+======================================================================
+Tuning MAE=84.59  RMSE=113.70
+{
+  "changepoint_prior_scale": 0.06208151674064551,
+  "seasonality_prior_scale": 0.16563823126217705,
+  "seasonality_mode": "multiplicative"
+}
+
+Validating on 90 folds...
+  Fold 155: MAE=63.6, RMSE=84.3
+  Fold 156: MAE=74.8, RMSE=90.2
+  Fold 157: MAE=54.4, RMSE=66.0
+  Fold 158: MAE=103.0, RMSE=141.8
+  Fold 159: MAE=71.9, RMSE=94.0
+  Fold 160: MAE=52.9, RMSE=81.2
+  Fold 161: MAE=65.3, RMSE=88.8
+  Fold 162: MAE=103.2, RMSE=127.1
+  Fold 163: MAE=48.4, RMSE=71.6
+  Fold 164: MAE=42.3, RMSE=58.6
+  Fold 165: MAE=68.8, RMSE=85.8
+  Fold 166: MAE=57.4, RMSE=75.7
+  Fold 167: MAE=54.0, RMSE=85.6
+  Fold 168: MAE=59.1, RMSE=94.2
+  Fold 169: MAE=63.0, RMSE=94.5
+  Fold 170: MAE=64.6, RMSE=92.1
+  Fold 171: MAE=53.6, RMSE=83.1
+  Fold 172: MAE=101.4, RMSE=138.3
+  Fold 173: MAE=78.6, RMSE=90.4
+  Fold 174: MAE=63.3, RMSE=75.8
+  Fold 175: MAE=59.8, RMSE=78.2
+  Fold 176: MAE=68.4, RMSE=103.2
+  Fold 177: MAE=66.7, RMSE=102.2
+  Fold 178: MAE=69.9, RMSE=93.9
+  Fold 179: MAE=74.0, RMSE=97.8
+  Fold 180: MAE=80.6, RMSE=96.8
+  Fold 181: MAE=58.1, RMSE=96.3
+  Fold 182: MAE=64.1, RMSE=86.9
+  Fold 183: MAE=123.2, RMSE=143.9
+  Fold 184: MAE=68.8, RMSE=111.1
+  Fold 185: MAE=82.7, RMSE=115.0
+  Fold 186: MAE=94.0, RMSE=119.9
+  Fold 187: MAE=82.6, RMSE=101.3
+  Fold 188: MAE=58.0, RMSE=72.4
+  Fold 189: MAE=62.1, RMSE=78.5
+  Fold 190: MAE=72.7, RMSE=113.8
+  Fold 191: MAE=66.4, RMSE=99.0
+  Fold 192: MAE=54.8, RMSE=76.2
+  Fold 193: MAE=81.7, RMSE=101.5
+  Fold 194: MAE=114.1, RMSE=145.7
+  Fold 195: MAE=69.2, RMSE=107.5
+  Fold 196: MAE=78.7, RMSE=105.2
+  Fold 197: MAE=77.4, RMSE=111.0
+  Fold 198: MAE=86.3, RMSE=103.9
+  Fold 199: MAE=105.8, RMSE=137.7
+  Fold 200: MAE=147.6, RMSE=197.7
+  Fold 201: MAE=96.3, RMSE=132.4
+  Fold 202: MAE=78.8, RMSE=102.9
+  Fold 203: MAE=97.6, RMSE=117.3
+  Fold 204: MAE=83.5, RMSE=104.9
+  Fold 205: MAE=107.4, RMSE=126.1
+  Fold 206: MAE=100.1, RMSE=133.7
+  Fold 207: MAE=199.2, RMSE=261.0
+  Fold 208: MAE=80.8, RMSE=110.4
+  Fold 209: MAE=76.7, RMSE=109.3
+  Fold 210: MAE=78.2, RMSE=98.4
+  Fold 211: MAE=72.5, RMSE=105.4
+  Fold 212: MAE=63.7, RMSE=95.5
+  Fold 213: MAE=63.0, RMSE=82.2
+  Fold 214: MAE=131.2, RMSE=172.6
+  Fold 215: MAE=93.5, RMSE=123.2
+  Fold 216: MAE=60.8, RMSE=92.9
+  Fold 217: MAE=76.1, RMSE=110.2
+  Fold 218: MAE=80.4, RMSE=106.4
+  Fold 219: MAE=73.0, RMSE=96.4
+  Fold 220: MAE=68.1, RMSE=80.7
+  Fold 221: MAE=117.0, RMSE=153.2
+  Fold 222: MAE=109.2, RMSE=139.9
+  Fold 223: MAE=70.5, RMSE=94.5
+  Fold 224: MAE=83.4, RMSE=115.4
+  Fold 225: MAE=96.5, RMSE=121.8
+  Fold 226: MAE=78.6, RMSE=101.1
+  Fold 227: MAE=64.8, RMSE=88.9
+  Fold 228: MAE=125.4, RMSE=173.7
+  Fold 229: MAE=124.9, RMSE=163.0
+  Fold 230: MAE=74.9, RMSE=97.7
+  Fold 231: MAE=88.6, RMSE=116.7
+  Fold 232: MAE=127.0, RMSE=159.3
+  Fold 233: MAE=85.0, RMSE=112.2
+  Fold 234: MAE=70.2, RMSE=97.7
+  Fold 235: MAE=148.9, RMSE=196.7
+  Fold 236: MAE=233.1, RMSE=284.0
+  Fold 237: MAE=80.9, RMSE=111.0
+  Fold 238: MAE=94.1, RMSE=147.7
+  Fold 239: MAE=104.4, RMSE=159.5
+  Fold 240: MAE=69.4, RMSE=85.8
+  Fold 241: MAE=57.2, RMSE=95.3
+  Fold 242: MAE=104.0, RMSE=140.5
+  Fold 243: MAE=137.8, RMSE=185.2
+  Fold 244: MAE=74.7, RMSE=114.6
+
+Validation results:
+  MAE:  84.59 ± 30.21
+  RMSE: 113.70 ± 37.34
+
+Results saved to: results/tuning/prophet_best_params_washington_720_20261003_003102.json
+  --> config.prophet_params_file = 'results/tuning/prophet_best_params_washington_720_20261003_003102.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================
+[W1003 00:31:02.817795930 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Finished: 2026-10-03 00:31:02

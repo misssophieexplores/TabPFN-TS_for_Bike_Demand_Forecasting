@@ -1,0 +1,18 @@
+Job 225 | sarimax | washington | DAH2 | CPUs 4 | 2026-10-03 00:23:39
+Commit: unknown
+
+======================================================================
+TUNING SARIMAX FOR: WASHINGTON
+======================================================================
+Loaded 17544 observations for washington
+======================================================================
+SARIMAX TUNING | city=washington | horizon=24h | scenario=clean_only | m=24
+======================================================================
+Cutoff date (held-out test start): 2012-04-30 23:00:00
+Candidate folds (auto_arima): [155, 173, 191, 208, 226, 244] | scoring folds: all 90 tune folds
+Covariates (9): ['temperature_c', 'humidity_percent', 'wind_speed_ms', 'solar_radiation_wm2', 'precipitation_mm', 'snow_depth_cm', 'visibility_km', 'holiday', 'season']
+  fold 155: auto_arima -> order=(5, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=7697.8
+  fold 173: auto_arima -> order=(4, 0, 1) seasonal=(1, 0, 0, 24) intercept=True AIC=7740.2
+  fold 191: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=7925.1
+  fold 208: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=8153.3
+slurmstepd-DAH2: error: *** JOB 225 ON DAH2 CANCELLED AT 2026-10-03T00:46:31 ***
