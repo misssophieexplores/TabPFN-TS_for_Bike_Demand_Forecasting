@@ -48,11 +48,12 @@ def get_config() -> ForecastConfig:
     config.column_scale_factors = {"Visibility": 0.01}  # raw unit is 10 m -> km (as London/Washington)
 
     # --- Model parameters ---
-    config.arima_params_file = "results/tuning/arima_best_params_seoul_720_20261001_170419.json"
-    config.sarimax_params_file = None   # re-tune: precipitation_mm (winter 3-h totals spread), 2 Oct 2026
-    config.xgb_params_file = None   # re-tune: covariates changed 2 Oct 2026
-    config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_seoul_no_weather_720_20261002_024216.json"
-    config.prophet_params_file = "results/tuning/prophet_best_params_seoul_720_20261001_170843.json"
-    config.neuralprophet_params_file = None   # re-tune: covariates changed 2 Oct 2026
-    config.neuralprophet_noweather_params_file ="results/tuning/neuralprophet_best_params_seoul_no_weather_720_20261001_183244.json"
+    config.arima_params_file = "results/tuning/arima_best_params_seoul_720_20261003_004858.json"
+    config.sarimax_params_file = "results/tuning/sarimax_best_params_seoul_clean_only_720_20261003_041430.json"
+    config.xgb_params_file = "results/tuning/xgboost_best_params_seoul_clean_only_720_20261003_050426.json"
+    config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_seoul_no_weather_720_20261003_095525.json"
+    config.prophet_params_file = "results/tuning/prophet_best_params_seoul_720_20261003_005320.json"
+    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_seoul_clean_only_720_20261003_011523.json"
+    config.neuralprophet_noweather_params_file = "results/tuning/neuralprophet_best_params_seoul_no_weather_720_20261003_021720.json"
+
     return config

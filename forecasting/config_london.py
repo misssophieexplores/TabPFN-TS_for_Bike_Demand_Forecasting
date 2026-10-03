@@ -44,12 +44,12 @@ def get_config() -> ForecastConfig:
     config.nwp_calibration_file = "weather/nwp/calibration/london.npz"
 
     # --- Model parameters ---
-    config.arima_params_file = "results/tuning/arima_best_params_london_720_20261001_170305.json"
-    config.sarimax_params_file = None   # re-tune: covariates changed 2 Oct 2026 (precipitation, snow depth, DST alignment)
-    config.xgb_params_file = None   # re-tune: covariates changed 2 Oct 2026
-    config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_london_no_weather_720_20261002_014031.json"
-    config.prophet_params_file = "results/tuning/prophet_best_params_london_720_20261001_170855.json"
-    config.neuralprophet_params_file = None   # re-tune: covariates changed 2 Oct 2026
-    config.neuralprophet_noweather_params_file ="results/tuning/neuralprophet_best_params_london_no_weather_720_20261001_185249.json"
+    config.arima_params_file = "results/tuning/arima_best_params_london_720_20261003_004744.json"
+    config.sarimax_params_file = "results/tuning/sarimax_best_params_london_clean_only_720_20261003_052708.json"
+    config.xgb_params_file = "results/tuning/xgboost_best_params_london_clean_only_720_20261003_060518.json"
+    config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_london_no_weather_720_20261003_090918.json"
+    config.prophet_params_file = "results/tuning/prophet_best_params_london_720_20261003_005332.json"
+    config.neuralprophet_params_file = "results/tuning/neuralprophet_best_params_london_clean_only_720_20261003_013627.json"
+    config.neuralprophet_noweather_params_file = "results/tuning/neuralprophet_best_params_london_no_weather_720_20261003_023732.json"
 
     return config
