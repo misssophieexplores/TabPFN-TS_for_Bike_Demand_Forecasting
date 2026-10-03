@@ -183,6 +183,7 @@ class SARIMAXForecaster(BaseForecaster):
         self.model = None
         self.model_fit = None
         self.exog_cols = None
+        self._exog_sd = None
         self._train_index = None
 
     def _create_datetime_index(self, n_obs: int) -> pd.DatetimeIndex:
@@ -210,7 +211,11 @@ class SARIMAXForecaster(BaseForecaster):
             # and a constant column duplicates the intercept. Same rule as tune_sarimax.py.
             self.exog_cols = [c for c in X_train.columns if X_train[c].nunique(dropna=False) > 1]
             if self.exog_cols:
-                X_train = X_train[self.exog_cols].copy()
+                # Each covariate divided by its training-window SD: same model
+                # (rescaled coefficients), better-conditioned optimisation.
+                X_train = X_train[self.exog_cols].astype(float)
+                self._exog_sd = X_train.std(ddof=0)
+                X_train = X_train / self._exog_sd
                 X_train.index = datetime_index
             else:
                 X_train = None
@@ -224,7 +229,7 @@ class SARIMAXForecaster(BaseForecaster):
             enforce_stationarity=False,
             enforce_invertibility=False
         )
-        self.model_fit = self.model.fit(disp=False, maxiter=200, method='lbfgs')
+        self.model_fit = self.model.fit(disp=False, maxiter=1000, method='lbfgs')
 
         if not self.model_fit.mle_retvals['converged']:
             warnings.warn(f"SARIMAX did not converge — results may be unreliable")
@@ -255,7 +260,7 @@ class SARIMAXForecaster(BaseForecaster):
                     start=self._train_index[-1] + self._train_index.freq,
                     periods=horizon, freq=self.freq
                 )
-                X_future = X_future[self.exog_cols].copy()
+                X_future = X_future[self.exog_cols].astype(float) / self._exog_sd
                 X_future.index = future_index
             else:
                 X_future = None
@@ -269,4 +274,5 @@ class SARIMAXForecaster(BaseForecaster):
         self.model = None
         self.model_fit = None
         self.exog_cols = None
+        self._exog_sd = None
         self._train_index = None
