@@ -1,0 +1,15 @@
+{
+  "order": [
+    2,
+    0,
+    0
+  ],
+  "seasonal_order": [
+    1,
+    0,
+    0,
+    24
+  ],
+  "with_intercept": true,
+  "trend": "c"
+}

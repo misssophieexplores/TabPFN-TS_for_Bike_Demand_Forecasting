@@ -49,7 +49,7 @@ def get_config() -> ForecastConfig:
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_seoul_720_20261003_124627.json"
-    config.sarimax_params_file = ""
+    config.sarimax_params_file = "results/tuning/sarimax_seoul_model_params_only.json"
     config.xgb_params_file = "results/tuning/xgboost_best_params_seoul_clean_only_720_20261003_165805.json"
     config.xgb_noweather_params_file = ""
     config.prophet_params_file = "results/tuning/prophet_best_params_seoul_720_20261003_125052.json"
