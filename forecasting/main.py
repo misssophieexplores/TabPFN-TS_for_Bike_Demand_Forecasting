@@ -89,7 +89,9 @@ def main():
             results[city] = "FAILED"
 
     # ------------------------------------------------------------------
-    # Comparative metrics — once, pooled across all cities
+    # Comparative metrics — once, pooled across all cities in
+    # results_master_{version}.csv; computed only if all selected cities
+    # succeeded (with --cities: also when other cities have not run yet)
     # ------------------------------------------------------------------
     from run_experiments import compute_and_log_comparative_metrics
     if results and all(s == "OK" for s in results.values()):

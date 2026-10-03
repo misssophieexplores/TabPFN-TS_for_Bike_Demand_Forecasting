@@ -1,6 +1,5 @@
 # Shared Bike Demand Forecasting - Architecture
 
-<!-- TODO: update! -->
 ## Project Structure
 ```
 forecasting/
@@ -10,7 +9,7 @@ forecasting/
 ├── config_london.py         # London-specific overrides (get_config())
 ├── config_washington.py     # Washington-specific overrides (get_config())
 ├── features.py              # Calendar time feature engineering (used by XGBoost)
-├── provenance.py            # git commit + dirty flag + library versions for tuning JSONs and results
+├── provenance.py            # git commit + dirty flag (code ID without .git) + library versions for tuning JSONs and results
 ├── run_timesfm_server.py    # Persistent TimesFM server, run in .timesfm_venv (managed by timesfm_model.py)
 ├── run_timesfm.py           # One-off TimesFM run from the command line (uses the server's load_model()/run_inference(); same results as the pipeline)
 ├── models/
@@ -23,14 +22,17 @@ forecasting/
 │   └── tuning/              # Hyperparameter tuning scripts
 │       ├── arima_search.py          # Order search shared by tune_arima.py / tune_sarimax.py
 │       ├── tune_arima.py            # ARIMA order tuning (auto_arima candidates, MAE selection)
-│       ├── tune_sarimax.py          # Auto-SARIMAX tuning (pmdarima)
-│       ├── tune_xgboost.py          # XGBoost random search
+│       ├── tune_sarimax.py          # SARIMAX order tuning (auto_arima candidates, MAE selection)
+│       ├── tune_xgboost.py          # XGBoost Optuna TPE search
 │       ├── tune_prophet.py          # Prophet random search
 │       └── tune_neuralprophet.py    # NeuralProphet random search
 ├── weather/
 │   ├── nwp_error_model.py          # Measured NWP error model per city (default degradation model)
 │   ├── weather_degradation.py      # Literature error model; training-fold parameters; snow-depth persistence
 │   ├── weather_processor.py        # Scenario orchestration
+│   ├── weather_methodology.md      # Technical description of both error models
+│   ├── weather_degradation_summary.md # Plain-language summary of the measured model
+│   ├── EVIDENCE_MAPPING.md         # Literature model: sources of each error size
 │   └── nwp/                        # Measured forecast errors: download, analysis, calibration
 │       ├── README.md               # Pipeline, data sources, measured error lines per city, gaps
 │       ├── fetch_nwp_data.py       # Downloads ECMWF forecasts, reanalysis and station data (normal internet access needed)
@@ -42,21 +44,28 @@ forecasting/
 │       └── calibration/            # seoul.npz, london.npz, washington.npz (+ readable *_summary.json)
 ├── evaluation/
 │   ├── cv.py                # TimeSeriesCV with dynamic fold calculation
-│   └── metrics.py           # MAE, RMSE, MASE, sMAPE
+│   └── metrics.py           # MAE, RMSE, MASE, sMAPE; win rate and skill score vs Seasonal Naive
 ├── testing/
 │   ├── test_max_degradation.py
 │   ├── test_weather_single_model.py
 │   ├── test_weather_unit.py
 │   ├── test_pipeline_unit.py   # CV folds, metrics, comparative metrics, XGBoost tuning = experiment (with and without weather)
+│   ├── test_provenance.py      # Code ID and git provenance
 │   └── preflight.py            # Pre-flight check before the paper runs: params files, build_models, CV, one fold per model (incl. TabPFN/TimesFM weights), W&B; writes nothing
 ├── run_experiments.py       # ForecastingExperiment class with W&B logging and checkpointing; load_and_prepare_data(); comparative metrics
 └── run_weather_baseline.py  # Per-city experiment runner (called by main.py, or directly with --city)
 
 data/
-├── saving_data.py           # Data pre-processing and saving locally
 ├── SeoulBikeData.csv
 ├── LondonBikeData.csv
-└── WashingtonBikeData.csv
+├── WashingtonBikeData.csv
+├── README_BIKES.md          # Sources and licences of the bike data
+├── README_WEATHER.md        # Sources and licences of the weather data; v7 weather columns
+├── build_weather_v7.py      # Provenance record of the v7 weather columns (not part of the pipeline)
+├── add_visibility.py        # Visibility download (Visual Crossing) for London and Washington (not part of the pipeline)
+├── open_meteo/              # Open-Meteo downloads used for snow depth (London, Washington)
+├── provenance/              # How the three data files were produced: scripts, raw inputs, seasonality notebooks (not part of the pipeline)
+└── example_data/            # Not used by the pipeline
 
 results/                                           # Output directory 
 ├── figures/                 
@@ -76,7 +85,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 1. **Load**: `load_and_prepare_data()` reads CSV, parses dates, sorts by time (stable sort), drops duplicate timestamps (e.g. DST clock-back hours, keeps the first occurrence = the daylight-saving hour), applies `config.column_scale_factors`, normalizes holiday and season columns and appends them to `weather_covariates` if not already listed
 2. **Scenario Setup**: `WeatherProcessor` selects variables based on scenario
 3. **Split**: `TimeSeriesCV.split(df, horizon, partial_last_fold=True)` creates rolling window train/test folds covering the full evaluation period
-4. **Weather Preparation**: Per-fold weather preparation via `WeatherProcessor.prepare_weather_data(split=...)`. Training data always uses clean observed weather. In the degraded scenarios ('degraded'; optional noise-magnitude sensitivity scenarios if added to `degradation_scales`) the training fold also provides the degradation parameters (solar cap, wet-hour share, rain maxima), and test data receives per-row lead-time noise, scaled by the scenario's factor: row *i* is degraded using lead time *(i + 1)* hours, so error grows from the 1-hour error at the first step (not zero: every error formula has an intercept, e.g. temperature σ = 0.79 °C, humidity 13.0 %-points) up to full-horizon noise at the last step.
+4. **Weather Preparation**: Per-fold weather preparation via `WeatherProcessor.prepare_weather_data(split=...)`. Training data always uses clean observed weather. In the degraded scenarios ('degraded'; optional noise-magnitude sensitivity scenarios if added to `degradation_scales`) the training fold also provides the degradation parameters (solar cap, wet-hour share, rain maxima), and test data receives per-row lead-time noise, scaled by the scenario's factor: row *i* is degraded using lead time *(i + 1)* hours, so error grows from the 1-hour error at the first step (not zero: the measured model replays the ECMWF error at lead time 1 h; in the literature model every error formula has an intercept, e.g. temperature σ = 0.79 °C, humidity 13.0 %-points) up to full-horizon noise at the last step.
 5. **Model inputs** (`run_experiments.prepare_fold_inputs()`, also used by `testing/test_weather_single_model.py`): models with `use_time_features=True` get calendar features appended (`prepare_xgboost_features`); models with `needs_datetime=True` get a real `DatetimeIndex` on `X_train`/`X_test` (an empty DataFrame with that index if the model has no covariates)
 6. **Fit**: `model.reset()`, then `model.fit(y_train, X_train)` on each fold (NeuralProphet only stores the data here — see Models). Wall-clock time of `fit()` is recorded as `fit_time_s`
 7. **Predict**: `model.predict(n_steps, X_test)` generates forecasts, with `n_steps = len(test_df)`: the horizon, or fewer hours for a partial last fold. Wall-clock time of `predict()` is recorded as `predict_time_s`; `runtime_s = fit_time_s + predict_time_s` (see Runtime Measurement)
@@ -110,7 +119,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - `nwp_run_hours_utc` (`[0, 12]`), `nwp_availability_delay_h` (6), `nwp_season_window_days` (30): measured model only. ECMWF runs start at these UTC hours (fresh forecast: the start hour closest to the issue time of day is replayed; otherwise a run can be used `nwp_availability_delay_h` hours after its start); the replayed run starts within ± `nwp_season_window_days` of the test window's day of year
 - `nwp_seasonal_rain` (`True`): measured model only; rain miss rate, false-alarm ratio and amount error of the time of year (12 monthly bins). `False`: year-round values
 - `nwp_rain_intensity_dependent` (`True`, since 2 Oct 2026): measured model only; precipitation miss probability uses two observed-intensity classes, light <1 mm/h and stronger ≥1 mm/h. `False`: one miss-rate curve for all intensities (same code path as before; Seoul's calibration values differ from the 2 Oct files, see "Seoul winter precipitation in the calibration"). FAR and hit-amount error remain the existing overall calibration.
-- `nwp_rain_frequency_unbiased` (`True`, since 2 Oct 2026): measured model only; false alarms balance misses, so the degraded data are wet as often as the clean data (removes the rain-frequency bias like the temperature/humidity/wind bias: with the corrected Seoul winter truth, the raw forecast is wet about 2.0× as often as the station). `False`: measured false-alarm ratio
+- `nwp_rain_frequency_unbiased` (`True`, since 2 Oct 2026): measured model only; false alarms balance misses, so the degraded data are wet as often as the clean data (removes the rain-frequency bias like the temperature/humidity/wind bias: with the corrected Seoul winter truth, the raw forecast is wet about 2.1× as often as the station at 24 h). `False`: measured false-alarm ratio
 - `degradation_label()`: error model and settings as written to the results, e.g. `nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased)`
 - `timezone` (per city): IANA time zone of the date column (Seoul `Asia/Seoul`, London `Europe/London`, Washington `America/New_York`); the measured model converts the first test hour to UTC; the issue time (first hour − 1 h) selects the replayed run (start hour, day of year). Lead times count rows and do not use the clock time. A repeated autumn hour is read as daylight-saving time (the occurrence `load_and_prepare_data()` keeps), a non-existent spring hour is shifted forward (London and Washington have both in their data)
 - `nwp_calibration_file` (per city): calibration file of the measured model, relative to `forecasting/` (`weather/nwp/calibration/<city>.npz`)
@@ -119,13 +128,13 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - `tune_horizon`: Horizon used by all tuning scripts (24)
 - `tune_folds`: Number of (last) CV folds used by the tuning scripts (90; `None` = all folds)
 - `holiday_col`: Optional column name for public holidays (normalized to 0/1, appended to `weather_covariates` at load time)
-- `holiday_mapping`: Dict mapping raw holiday string values → 0/1. Default `{'Yes': 1, 'No': 0}`; Seoul overrides with `{'Holiday': 1, 'No Holiday': 0}`. Only used when `holiday_col` has string (object) dtype; numeric holiday columns are coerced to int (NaN → 0).
+- `holiday_mapping`: Dict mapping raw holiday string values → 0/1. Default `{'Yes': 1, 'No': 0}`; Seoul overrides with `{'Holiday': 1, 'No Holiday': 0}`. Only used when `holiday_col` is not numeric (object, or `str` in pandas ≥ 3); numeric holiday columns are coerced to int (NaN → 0).
 - `column_scale_factors`: Dict `{column: factor}`; each listed column is multiplied by its factor at load time. Keys must match column names exactly (case-sensitive); non-matching keys are silently ignored. Default `{}`; Seoul sets `{"Visibility": 0.01}` (raw unit 10 m → km, the unit used for London and Washington).
 - `weather_degradation_mapping` variable types: `temperature`, `humidity`, `wind_speed`, `solar_radiation`, `visibility`, `precipitation` (total precipitation incl. melted snow, mm; exactly one column per city: `precipitation_mm` in all three) and `snow_depth` (snow on the ground, cm: `snow_depth_cm` in all three). `rain_col` / `snow_col` were removed on 2 Oct 2026 together with the rain/snow phase correction.
 - `season_col`: Optional column name for season (normalized to 0–3 int via `season_mapping`, appended to `weather_covariates` at load time)
 - `season_mapping`: Explicit per-dataset dict mapping raw season values to 0–3 integers (handles strings, 0-based, and 1-based encodings). The codes (0 spring, 1 summer, 2 autumn, 3 winter) are the same in every city, but the source datasets define the seasons differently and the data are used as published (Known Limitation 22): Seoul and London switch on the 1st of March, June, September and December (meteorological seasons); Washington switches on 21 March, 21 June, 23 September and 21 December (astronomical seasons)
 - `verbose`: If `True`, prints detailed progress (CV info, data loading, W&B URLs). Default `False` in `config.py` (cluster/server runs where stdout is captured in SLURM logs).
-- Params files: each city config points to the tuned-parameter JSON files in `results/tuning/` (all tuned with `n_train_samples=720`). ARIMA and SARIMAX params files must contain `with_intercept`, i.e. they must come from the current tuning scripts; older files are rejected by `run_weather_baseline.py`. `neuralprophet_noweather_params_file` and `xgb_noweather_params_file` must be set (each tuned with `--scenario no_weather`); they are `None` until then and the runners raise `ValueError`. `build_models()` also raises if `xgb_noweather_params_file` was tuned with another scenario. `sarimax_params_file`, `xgb_params_file` and `neuralprophet_params_file` of all three cities were set to `None` on 2 Oct 2026 (covariates changed: total precipitation, snow depth, London/Washington daylight-saving alignment, Seoul winter precipitation spread over 3 hours) and must be re-tuned (`clean_only`); until then `build_models()` raises. `tune_xgboost.py` and `tune_neuralprophet.py` raise if a covariate column is missing from the data (before, it was silently left out).
+- Params files: each city config points to the tuned-parameter JSON files in `results/tuning/` (all tuned with `n_train_samples=720`). ARIMA and SARIMAX params files must contain `with_intercept`, i.e. they must come from the current tuning scripts; older files are rejected by `run_weather_baseline.py`. `neuralprophet_noweather_params_file` and `xgb_noweather_params_file` must be set (each tuned with `--scenario no_weather`); if one is `None`, the runners raise `ValueError`. `build_models()` also raises if `xgb_noweather_params_file` was tuned with another scenario. All params files are re-tuned on 3 Oct 2026 (all models, all cities) after the covariate changes of 2 Oct 2026 (total precipitation, snow depth, London/Washington daylight-saving alignment, Seoul winter precipitation spread over 3 hours) and the SARIMAX change of 3 Oct 2026 (see ARIMA / SARIMAX specifics). `tune_xgboost.py` and `tune_neuralprophet.py` raise if a covariate column is missing from the data (before, it was silently left out).
 
 ### Weather Degradation (`weather/`)
 **WeatherProcessor**: Orchestrates weather data preparation for scenarios
@@ -140,7 +149,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 4. Optional (not run by default since 2 Oct 2026): noise-magnitude sensitivity scenarios, e.g. degraded_x050 / degraded_x150
 
 **Measured NWP error model** (default, `degradation_model = "nwp_measured"`, `weather/nwp_error_model.py`; full description in `weather/weather_methodology.md`):
-- Data: 1,828 ECMWF IFS HRES 9 km runs per city (00/12 UTC, Mar 2024 – Sep 2026, Open-Meteo Single Runs API), compared with the source each city's covariates come from: Seoul = station 47108 (= KMA 108, the station of the Seoul data; Mar 2024 – Aug 2025, 844 complete runs); London and Washington = ERA5 / ERA5-Land (their covariates come from the Open-Meteo archive). Precipitation: Seoul = the station (Mar 2024 – Aug 2025, 1,049 runs; April–October hourly amounts, November–March 3-hour totals split over their three covered hours, the forecast split over the same hours), London and Washington = ERA5. Solar radiation uses ERA5 for all cities, visibility the station
+- Data: 1,828 ECMWF IFS HRES 9 km runs per city (00/12 UTC, Mar 2024 – Sep 2026, Open-Meteo Single Runs API), compared with the source each city's covariates come from: Seoul = station 47108 (= KMA 108, the station of the Seoul data; Mar 2024 – Aug 2025, 844 complete runs); London and Washington = ERA5 / ERA5-Land (their covariates come from the Open-Meteo archive). Precipitation: Seoul = the station (Mar 2024 – Aug 2025, 1,049 runs; April–October hourly amounts, November–March 3-hour totals split over their three covered hours, the forecast split over the same hours), London and Washington = ERA5. Solar radiation uses ERA5 for all cities, visibility the station reports (Seoul 47108, Heathrow 03772, Reagan National 72405-13743; see Known Limitation 23)
 - Lead times (`nwp_fresh_forecast = True`, default): the weather forecast starts when the demand forecast is issued (first test hour − 1 h), so row i gets lead time i + 1 in every city; errors are replayed from the 00/12 UTC runs closest to the issue time of day. `False`: the newest run available at the issue time is used (6–17 h old), row i gets lead time run age + i + 1. Lead times count rows (time steps), not clock time, so a clock change inside a test window does not shift them; the UTC issue time only selects the replayed run. (Fixed 2 Oct 2026, before the v7 runs: they were computed from UTC clock time, so in London and Washington the hours after the autumn change got lead time + 1 h in one fold per horizon.)
 - Temperature, humidity, wind speed: the actual errors of one real ECMWF run of the city are added (the selected start hour, start within ± 30 days of the test window's day of year, any year; drawn at random with the fold seed). With `nwp_remove_bias = True` (default) the average error of all these candidate runs is subtracted first (bias removed, e.g. Seoul −1.5 °C). Error growth, hour-to-hour persistence and the links between the three variables are those of the real forecasts. Humidity clipped to [0, 100], wind truncated at 0
 - Solar radiation: X·(1 + b(lead) + s(lead)·z), b and s measured per lead time (b = 0 with the bias removed), z standard normal with the measured hour-to-hour correlation (AR(1)); 0 at night; capped at the solar cap of the training fold
@@ -192,7 +201,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - SeasonalNaiveForecaster: Repeats last seasonal period
 - ARIMAForecaster: Tuned order via auto_arima (e.g., (2,1,2)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
 - SARIMAXForecaster: Tuned orders via auto_arima (e.g., (4,0,0)×(1,0,1,24)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
-- XGBoostForecaster: Uses lagged features (n_lags=24) + weather covariates (including holiday and season via `weather_covariates`) + calendar time features (hour, dayofweek, month, is_weekend). `use_time_features=True` — pipeline appends calendar features automatically at fold time. **Note: XGBoost must be re-tuned whenever `weather_covariates` changes (e.g. after adding holiday/season).**
+- XGBoostForecaster: Uses lagged features (`n_lags` from tuning, options 12, 24, 48, 168) + weather covariates (including holiday and season via `weather_covariates`) + calendar time features (hour, dayofweek, month, is_weekend). `use_time_features=True` — pipeline appends calendar features automatically at fold time. **Note: XGBoost must be re-tuned whenever `weather_covariates` changes (e.g. after adding holiday/season).**
 - XGBoostForecaster_NoWeather (model name `XGBoost_NoWeather`, key `xgboost_noweather`): same model, without weather, holiday and season covariates: lagged demand + calendar time features (hour, dayofweek, month, is_weekend) only. `use_covariates=False`, `use_time_features=True`: the pipeline passes the calendar features only, and the degraded scenarios are skipped. Counterpart of XGBoost in the with/without-weather comparison (as TabPFN / TabPFN_NoWeather and NeuralProphet / NeuralProphet_NoWeather). Tuned with `tune_xgboost.py --scenario no_weather`
 - TabPFNPipelineForecaster (model name `TabPFN`): `TabPFNTSPipeline` (tabpfn-time-series), zero-shot, TabPFN v2.5 pinned via `TABPFN_MODEL_CONFIG` (`tabpfn-v2.5-regressor-v2.5_default.ckpt`); all other settings at the pipeline defaults. Features: the pipeline's defaults (running index, calendar, auto-seasonal) + every covariate column (present in both context and future frame). Point forecast = median. Without the explicit pin the checkpoint would depend on the installed tabpfn-time-series version (1.0.10: v2; 1.1.0/1.2.0: v3; 1.3.0: v3.5)
 - TabPFNPipelineForecaster_NoWeather (model name `TabPFN_NoWeather`): same pipeline and model, univariate (context and future frames contain only timestamps and target)
@@ -212,7 +221,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   - ARIMA, intercept, d + D = 1 → `"t"` (linear trend in levels = drift after differencing)
   - ARIMA, intercept, d + D ≥ 2 → `ValueError`
 - ARIMAForecaster: `ARIMA(y, order, trend)` on the raw array, default `fit()`; no covariates.
-- SARIMAXForecaster: `SARIMAX(y, exog, order, seasonal_order, trend, enforce_stationarity=False, enforce_invertibility=False)`, fitted with `method='lbfgs'`, `maxiter=200`; a warning is raised if the optimizer does not converge. `y` and `X` get a synthetic hourly `DatetimeIndex` starting 2020-01-01 to silence statsmodels index warnings; the forecast index continues directly after the training index. The real timestamps are not used.
+- SARIMAXForecaster: `SARIMAX(y, exog, order, seasonal_order, trend, enforce_stationarity=False, enforce_invertibility=False)`, fitted with `method='lbfgs'`, `maxiter=1000`; a warning is raised if the optimizer does not converge. Each covariate is divided by its standard deviation in the fold's training window, and the forecast covariates by the same values: the same model with rescaled coefficients, but a better-conditioned optimisation (3 Oct 2026; before, with `maxiter=200` and unscaled covariates, the selected orders did not converge in 85–90 of the 90 tune folds). `y` and `X` get a synthetic hourly `DatetimeIndex` starting 2020-01-01 to silence statsmodels index warnings; the forecast index continues directly after the training index. The real timestamps are not used.
 - SARIMAXForecaster drops covariates that are constant in the fold's training window (e.g. season within 30 days, holiday when there is none) for both fit and forecast: their effect cannot be estimated and a constant column duplicates the intercept. Columns that vary in the training window are kept. Same rule as in `tune_sarimax.py` and as NeuralProphet's handling of constant regressors.
 
 **Prophet / NeuralProphet specifics (`prophet_models.py`):**
@@ -233,7 +242,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - `tune_arima.py`: Non-seasonal ARIMA (p,d,q)
 - `tune_sarimax.py`: Seasonal ARIMA with exogenous variables (p,d,q)×(P,D,Q,s)
 - `tune_xgboost.py`: XGBoost with lag features (n_lags + XGBoost hyperparameters); `--scenario no_weather` for XGBoost_NoWeather
-- `tune_prophet.py`: Prophet (changepoint / seasonality / holidays prior scales + seasonality mode)
+- `tune_prophet.py`: Prophet (changepoint and seasonality prior scales + seasonality mode)
 - `tune_neuralprophet.py`: NeuralProphet (learning_rate + n_lags)
 
 **Common to all tuning scripts (ARIMA, SARIMAX, XGBoost, Prophet, NeuralProphet):**
@@ -498,7 +507,7 @@ Runs all datasets sequentially without manual intervention.
 - Runtime: `fit()` and `predict()` are timed per fold with `time.perf_counter()` (`fit_time_s`, `predict_time_s`, `runtime_s`) and aggregated per model, horizon and scenario (see Results Schema)
 
 - `run_all_experiments(models, df, scenarios=None)`: `scenarios=None` uses `config.weather_scenarios`; failed model-horizon-scenario combinations are collected in `failed_experiments` and reported only after all remaining combinations have been attempted
-- The module sets `warnings.filterwarnings('ignore')` globally, except for the SARIMAX "did not converge" warning (shown once per run)
+- The module sets `warnings.filterwarnings('ignore')` globally. Per fold, the warnings raised in `fit()`/`predict()` are recorded and those containing "converge" are counted (`convergence_warnings`); none is printed
 
 **`main(config=None)`**: run directly with `python forecasting/run_experiments.py --city {seoul,washington,london}` (`--city` is required when no config is passed). Builds the models with `build_models(config)` (same as `run_weather_baseline.py`; ARIMA/SARIMAX `trend` from `with_intercept` via `trend_from_intercept()`, ARIMA with `seasonal_order=(0, 0, 0, 0)`) but runs all of `config.weather_scenarios` (including `all_weather`) under the experiment name `baseline_models_{version}`.
 
@@ -532,7 +541,7 @@ Rationale: every degraded scenario = clean_only for models that don't use weathe
 NeuralProphet is built with `n_forecasts = horizon` (in the forecasters and in tuning) and trained inside `predict()`.
 
 Rationale:
-- In neuralprophet 0.8.0 (`data/split.py`, `_make_future_dataframe`), when `n_lags > 0` the `periods` argument of `make_future_dataframe` is overwritten with `n_forecasts`. With `n_forecasts=1`, only one future row was created, so scoring the last `horizon` rows mixed 1 real forecast with `horizon - 1` in-sample fitted values, and the covariate fill overwrote training-row covariates with test-period values.
+- In neuralprophet 0.8.0 (`data/split.py`, `_make_future_dataframe`; the experiments use 0.9.0, guarded by the row-count check below), when `n_lags > 0` the `periods` argument of `make_future_dataframe` is overwritten with `n_forecasts`. With `n_forecasts=1`, only one future row was created, so scoring the last `horizon` rows mixed 1 real forecast with `horizon - 1` in-sample fitted values, and the covariate fill overwrote training-row covariates with test-period values.
 - With `n_forecasts = horizon`, the future frame has exactly `horizon` rows; a row-count check raises an error if this assumption ever breaks (e.g. after a NeuralProphet upgrade).
 - Results produced before this fix are invalid and need to be re-run.
 
@@ -557,10 +566,10 @@ Rationale:
 The degraded scenarios use forecast errors measured for each city from real ECMWF IFS HRES forecasts (default `degradation_model = "nwp_measured"`), instead of one set of published error sizes for all cities.
 
 Rationale:
-- The published values did not match these cities: measured temperature error SD at 168 h is 2.5–3.3 °C (literature 3.8 °C), humidity 6–11 % at 24 h (13.6 %), wind 0.7–1.0 m/s at 24 h (2.0 m/s); visibility CV is about 100 % where the data are not capped (25 %), precipitation amount CV of hits 110–170 % at 6–24 h (31–34 %), miss rate and false-alarm ratio reach 0.61–0.76 at 168 h (capped at 0.5)
+- The published values did not match these cities: measured temperature error SD at 168 h is 2.5–3.3 °C (literature 3.8 °C), humidity 6–11 % at 24 h (13.6 %), wind 0.7–1.0 m/s at 24 h (2.0 m/s); visibility CV 119–137 % below the cap (25 %), precipitation amount CV of hits 140–342 % at 6–24 h (31–34 %), miss rate 0.58–0.71 and false-alarm ratio 0.65–0.82 at 168 h (both capped at 0.5)
 - Errors are measured against the data each city's model is trained on (Seoul: the same station; London/Washington: ERA5, the source of their covariates), so the degraded covariates differ from the clean ones as a real forecast would differ from that data
 - Default setting (revised 1 Oct 2026): fresh forecast and bias removed, i.e. an operator with an up-to-date, locally corrected forecast. The first version used the run available at the issue time (6–17 h old) and kept the biases. That gave (a) a forecast age fixed per city by its time zone (Seoul 14 h, London 10–11 h, Washington 15–16 h for horizons ≥ 24 h), so some hours of the day always had older forecasts and the cities differed for a reason unrelated to weather, and (b) a bias that appears only where the reference is a station (Seoul −1.5 °C; Washington's forecast is also about 1.5 °C too cold against its airport station, but its reference is ERA5). A real operator would use a regularly updated forecast corrected to local measurements. Both settings remain available
-- Rain (2 Oct 2026): error rates per time of year (Washington's forecast misses 50 % of wet hours in July against 30 % in January; Seoul's monsoon), and Seoul rain measured against the station instead of ERA5. ERA5 had about twice the station's wet hours and fewer than half its downpours, so Seoul's rain errors were too small (amount error spread at 24 h: CV about 3.8 against the station vs 1.9 against ERA5)
+- Rain (2 Oct 2026): error rates per time of year (Washington's forecast misses 50 % of wet hours in July against 30 % in January; Seoul's monsoon), and Seoul rain measured against the station instead of ERA5. ERA5 had about twice the station's wet hours and fewer than half its downpours, so Seoul's rain errors were too small (amount error spread at 24 h: CV about 3.8 against the station vs 1.9 against ERA5 in the 2 Oct calibration; 3.4 against the station since the Seoul winter split of 3 Oct)
 - Replaying whole runs gives the real persistence from hour to hour and the real links between temperature, humidity and wind; independent hourly noise (literature model) understated both (Known Limitations 1 and 15)
 - All degraded results produced with the literature model must be re-run; the literature model stays available (`degradation_model = "literature"`) for comparison and to reproduce earlier results
 - Forecast years (2024–26) differ from the data years (2011–18); forecasts were less accurate then (Known Limitations)
@@ -603,7 +612,7 @@ The Seoul station reports precipitation as 3-hour totals from November to March 
 `degrade_weather_dataset()` stores every degraded column as float.
 
 Rationale:
-- `degrade_weather_forecast()` returns the int `0` for dry hours (precipitation) and night hours (solar). In a dry test window a precipitation column therefore came out as int64; the rain/snow correction then moves float amounts into it, which pandas >= 3.0 rejects with `TypeError` (the fold fails and is skipped) and pandas 2.x accepts with a deprecation warning. Values are unchanged.
+- `degrade_weather_forecast()` returns the int `0` for dry hours (precipitation) and night hours (solar). In a dry test window a precipitation column therefore came out as int64; the rain/snow correction (removed on 2 Oct 2026) then moved float amounts into it, which pandas >= 3.0 rejects with `TypeError` (the fold fails and is skipped) and pandas 2.x accepts with a deprecation warning. Values are unchanged.
 
 ### Precipitation and Snow: One Definition for All Cities
 Since 2 Oct 2026 every city has two covariates with the same meaning: total precipitation incl. melted snow (mm/h; `precipitation_mm`) and snow depth on the ground (cm; `snow_depth_cm`), with the same column names in every city (Seoul: built from the original UCI columns `Rainfall` and `Snowfall`, which stay in the file). In the degraded scenarios precipitation gets the measured precipitation errors and snow depth the persistence forecast (value of the last training hour = issue time). The rain/snow phase correction was removed (it had been made config-driven for all cities earlier on 2 Oct 2026).
@@ -687,8 +696,7 @@ Rationale:
 - Same folds and same criterion (24-h MAE on all 90 tune folds) as XGBoost and Prophet.
 
 ### No Post-Processing of Forecasts
-Forecasts are scored as each model produces them: no clipping of negative values or other post-processing, in tuning and in the experiments. TimesFM_NoWeather returns non-negative forecasts because of TimesFM's own inference setting (`infer_is_positive=True`: forecasts are floored at 0 when the whole context is non-negative), which is part of the model as published. TimesFM with covariates can return negative forecasts: TimesFM forecasts the residual of the in-context regression, which has negative values, so the floor does not apply.
-<!-- TODO: check with code, please! Might be not correct -->
+Forecasts are scored as each model produces them: no clipping of negative values or other post-processing, in tuning and in the experiments. TimesFM_NoWeather returns non-negative forecasts because of TimesFM's own inference setting (`infer_is_positive=True`: forecasts are floored at 0 when the whole context is non-negative), which is part of the model as published. TimesFM with covariates can return negative forecasts: TimesFM forecasts the residual of the in-context regression, which has negative values, so the floor does not apply. Checked against the timesfm 3.0.2 source (3 Oct 2026): `infer_is_positive` floors the forecast at 0 only when the whole input is non-negative, and `forecast_with_covariates` adds the regression part afterwards, without clipping.
 
 ### Imputed Data Tracking and Exclusion from Scoring
 Uses the `Functioning Day` column (No = imputed), configured via `functioning_day_col` for all three cities
@@ -708,15 +716,15 @@ Rationale:
 - Totals depend on the number of folds (980 for h=6 vs 35 for h=168); compare `runtime_mean_s` for per-forecast cost and `runtime_total_s` for the cost of the full evaluation period.
 
 ### Rolling Window CV
-Training window is fixed-size and advances by `horizon` hours with each fold. Test set is always exactly `horizon` hours.
+Training window is fixed-size and advances by `horizon` hours with each fold. Test set is `horizon` hours (the last fold can be shorter, see Partial Last Fold).
 Ensures a consistent lookback window across all folds.
 
 ### Code Provenance
-`provenance.get_code_version()` returns the git commit of the repository and whether tracked files had uncommitted changes (`git_dirty`; untracked files such as data and results are ignored). `provenance.get_library_versions()` returns the versions of Python and the forecasting libraries (numpy, pandas, scikit-learn, statsmodels, pmdarima, xgboost, optuna, prophet, neuralprophet, torch, tabpfn, tabpfn-time-series, and timesfm from `.timesfm_venv`). Tuning JSONs get both (`provenance`); every results row gets `git_commit`/`git_dirty`; aggregated rows and the W&B config also get `library_versions`.
+`provenance.get_code_version()` returns the git commit of the repository and whether tracked files had uncommitted changes (`git_dirty`; untracked files such as data and results are ignored). `provenance.get_library_versions()` returns the versions of Python and the forecasting libraries (numpy, pandas, scikit-learn, statsmodels, pmdarima, xgboost, optuna, prophet, neuralprophet, torch, tabpfn, tabpfn-time-series, and timesfm from `.timesfm_venv`). Tuning JSONs get both (`provenance`); every results row gets `git_commit`/`git_dirty`; aggregated rows and the W&B config also get `library_versions`. Without git (e.g. on the cluster, where the repository is copied without `.git`), `git_commit` holds a code ID instead, `code:<16 hex>` = SHA-256 of all `.py` and `.npz` files in `forecasting/` (without `testing/`, `__pycache__` and hidden folders), and `git_dirty` is `None`; `python forecasting/provenance.py` prints the code ID of the current files.
 
 Rationale:
 - Every number in the paper maps to one code version; old params files and results can be told apart from current ones without relying on file dates.
-- Paper runs must use committed code (`git_dirty = False`); a warning is printed otherwise.
+- Paper runs must use committed code (`git_dirty = False`); a warning is printed when `git_dirty` is `True` (not with the code ID, where it is `None`).
 - A checkpoint or results CSV written by older code (no provenance fields) is rejected, because resuming from it would silently skip experiments or append rows under a different header. Before a full re-run, move the old `results_master_{version}.csv`, `detailed_results_master_{version}.csv`, `forecasts_*_{version}.csv` and `checkpoint_*.json` away, or use a new `results_version`.
 
 ### Checkpoint Recovery
@@ -752,6 +760,7 @@ London and Washington use the same names for precipitation and snow depth (`prec
 - Precipitation = total precipitation incl. melted snow (mm/h) in every city. Seoul `precipitation_mm` = KMA ASOS 강수량 (station 108; original column `Rainfall`), which KMA reports as 3-hour totals at 00, 03, …, 21 h from November to March (spread evenly over their three hours, see Key Design Decisions) and hourly from April to October. London/Washington `precipitation_mm` = `rainfall_mm` + `snowfall_cm` / 0.7 (Open-Meteo `rain` and `snowfall`, 0.7 cm of snow per mm of water; equals Open-Meteo `precipitation`)
 - Snow = snow depth on the ground (cm) in every city. Seoul `snow_depth_cm` = KMA ASOS 적설 (original column `Snowfall`: snow depth, despite the name). London/Washington `snow_depth_cm` = Open-Meteo archive `snow_depth` (ERA5-Land, 1 cm steps) at the grid cell of the airport station (Heathrow 51.479, −0.449; Reagan National 38.8483, −77.0342)
 - `rainfall_mm` and `snowfall_cm` (London/Washington) and `Rainfall` and `Snowfall` (Seoul) stay in the CSVs but are not used
+- Visibility: Seoul `Visibility` = KMA station 108 (10 m units, × 0.01 → km at load time, capped at 20 km); London/Washington `visibility_km` = Visual Crossing (`data/add_visibility.py`, locations "London,UK" and "Washington,DC"; London up to 65 km, Washington capped at 16 km)
 - Time alignment: all weather columns follow the local clock with daylight saving, like the bike counts (London/Washington Open-Meteo columns re-aligned on 2 Oct 2026, see Key Design Decisions). Seoul has no daylight saving
 
 **Preprocessing:**
@@ -762,7 +771,7 @@ London and Washington use the same names for precipitation and snow depth (`prec
 
 ## W&B Integration
 
-**Run config:** `dataset`, `horizons`, `n_folds`, `n_train_samples`
+**Run config:** `dataset`, `horizons`, `n_folds`, `n_train_samples`, `git_commit`, `git_dirty`, `library_versions`
 
 **Logged per experiment:**
 - {model}_{scenario}_h{horizon}_MAE/RMSE/MASE/sMAPE (aggregated)
@@ -823,7 +832,7 @@ London and Washington use the same names for precipitation and snow depth (`prec
 
 1. Measured model: temperature, humidity and wind errors are real (persistent, linked to each other); solar radiation, precipitation and visibility errors are persistent but independent of each other and of the other variables. Literature model: independent errors across variables and from hour to hour (real forecast errors persist over many hours)
 2. Measured model: the errors come from ECMWF forecasts of 2024–26 (model versions 49r1 and 50r1) and are applied to data from 2011–18, when forecasts were less accurate; the replayed errors belong to another day than the test window (same season and start hour), so they do not depend on the weather of the test window. Literature model: below the shortest lead time verified in the sources (12 h for temperature and humidity, 24 h for wind, solar radiation, precipitation and visibility) the error formulas are extrapolated
-3. Measured model references: Seoul temperature, humidity, wind and visibility = station 47108 (the station of the Seoul data); London and Washington = ERA5 / ERA5-Land at the nearest grid cell, without the Open-Meteo height correction (their covariates are from the Open-Meteo archive, probably from a neighbouring grid cell: temperature differs from the airport cell by 0.27 °C (London) and 0.30 °C (Washington) on average after the daylight-saving re-alignment); solar radiation = ERA5 for all cities (no usable free station data; Seoul's covariates are station data); precipitation = the station for Seoul (since 2 Oct 2026), ERA5 for London and Washington; visibility errors from ISD station reports, which end in Aug 2025. Seoul has 844 complete runs (station gaps), London and Washington 1,817. Literature model: error growth calibrated to published statistics, the same for every city
+3. Measured model references: Seoul temperature, humidity, wind and visibility = station 47108 (the station of the Seoul data); London and Washington = ERA5 / ERA5-Land at the nearest grid cell, without the Open-Meteo height correction (their covariates are from the Open-Meteo archive at 51.5074, −0.1278 and 38.9073, −77.0369, see `data/provenance/`: temperature differs from the airport cell by 0.27 °C (London) and 0.30 °C (Washington) on average after the daylight-saving re-alignment); solar radiation = ERA5 for all cities (no usable free station data; Seoul's covariates are station data); precipitation = the station for Seoul (since 2 Oct 2026), ERA5 for London and Washington; visibility errors from ISD station reports, which end in Aug 2025. Seoul has 844 complete runs (station gaps), London and Washington 1,817. Literature model: error growth calibrated to published statistics, the same for every city
 4. NeuralProphet training cost grows with the horizon (one output per forecast step with `n_forecasts = horizon`), and the model is retrained on every `predict()` call
 5. NeuralProphet hyperparameters are tuned at `config.tune_horizon` only and reused for all evaluation horizons
 6. Season and holiday can only be used by SARIMAX (and NeuralProphet) in folds where they vary within the 30-day training window
@@ -840,9 +849,10 @@ London and Washington use the same names for precipitation and snow depth (`prec
 17. `testing/test_max_degradation.py` applies the literature model only
 18. Measured model, precipitation: miss probability uses two broad intensity classes (<1 and ≥1 mm/h), not a continuous intensity relationship; the hit-amount error remains one distribution per lead time and season. Sparse intensity classes require wider seasonal windows (up to ±165 days for Seoul's stronger class). The rain-frequency bias is removed by default (`nwp_rain_frequency_unbiased`): false alarms balance the combined misses using the training fold's wet-hour and light/strong shares.
 19. Seoul precipitation is reported as 3-hour totals from November to March (KMA); `precipitation_mm` spreads each total evenly over its three hours. This keeps the totals and most of the hourly signal (see Key Design Decisions) but marks too many hours as wet and spreads short showers at a third of their intensity. Affects Seoul's whole tuning period (Dec 2017 – Mar 2018) and 744 of the 5,880 evaluation hours (31 Mar and November 2018)
-20. London/Washington: snow depth comes from the airport grid cell (download of 2 Oct 2026), the other Open-Meteo covariates from the original download (coordinates not recorded; see Limitation 3)
+20. London/Washington: snow depth comes from the airport grid cell (download of 2 Oct 2026), the other Open-Meteo covariates from the original download (51.5074, −0.1278 and 38.9073, −77.0369; see `data/provenance/`)
 21. Measured model, Seoul November–March precipitation: verified at 3-hour resolution (station and forecast split over the same windows), so timing errors within the 3 hours are not counted. On Apr–Oct data treated the same way the 24 h miss rate is 0.18 instead of the true hourly 0.22 (stronger rain 0.11 instead of 0.18)
 22. Season covariate: the three source datasets define the seasons differently, and the season columns are used as published. Seoul (UCI `Seasons`) and London (Kaggle `season`) switch on the 1st of March, June, September and December (meteorological seasons); Washington (`season`) switches on 21 March, 21 June, 23 September and 21 December (astronomical seasons). After `season_mapping` all cities use the same codes (0 spring, 1 summer, 2 autumn, 3 winter), so the same code covers different calendar dates across cities (e.g. 1–20 March is spring in Seoul and London, winter in Washington). Washington's evaluation period (1 May – 31 Dec 2012) contains the switches on 21 June, 23 September and 21 December 2012
+23. Visibility (measured model): errors are measured against station reports. Seoul's covariate is that station's own visibility. London's and Washington's covariates come from Visual Crossing (`data/add_visibility.py`, locations "London,UK" and "Washington,DC"). Washington's matches the Reagan National reports (82 % of hours within 0.1 km, 98 % within 1 km, 2011–12); London's does not match Heathrow (median difference 4.5 km; in hours with Heathrow below 9.9 km, 7 % within 0.1 km and correlation 0.51, 2015–17), so London's degraded visibility carries Heathrow forecast errors on a different series. The error is one lognormal distribution for all visibility levels below the cap, although the measured error depends on the level (London, mean / SD of log(forecast/observed): below 5 km +1.71 / 1.56, above 40 km −0.39 / 0.52)
 
 
 

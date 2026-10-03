@@ -9,19 +9,19 @@
   url = {https://open-meteo.com/}
 }
 
-## Missing Data: 
+## Visibility (London, Washington):
 @software{VisualCrossing_Weather_API,
   author = {{Visual Crossing Corporation}},
   title = {Visual Crossing Weather API},
   year = {2026},
   url = {https://www.visualcrossing.com/},
-  note = {Weather data for 2015-2017}
+  note = {Visibility (visibility_km) for London (2015-2017) and Washington (2011-2012), locations London,UK and Washington,DC (add_visibility.py). No other weather values come from Visual Crossing}
 }
 
 ## KMA ASOS hourly station observations
 
 - **Source:** Korea Meteorological Administration (KMA), Automated Synoptic Observing System (ASOS)
-- **Planned station:** Seoul 108
+- **Station:** Seoul 108, the station of the Seoul bike data's weather. The data.go.kr service itself was not used; the NWP calibration uses this station's reports from NOAA ISD (station 47108, see below).
 - **Official service:** https://www.data.go.kr/data/15139432/openapi.do
 - **Cost:** Free
 - **Licence:** Korea Open Government License, Type 1 (attribution required)
@@ -52,6 +52,15 @@ The licence also requires a statement that neither the European Commission nor E
 - **Licence/status:** NOAA/federal environmental data are in the public domain in the United States unless explicitly exempt; NCEI works to apply CC0 for international users.
 - **Official policy text:** `Environmental data and information produced by NOAA or any Federal agency are available fully and openly to data users` and `These data are in the public domain in the United States.`
 - **Academic/publication use:** Permitted.
+
+## Open-Meteo download (London, Washington)
+
+- **Columns:** `temperature_c`, `humidity_percent`, `dew_point_c`, `rainfall_mm`, `snowfall_cm`, `wind_speed_ms`, `solar_radiation_wm2` (and `solar_radiation_mjm2` = W/m² × 0.0036).
+- **Source:** Open-Meteo Historical Weather API (`https://archive-api.open-meteo.com/v1/archive`), hourly `temperature_2m`, `relative_humidity_2m`, `dew_point_2m`, `rain`, `snowfall`, `wind_speed_10m` (m/s), `shortwave_radiation`; no `models` parameter (Open-Meteo default).
+- **London:** 51.5074, −0.1278, 2015-01-04 to 2017-01-03, `timezone=Europe/London`.
+- **Washington:** 38.9073, −77.0369, 2011-01-01 to 2012-12-31, `timezone=America/New_York`.
+- **Scripts:** `provenance/london/load_weather_london.py`, `provenance/washington/load_weather_washington_openmeteo.py`; all preprocessing steps in `provenance/README.md`.
+- **Gaps:** none (17,544 hours per city, no missing values). The Visual Crossing gap-fill steps (`provenance/README.md`) therefore filled nothing: every value of these columns in the current data equals the Open-Meteo download (checked 3 Oct 2026, after the daylight-saving re-alignment below).
 
 ## v7 weather columns (2 Oct 2026)
 

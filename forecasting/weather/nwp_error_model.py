@@ -252,7 +252,9 @@ class NWPErrorModel:
         df rows must be the consecutive test hours, times_utc their UTC times.
         fresh_forecast / remove_bias / seasonal_rain /
         rain_intensity_dependent / rain_frequency_unbiased:
-        see the module docstring.
+        see the module docstring. The last two default to False here;
+        WeatherProcessor always passes the config values (both True by
+        default).
         """
         if noise_scale < 0:
             raise ValueError(f"noise_scale must be >= 0, got {noise_scale}")

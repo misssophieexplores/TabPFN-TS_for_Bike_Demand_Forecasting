@@ -1,0 +1,40 @@
+Job 269 | sarimax | washington | DAH2 | CPUs 4 | 2026-10-03 12:44:41
+Commit: unknown
+
+======================================================================
+TUNING SARIMAX FOR: WASHINGTON
+======================================================================
+Loaded 17544 observations for washington
+======================================================================
+SARIMAX TUNING | city=washington | horizon=24h | scenario=clean_only | m=24
+======================================================================
+Cutoff date (held-out test start): 2012-04-30 23:00:00
+Candidate folds (auto_arima): [155, 173, 191, 208, 226, 244] | scoring folds: all 90 tune folds
+Covariates (9): ['temperature_c', 'humidity_percent', 'wind_speed_ms', 'solar_radiation_wm2', 'precipitation_mm', 'snow_depth_cm', 'visibility_km', 'holiday', 'season']
+  fold 155: auto_arima -> order=(5, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=7697.8
+  fold 173: auto_arima -> order=(4, 0, 1) seasonal=(1, 0, 0, 24) intercept=True AIC=7740.2
+  fold 191: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=7925.1
+  fold 208: auto_arima -> order=(2, 0, 0) seasonal=(1, 0, 0, 24) intercept=True AIC=8153.3
+  fold 226: auto_arima -> order=(4, 0, 1) seasonal=(1, 0, 0, 24) intercept=True AIC=8222.3
+  fold 244: auto_arima -> order=(2, 0, 2) seasonal=(1, 0, 0, 24) intercept=True AIC=8213.6
+  candidate ((5, 0, 0), (1, 0, 0, 24), True): ok MAE=70.01
+  candidate ((4, 0, 1), (1, 0, 0, 24), True): ok MAE=69.64
+  candidate ((2, 0, 0), (1, 0, 0, 24), True): ok MAE=71.15
+  candidate ((2, 0, 2), (1, 0, 0, 24), True): ok MAE=70.54
+
+======================================================================
+SELECTED: order=[4, 0, 1] seasonal_order=[1, 0, 0, 24] with_intercept=True (trend=c) | search MAE=69.64
+======================================================================
+Traceback (most recent call last):
+  File "/home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/models/tuning/tune_sarimax.py", line 160, in <module>
+    main()
+  File "/home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/models/tuning/tune_sarimax.py", line 152, in main
+    run_city(city, args)
+  File "/home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/models/tuning/tune_sarimax.py", line 129, in run_city
+    output_file = save_results(params, args.output_dir)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/20250572/TabPFN-TS_for_Bike_Demand_Forecasting/forecasting/models/tuning/tune_sarimax.py", line 109, in save_results
+    with open(output_file, 'w') as f:
+         ^^^^^^^^^^^^^^^^^^^^^^
+OSError: [Errno 30] Read-only file system: 'results/tuning/sarimax_best_params_washington_clean_only_720_20261003_173313.json'
+[W1003 17:33:13.927891690 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())

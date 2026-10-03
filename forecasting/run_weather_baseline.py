@@ -2,8 +2,9 @@
 Weather Degradation Baseline Experiments
 
 Runs complete baseline with weather scenarios:
-- clean_only: 7 degradable variables, no degradation (NEW baseline)
-- degraded: 7 degradable variables, with forecast errors (robustness test)
+- clean_only: 7 degradable variables + holiday + season, no degradation
+- degraded: same columns, forecast errors on the 7 degradable variables
+  (robustness test)
 - further degraded scenarios only if added to config.degradation_scales
   (noise-magnitude sensitivity, e.g. degraded_x150; not run by default)
 
@@ -57,9 +58,10 @@ def main(config=None, no_confirm=False):
     # config (same construction as run_experiments.main() and the tests)
     all_models = build_models(config)
 
-    # Scenarios to run: clean_only (7 vars, no degradation), then every
-    # degraded scenario in config.degradation_scales: 'degraded' (calibrated
-    # error) and the noise-magnitude sensitivity scenarios (x0.5, x1.5)
+    # Scenarios to run: clean_only (7 degradable vars + holiday + season, no
+    # degradation), then every degraded scenario in config.degradation_scales:
+    # by default only 'degraded' (calibrated error; sensitivity scenarios
+    # such as degraded_x150 only if added to degradation_scales)
     scenarios = ["clean_only"] + list(config.degradation_scales)
     # "all_weather" is not run (optional: can reuse existing baseline results)
     

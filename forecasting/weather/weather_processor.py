@@ -37,9 +37,12 @@ class WeatherProcessor:
     Orchestrates weather data preparation for different scenarios.
     
     Handles these scenarios:
-    - all_weather: All 8 variables, no degradation
-    - clean_only: 7 degradable variables (exclude Dew point), no degradation
-    - degraded: 7 degradable variables (exclude Dew point), with degradation
+    - all_weather: all config.weather_covariates (8 weather variables +
+      holiday + season), no degradation
+    - clean_only: 7 degradable variables (no Dew point) + holiday + season,
+      no degradation
+    - degraded: same columns as clean_only, degradation on the 7 degradable
+      variables
     - optional noise-magnitude sensitivity scenarios (e.g. degraded_x150:
       error magnitudes x1.5), not run by default; every key of
       config.degradation_scales is a degraded scenario
@@ -93,16 +96,17 @@ class WeatherProcessor:
             
         Notes
         -----
-        - all_weather: All (8) variables from config.weather_covariates
-        - clean_only: Only the 7 degradable variables (excludes Dew point)
-        - degraded scenarios: Same 7 degradable variables as clean_only
+        - all_weather: all of config.weather_covariates (8 weather
+          variables + holiday + season)
+        - clean_only: the 7 degradable variables (no Dew point) + holiday + season
+        - degraded scenarios: same columns as clean_only
         """
         if scenario == "all_weather":
-            # Return all 8 weather variables
+            # All of weather_covariates (8 weather variables + holiday + season)
             return self.config.weather_covariates.copy()
         
         elif scenario == "clean_only" or self.config.is_degraded(scenario):
-            # Return only degradable variables (7 vars, exclude Dew point)
+            # Degradable variables (7, no Dew point), then holiday and season
             # These are the ones in weather_degradation_mapping
             degradable_vars = list(self.config.weather_degradation_mapping.keys())
 
@@ -175,6 +179,7 @@ class WeatherProcessor:
         - Prevents data leakage between folds
         - Different degradation per fold (realistic)
         - Reproducible via seed = base_seed + 10000 * horizon + fold_idx
+          (+ city_seed_term(dataset_name) in the measured model)
         
         Examples
         --------

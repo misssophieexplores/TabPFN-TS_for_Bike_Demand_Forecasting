@@ -82,6 +82,9 @@ def build_models(config: ForecastConfig, keys: Optional[List[str]] = None) -> Li
     in the city config. Single source of truth for run_weather_baseline.py,
     run_experiments.main() and the tests. keys=None builds all MODEL_KEYS;
     only the params files of the requested models are read.
+    Checked here: provenance present, and the scenario of
+    xgb_noweather_params_file. City, n_train_samples, tuning period and the
+    other scenarios are checked by testing/preflight.py.
     """
     keys = list(MODEL_KEYS) if keys is None else list(keys)
     unknown = [k for k in keys if k not in MODEL_KEYS]
@@ -286,8 +289,9 @@ class ForecastingExperiment:
             
         Returns
         -------
-        Optional[Dict]
-            Aggregated results dictionary, or None if skipped/failed
+        Optional[tuple]
+            (aggregated results dict, list of fold-level dicts), or None if
+            skipped. A failed fold raises (the whole run is aborted).
         """
 
         # Skip if model doesn't use covariates and scenario is degraded
@@ -432,13 +436,15 @@ class ForecastingExperiment:
                 # catches the exception, leaves it uncheckpointed, and continues.
                 raise
 
+        # Not reachable at present: a fold error re-raises above, so every
+        # completed run has all folds (n_failed_folds = 0; the column is kept
+        # for schema compatibility).
         if len(fold_results) == 0:
             print(f" [FAILED] All folds failed")
             return None
         n_failed_folds = expected_folds - len(fold_results)
         if n_failed_folds > 0:
-            # Always printed: the aggregated metrics then cover fewer folds than
-            # the other models, so this model/horizon/scenario is not comparable.
+            # Would mean fewer folds than the other models (not comparable).
             print(f"\n[WARN] {model.name} | h={horizon} | {weather_scenario}: "
                   f"{n_failed_folds}/{expected_folds} folds failed (see errors log)")
 
@@ -761,7 +767,9 @@ def compute_and_log_comparative_metrics(config, log_wandb=True):
 
     Tasks are (dataset, horizon, weather_scenario), pooled across all
     datasets; one comparison per (model, weather_scenario). Run this ONCE
-    after all cities have finished.
+    after all cities have finished (main.py calls it when all *selected*
+    cities succeeded; it uses whatever rows results_master_{version}.csv
+    holds at that moment).
     """
     filename_agg = Path(config.output_dir) / f"results_master_{config.results_version}.csv"
     comparative_df = MetricsCalculator.compute_and_save_comparative_metrics(
@@ -790,6 +798,9 @@ def main(config: Optional[ForecastConfig] = None):
     """
     Main execution. Without a config, the city is taken from --city:
         python forecasting/run_experiments.py --city {seoul,washington,london}
+    Runs every scenario in config.weather_scenarios (all_weather included)
+    under the run name baseline_models_{version}. Not used for the v7 paper
+    runs: use main.py (run_weather_baseline.main()).
     """
     if config is None:
         import argparse

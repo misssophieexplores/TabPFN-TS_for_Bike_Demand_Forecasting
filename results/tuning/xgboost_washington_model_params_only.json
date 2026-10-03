@@ -1,0 +1,18 @@
+{
+  "n_lags": 168,
+  "xgb_params": {
+    "objective": "reg:squarederror",
+    "random_state": 42,
+    "tree_method": "hist",
+    "n_jobs": -1,
+    "n_estimators": 565,
+    "learning_rate": 0.012711072002018797,
+    "max_depth": 12,
+    "min_child_weight": 10.26906964801431,
+    "subsample": 0.840726685156857,
+    "colsample_bytree": 0.6119080321300009,
+    "gamma": 19.90289532685022,
+    "reg_lambda": 0.22578095464469503,
+    "reg_alpha": 3.5871807819850816e-05
+  }
+}

@@ -20,6 +20,8 @@ The previous version used error sizes from the literature, the same for every ci
 | London | ERA5, the source of the London weather data (via Open-Meteo) | ERA5 | Heathrow station |
 | Washington | ERA5, the source of the Washington weather data (via Open-Meteo) | ERA5 | Reagan National station |
 
+Visibility: London's and Washington's visibility data come from Visual Crossing, not directly from the airport stations. Washington's match the Reagan National reports (82 % of hours within 0.1 km); London's do not match Heathrow (median difference 4.5 km), so London's visibility errors come from a different series than its data (limitation 9).
+
 ERA5 is calculated, not measured: ECMWF re-runs its weather model over past dates, corrected with the measurements available at the time, to estimate the weather for every hour and every square of about 30 km (technical term: reanalysis). It is produced by ECMWF, the same organisation that makes the forecasts.
 
 **Consequence for comparing cities.** Seoul is a comparison between *different* sources: the ECMWF forecast against a station in the city centre. London and Washington are comparisons within the *same* model family: the ECMWF forecast against ECMWF's reconstruction. Different-source comparisons give larger errors. This is intended, because each demand model would face exactly this situation in use. It means, however, that part of Seoul's larger errors comes from the comparison, not from Seoul's weather:
@@ -43,7 +45,7 @@ ERA5 is calculated, not measured: ECMWF re-runs its weather model over past date
 - The model was run on the real bike data (data folder of 3 Oct 2026) with exactly the folds of the experiments (three random seeds). Light precipitation is missed more often than ≥1 mm/h precipitation in every city and seed (light / stronger: Seoul 29–32 % / 14–20 %, London 48–49 % / 17–22 %, Washington 48–49 % / 28 %). Degraded precipitation is wet 0.96–1.07 times as often as the clean data. Mean temperature error −0.08 to +0.05 °C. It costs about 8 ms per test period.
 - Seoul precipitation: the station and bike data use the same KMA quantity. April–October is hourly; November–March is reported as 3-hour totals (checked on the station reports of 2024–25: all 82 positive winter amounts sit at 00, 03, …, 21 h and add up to the station's 24-hour totals). These totals are spread evenly over their three hours in the bike data and in the NWP calibration; in the calibration the forecast is spread over the same three hours, so both are compared at 3-hour resolution.
 - Seoul: the Seoul bike data are identical to the station used as truth (median difference 0.0 °C).
-- London and Washington: their weather data had been stored on standard time all year, one hour off the bike counts during daylight saving; they were re-aligned to the local clock on 2 Oct 2026. Since then they differ from ERA5 at the airport grid cell by 0.27 °C (London) and 0.30 °C (Washington) on average (probably a neighbouring grid cell; the original download settings are unknown).
+- London and Washington: their weather data had been stored on standard time all year, one hour off the bike counts during daylight saving; they were re-aligned to the local clock on 2 Oct 2026. Since then they differ from ERA5 at the airport grid cell by 0.27 °C (London) and 0.30 °C (Washington) on average (the data were downloaded for 51.5074, −0.1278 and 38.9073, −77.0369, not for the airports; see `data/provenance/`).
 - Each city draws its own random numbers (before, fold k used the same random numbers in all three cities).
 - 48 automated tests (`testing/test_weather_unit.py`).
 
@@ -153,6 +155,7 @@ Errors the model applies *h* hours ahead with the default setting (fresh forecas
 6. **Station data end in August 2025** (NOAA archive). Seoul has 844 forecasts with complete station data for temperature, humidity and wind and 1,049 with station rain, London and Washington 1,817.
 7. **Fresh, corrected forecast is approximated.** No free archive of past local forecasts exists, so the errors are those of the global 9 km model at short lead times with its bias removed. Local high-resolution forecasts are usually more accurate in the first hours, so these may be slightly pessimistic. The replayed forecast's start time (00 or 12 UTC) can differ from the time of day of the demand forecast by up to 6 hours. Beyond 90 hours ECMWF provides 3- and 6-hourly values; the hours in between are interpolated by Open-Meteo.
 8. **Daylight saving.** Lead times count test hours, so clock changes do not affect them. Only the choice of the replayed forecast's start time uses the clock; it could be off by one hour if a test window started at a clock-change hour (none does).
+9. **Visibility.** London's visibility data (Visual Crossing) do not match the Heathrow reports the errors were measured against (see step 2). The visibility error is one distribution for all visibility levels, although real forecasts are too high in poor visibility and too low in very good visibility (London: on average about 5 times too high below 5 km, about one third too low above 40 km).
 
 ## Sources
 
