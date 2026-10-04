@@ -11,9 +11,12 @@ and wind in their units; visibility (hours below the cap) and precipitation
 hits (degraded/clean amount over the hours wet in both), missed amount (clean
 amount in hours wet in clean and dry in degraded) and false-alarm amount
 (degraded amount in hours dry in clean and wet in degraded), the last two as
-shares of the clean total. The bounds and caps (humidity 0-100, visibility
-cap, precipitation cap at the training maximum) are applied after the errors,
-so these are not exactly 0 / 1 (ARCHITECTURE.md, Known Limitation 24).
+shares of the clean total. Visibility below the cap and hit amounts are
+mean-preserving after their caps (config.nwp_mean_preserving_caps, default),
+so these ratios are ~1 up to sampling variation (about +/-0.04 per seed for
+hits); humidity (clipped at 0-100) and the precipitation total (false-alarm
+amounts smaller than missed amounts in Seoul) are not exactly 0 / 1
+(ARCHITECTURE.md, Known Limitation 24).
 
 Run from the folder that contains data/ (as the experiments). Seed: SEED=42 (default).
 """

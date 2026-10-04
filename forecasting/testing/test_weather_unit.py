@@ -488,6 +488,7 @@ import importlib
 import json
 from weather.nwp_error_model import (
     load_error_model, run_init_and_leads, fresh_start_and_leads, to_utc, ar1, MAX_LEAD,
+    capped_mean_log, capped_lognormal,
 )
 
 CITY_MODULES = {"seoul": "config_seoul", "london": "config_london", "washington": "config_washington"}
@@ -549,7 +550,12 @@ class TestMeasuredNWPModel:
         assert cfg.nwp_fresh_forecast and cfg.nwp_remove_bias and cfg.nwp_seasonal_rain
         assert cfg.nwp_rain_intensity_dependent
         assert cfg.nwp_rain_frequency_unbiased
-        assert cfg.degradation_label() == "nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased)"
+        assert cfg.nwp_mean_preserving_caps
+        assert cfg.degradation_label() == (
+            "nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased,cap_mean)")
+        cfg.nwp_remove_bias = False                  # cap_mean needs the bias removed
+        assert cfg.degradation_label() == (
+            "nwp_measured(fresh,with_bias,seasonal_rain,intensity_miss,rain_freq_unbiased)")
         for city in CITY_MODULES:
             config = _city_config(city)
             assert config.timezone
@@ -958,7 +964,8 @@ class TestMeasuredNWPModel:
     def test_bounds(self):
         """Humidity 0..100, wind >= 0, solar 0 at night and <= training cap,
         visibility <= the city's cap (Seoul 20 km, Washington 16 km) or the
-        training maximum (London)."""
+        training maximum (London; the hour's clean value if larger, with
+        nwp_mean_preserving_caps)."""
         for city in CITY_MODULES:
             proc = _processor(city)
             cfg = proc.config
@@ -979,8 +986,9 @@ class TestMeasuredNWPModel:
                 night = test[col["solar_radiation"]] <= 0
                 assert (X.loc[night, col["solar_radiation"]] == 0).all()
                 assert X[col["solar_radiation"]].max() <= proc.degradation_params["solar_cap"] + 1e-9
-                vmax = {"seoul": 20.0, "washington": 16.0}.get(city, proc.degradation_params["visibility_max"])
-                assert X[col["visibility"]].max() <= vmax + 1e-9
+                vmax = {"seoul": 20.0, "washington": 16.0}.get(
+                    city, np.maximum(proc.degradation_params["visibility_max"], test[col["visibility"]]))
+                assert (X[col["visibility"]] <= vmax + 1e-9).all()
 
     def test_reproduces_measured_error_statistics(self):
         """With intensity dependence disabled, over many test windows the
@@ -1063,6 +1071,71 @@ class TestMeasuredNWPModel:
                 assert (X[scol] == 4.0 + fold).all()
                 n_hit += int(((test[pcol] > 0) & (X[pcol] > 0)).sum())
             assert n_hit > 0                                          # cold precipitation stays in its column
+
+    def test_capped_lognormal_mean_preserving(self):
+        """E[min(x * exp(m + sigma * Z), c)] = x with m = capped_mean_log:
+        Monte Carlo mean within 1 % of x. Special cases: c = inf gives the
+        uncapped -sigma^2/2; c == x or sigma == 0 gives the forecast x."""
+        z = np.random.default_rng(3).standard_normal(1_000_000)
+        for q in (0.2, 0.5, 0.9, 0.99):                          # x / c
+            for sigma in (0.5, 1.0, 1.5):
+                x, c = 2.0 * q, 2.0
+                y = capped_lognormal(x, c, sigma, z)
+                assert y.max() <= c
+                assert y.mean() == pytest.approx(x, rel=0.01), (q, sigma)
+                assert np.minimum(x * np.exp(capped_mean_log(x, c, sigma) + sigma * z), c).mean() \
+                    == pytest.approx(x, rel=0.01)
+        assert capped_mean_log(3.0, np.inf, 0.8) == -0.5 * 0.8 ** 2
+        assert (capped_lognormal(3.0, 3.0, 0.8, z[:5]) == 3.0).all()
+        assert (capped_lognormal(3.0, 7.0, 0.0, z[:5]) == 3.0).all()
+        # vectorised: one m per element, the same as element by element
+        xs, cs, sds = np.array([0.5, 1.0, 4.0]), np.array([1.0, 1.1, 20.0]), np.array([0.3, 1.2, 0.9])
+        np.testing.assert_allclose(capped_mean_log(xs, cs, sds),
+                                   [capped_mean_log(a, b, s) for a, b, s in zip(xs, cs, sds)])
+
+    def test_mean_preserving_caps_switch(self):
+        """nwp_mean_preserving_caps changes only visibility below the cap
+        and rain-hit amounts: hours at the visibility cap, rain misses, false
+        alarms and their amounts and all other columns stay bit-identical.
+        Degraded values stay within the caps (London: the training maximum
+        or the hour's value). No effect with nwp_remove_bias=False."""
+        for city, cap in (("seoul", 20.0), ("washington", 16.0), ("london", None)):
+            for remove_bias in (True, False):
+                out = {}
+                for caps_on in (False, True):
+                    proc = _processor(city, remove_bias=remove_bias)
+                    cfg = proc.config
+                    cfg.nwp_mean_preserving_caps = caps_on
+                    vcol = [c for c, t in cfg.weather_degradation_mapping.items() if t == "visibility"][0]
+                    pcol = _precip_col(cfg)
+                    df = _synthetic_city_data(cfg, "2018-04-01", 720 + 168, rain_every=4)
+                    # 0.2..3.0 mm in train and test (training maximum 3.0)
+                    df[pcol] = np.where(df.index % 4 == 0, 0.2 + 0.4 * ((df.index // 4) % 8), 0.0)
+                    if cap is not None:
+                        df[vcol] = np.minimum(df[vcol], cap)
+                        df.loc[df.index % 3 == 0, vcol] = cap               # hours at the cap
+                    train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+                    proc.prepare_weather_data(train, "degraded", horizon=168, fold_idx=2, split="train")
+                    out[caps_on] = proc.prepare_weather_data(test, "degraded", horizon=168,
+                                                            fold_idx=2, split="test")
+                    assert proc.last_degradation_info["mean_preserving_caps"] == (caps_on and remove_bias)
+                off, on = out[False], out[True]
+                for c in off.columns:
+                    if c not in (vcol, pcol) or not remove_bias:
+                        assert off[c].to_numpy().tobytes() == on[c].to_numpy().tobytes(), (city, c)
+                x = test[vcol].to_numpy()
+                below = np.ones(len(x), bool) if cap is None else x < cap - 1e-6
+                assert cap is None or (on[vcol][~below] == off[vcol][~below]).all()
+                assert (on[vcol][below] != off[vcol][below]).any() or not remove_bias
+                vmax = cap if cap is not None else np.maximum(proc.degradation_params["visibility_max"], x)
+                assert (on[vcol] <= vmax + 1e-9).all()
+                wet = test[pcol].to_numpy() > 0
+                assert ((on[pcol] > 0) == (off[pcol] > 0)).all()              # same misses, false alarms
+                assert (on[pcol][~wet] == off[pcol][~wet]).all()              # false-alarm amounts
+                hit = wet & (off[pcol] > 0).to_numpy()
+                assert hit.sum() > 5 and ((on[pcol][hit] != off[pcol][hit]).any() or not remove_bias)
+                assert (on[pcol] <= np.maximum(proc.degradation_params["precip_max"][pcol],
+                                               test[pcol]) + 1e-9).all()
 
     def test_ar1_persistence(self):
         z = ar1(200000, 0.8, np.random.default_rng(1))

@@ -42,12 +42,18 @@ How one test window is degraded
    <1 mm/h versus stronger >=1 mm/h); false-alarm ratio remains overall.
    Misses and false alarms persist from hour to hour (latent AR(1) with the
    measured correlation); hits get the measured lognormal amount error
-   (mean-preserving if remove_bias); false alarms the measured amount
-   distribution. The false-alarm ratio is
+   (mean-preserving if remove_bias, see below); false alarms the measured
+   amount distribution. The false-alarm ratio is
    converted into a probability per dry hour with the wet-hour share of the
    training fold. Degraded amounts are capped at the training fold's maximum
    of the column (or the hour's measured amount if larger), as solar
-   radiation is capped. seasonal_rain=True (default): miss rate, false-alarm ratio
+   radiation is capped. Hit amounts, remove_bias and mean_preserving_caps=True
+   (config default): the mean of the log error is set per hour so that the
+   amount after the cap c = max(training maximum, measured amount) keeps the
+   measured amount on average (capped_mean_log); an hour at or above the
+   training maximum keeps its amount. mean_preserving_caps=False: the
+   multiplier is mean-preserving before the cap (log mean -sigma^2/2), so the
+   cap lowers the average. seasonal_rain=True (default): miss rate, false-alarm ratio
    and hit amount error are those of the time of year (12 monthly bins,
    interpolated linearly by the day of year of the forecast start); False:
    year-round values. Reference: Seoul = the station, London and Washington =
@@ -59,6 +65,14 @@ How one test window is degraded
    mean-preserving if remove_bias. For a city whose covariate is capped
    (Seoul 20 km, Washington 16 km), an hour at the cap stays at the cap unless
    the forecast falls below it, which happens with the measured probability.
+   Hours below the cap are cut at the cap; London (no cap) at the training
+   fold's maximum. remove_bias and mean_preserving_caps=True (config
+   default): the mean of the log error is set per hour so that the value
+   after the cut keeps the clean value on average (capped_mean_log; cap c =
+   the city cap, London max(training maximum, the hour's value), and the
+   London cut is never below the hour's value). Hours at the cap are not
+   affected. mean_preserving_caps=False: mean-preserving before the cut (log
+   mean -sigma^2/2), so the cut lowers the average.
 6. Snow depth (since 2 Oct 2026): persistence, i.e. the value of the last
    training hour (the issue time) for the whole window; no forecast errors of
    snow depth were measured. Snow depth is not precipitation (no event draw,
@@ -73,6 +87,10 @@ probability uses the clean training fold's light/strong precipitation mix to
 balance the combined expected misses. Against the Seoul station the raw
 forecast is wet about 2.1 times as often as observed (24 h); against ERA5
 (London, Washington) about 0.8-0.9 times.
+
+mean_preserving_caps changes only the visibility below the cap and the hit
+amounts; it uses the same random numbers, so every other output is the same
+with it on or off. It has no effect with remove_bias=False.
 
 noise_scale multiplies every error magnitude (additive errors, including
 their bias if it is kept; the log errors of visibility and precipitation
@@ -169,6 +187,50 @@ def ar1(n, phi, rng):
     return z
 
 
+def capped_mean_log(x, c, sigma, n_iter=60):
+    """
+    Mean m of a lognormal log error that is mean-preserving after a cap:
+        E[min(x * exp(m + sigma * Z), c)] = x,   Z ~ N(0, 1),
+    for x > 0, cap c >= x and sigma >= 0 (arrays broadcast). Closed form, with
+    k = (ln(c/x) - m) / sigma (Z < k: below the cap):
+        E = x * exp(m + sigma^2/2) * Phi(k - sigma) + c * (1 - Phi(k)).
+    E grows with m: it is <= x at m = -sigma^2/2 (mean-preserving without
+    the cap) and ~c at m = ln(c/x) + 8 sigma, so m is found by bisection on
+    that interval (vectorised, n_iter steps). c = inf gives -sigma^2/2.
+    c <= x, sigma == 0 or x <= 0: no error is applied (the forecast is x,
+    see capped_lognormal); returns 0 there.
+    """
+    x, c, sigma = np.broadcast_arrays(*(np.asarray(a, dtype=float) for a in (x, c, sigma)))
+    m = np.zeros(x.shape)
+    active = (x > 0) & (sigma > 0) & (c > x)
+    uncapped = active & np.isposinf(c)
+    m[uncapped] = -0.5 * sigma[uncapped] ** 2
+    b = active & ~uncapped
+    if b.any():
+        sd, ratio = sigma[b], c[b] / x[b]
+        r = np.log(ratio)
+        lo, hi = -0.5 * sd * sd, r + 8.0 * sd
+        for _ in range(n_iter):
+            mid = 0.5 * (lo + hi)
+            k = (r - mid) / sd
+            e = np.exp(mid + 0.5 * sd * sd) * ndtr(k - sd) + ratio * ndtr(-k)    # E / x
+            low = e < 1.0
+            lo = np.where(low, mid, lo)
+            hi = np.where(low, hi, mid)
+        m[b] = 0.5 * (lo + hi)
+    return m
+
+
+def capped_lognormal(x, c, sigma, z):
+    """Forecast min(x * exp(m + sigma * z), c) with m = capped_mean_log(x, c,
+    sigma): its mean over z ~ N(0, 1) is x. Returns x where no error is
+    applied (c <= x, sigma == 0 or x <= 0). Arrays broadcast."""
+    x, c, sigma, z = np.broadcast_arrays(*(np.asarray(a, dtype=float) for a in (x, c, sigma, z)))
+    active = (x > 0) & (sigma > 0) & (c > x)
+    y = np.minimum(x * np.exp(capped_mean_log(x, c, sigma) + sigma * z), c)
+    return np.where(active, y, x)
+
+
 class NWPErrorModel:
     """Per-city measured NWP error model loaded from a calibration .npz file."""
 
@@ -246,15 +308,16 @@ class NWPErrorModel:
     def degrade(self, df, times_utc, column_mapping, degradation_params, seed,
                 noise_scale=1.0, run_hours=(0, 12), delay_h=6,
                 season_days=30, fresh_forecast=True, remove_bias=True, seasonal_rain=True,
-                rain_intensity_dependent=False, rain_frequency_unbiased=False):
+                rain_intensity_dependent=False, rain_frequency_unbiased=False,
+                mean_preserving_caps=False):
         """
         Degrade one test window. Returns (degraded DataFrame, info dict).
         df rows must be the consecutive test hours, times_utc their UTC times.
         fresh_forecast / remove_bias / seasonal_rain /
-        rain_intensity_dependent / rain_frequency_unbiased:
-        see the module docstring. The last two default to False here;
-        WeatherProcessor always passes the config values (both True by
-        default).
+        rain_intensity_dependent / rain_frequency_unbiased /
+        mean_preserving_caps: see the module docstring. The last three
+        default to False here; WeatherProcessor always passes the config
+        values (all True by default).
         """
         if noise_scale < 0:
             raise ValueError(f"noise_scale must be >= 0, got {noise_scale}")
@@ -302,7 +365,7 @@ class NWPErrorModel:
                 y = np.clip(y, 0.0, degradation_params["solar_cap"])
             elif vtype == "visibility":
                 y = self._visibility(x, z_vis, s, degradation_params.get("visibility_max"),
-                                     remove_bias)
+                                     remove_bias, mean_preserving_caps)
             elif vtype == "snow_depth":
                 # persistence: snow depth at the issue time (last training
                 # hour) for the whole window; no snow-depth errors measured
@@ -326,7 +389,8 @@ class NWPErrorModel:
                                     u_miss, u_fa, z_hit, z_fa_amount, s, fa_col, remove_bias, params,
                                     rain_frequency_unbiased, degradation_params.get("precip_max"),
                                     intensity_miss=intensity_miss,
-                                    light_fraction=degradation_params.get("precip_light_fraction"))
+                                    light_fraction=degradation_params.get("precip_light_fraction"),
+                                    mean_preserving_caps=mean_preserving_caps)
             for c in precip_cols:
                 out[c] = p[c].to_numpy(dtype=float)
 
@@ -334,6 +398,7 @@ class NWPErrorModel:
                     seasonal_rain=bool(seasonal_rain and self.season_doy is not None),
                     rain_intensity_dependent=bool(rain_intensity_dependent),
                     rain_frequency_unbiased=bool(rain_frequency_unbiased),
+                    mean_preserving_caps=bool(mean_preserving_caps and remove_bias),
                     forecast_start_utc=str(start), start_hour_utc=int(start_hour),
                     lead_first=int(leads[0]), lead_last=int(leads[-1]),
                     replayed_run_utc=str(self.run_init[k]), n_candidate_runs=int(len(cand)),
@@ -405,8 +470,10 @@ class NWPErrorModel:
     def _precipitation(self, precip, leads, wet_fraction, u_miss, u_fa, z_hit,
                        z_fa_amount, s, fa_col, remove_bias=False, params=None,
                        frequency_unbiased=False, caps=None, intensity_miss=None,
-                       light_fraction=None):
+                       light_fraction=None, mean_preserving_caps=False):
         miss_rate, far, hit_mean_log, hit_sd_log = params or self.rain_params(seasonal=False)
+        cap_mean = remove_bias and mean_preserving_caps
+        hits, hit_sd = [], []
         vals = precip.to_numpy(dtype=float)
         out = np.zeros_like(vals)
         fa_idx = list(precip.columns).index(fa_col)
@@ -444,11 +511,22 @@ class NWPErrorModel:
                 if u_miss[i] < row_miss:
                     continue                    # missed event, forecast stays 0
                 sd = s * hit_sd_log[L]
-                if remove_bias:   # mean-preserving: E[exp(log_err)] = 1
+                if cap_mean:      # amount after the loop
+                    hits.append(i)
+                    hit_sd.append(sd)
+                    continue
+                if remove_bias:   # mean-preserving before the cap: E[exp(log_err)] = 1
                     log_err = sd * z_hit[i] - 0.5 * sd * sd
                 else:
                     log_err = s * hit_mean_log[L] + sd * z_hit[i]
                 out[i] = vals[i] * np.exp(log_err)
+        if hits:
+            # mean-preserving after the cap below (per column)
+            col_cap = np.array([caps[c] if caps and caps.get(c) is not None else np.inf
+                                for c in precip.columns])
+            x = vals[hits]                                          # [hit hours, columns]
+            out[hits] = capped_lognormal(x, np.maximum(col_cap, x), np.array(hit_sd)[:, None],
+                                         z_hit[hits][:, None])
         # cap: training-fold maximum of the column, never below the hour's
         # measured amount (the lognormal amount error has no upper limit)
         for j, c in enumerate(precip.columns):
@@ -456,13 +534,17 @@ class NWPErrorModel:
                 out[:, j] = np.minimum(out[:, j], np.maximum(caps[c], vals[:, j]))
         return pd.DataFrame(out, index=precip.index, columns=precip.columns)
 
-    def _visibility(self, x, z, s, vis_max, remove_bias=False):
+    def _visibility(self, x, z, s, vis_max, remove_bias=False, mean_preserving_caps=False):
         sd = s * self.vis_below_sd_log
-        if remove_bias:   # mean-preserving: E[exp(log_err)] = 1
+        C = self.vis_cap
+        cap_mean = remove_bias and mean_preserving_caps
+        if cap_mean:      # mean-preserving after the cut at the cap below
+            cap = C if C is not None else (np.inf if vis_max is None else np.maximum(vis_max, x))
+            y = capped_lognormal(x, cap, sd, z)
+        elif remove_bias:   # mean-preserving before the cut: E[exp(log_err)] = 1
             y = x * np.exp(sd * z - 0.5 * sd * sd)
         else:
             y = x * np.exp(s * self.vis_below_mean_log + sd * z)
-        C = self.vis_cap
         if C is not None:
             at = x >= C - 1e-6
             # at the cap: below it with the measured probability; the depth
@@ -476,7 +558,8 @@ class NWPErrorModel:
             y = np.where(at, np.where(below, y_at, C), y)
             y = np.minimum(y, C)
         elif vis_max is not None:
-            y = np.minimum(y, vis_max)
+            # cap_mean: never below the hour's value, as rain
+            y = np.minimum(y, np.maximum(vis_max, x) if cap_mean else vis_max)
         return np.maximum(y, 0.0)
 
 
