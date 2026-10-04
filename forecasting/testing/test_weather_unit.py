@@ -488,7 +488,7 @@ import importlib
 import json
 from weather.nwp_error_model import (
     load_error_model, run_init_and_leads, fresh_start_and_leads, to_utc, ar1, MAX_LEAD,
-    capped_mean_log, capped_lognormal, clipped_mean_shift, clipped_normal_shift,
+    capped_mean_log, capped_lognormal, clipped_mean_shift, clipped_normal_shift, RAIN_CAP_FACTOR,
 )
 
 CITY_MODULES = {"seoul": "config_seoul", "london": "config_london", "washington": "config_washington"}
@@ -780,26 +780,58 @@ class TestMeasuredNWPModel:
 
     def test_rain_capped_at_training_maximum(self):
         """Degraded rain never exceeds the training fold's maximum of the
-        column, or the hour's measured amount if that is larger (the
-        lognormal amount error has no upper limit)."""
-        proc = _processor("seoul")
-        cfg = proc.config
-        n_below = n_wet = 0
-        for fold in range(60):
-            df = _synthetic_city_data(cfg, pd.Timestamp("2018-07-01") + pd.Timedelta(hours=37 * fold),
-                                      720 + 168, seed=fold, rain_every=3)
-            df.loc[df.index < 720, "precipitation_mm"] = np.where(df.index[df.index < 720] % 3 == 0, 2.0, 0.0)
-            df.loc[df.index == 720 + 30, "precipitation_mm"] = 10.0     # above the training maximum
-            train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
-            proc.prepare_weather_data(train, "degraded", horizon=168, fold_idx=fold, split="train")
-            assert proc.degradation_params["precip_max"] == {"precipitation_mm": 2.0}
-            X = proc.prepare_weather_data(test, "degraded", horizon=168, fold_idx=fold, split="test")
-            cap = np.maximum(2.0, test["precipitation_mm"].to_numpy())
-            tot = X["precipitation_mm"].to_numpy()
-            assert (tot <= cap + 1e-9).all()
-            wet = (test["precipitation_mm"] > 0).to_numpy() & (tot > 0)
-            n_wet += int(wet.sum()); n_below += int((tot[wet] < cap[wet] - 1e-9).sum())
-        assert n_below > 0.3 * n_wet          # the cap does not flatten every hour
+        column or, if larger, RAIN_CAP_FACTOR (2) x the hour's measured amount
+        with nwp_mean_preserving_caps (default; the hour's measured amount
+        without it): the lognormal amount error has no upper limit. With the
+        switch, an hour above the training maximum keeps an amount error."""
+        for caps_on, factor in ((True, RAIN_CAP_FACTOR), (False, 1.0)):
+            proc = _processor("seoul")
+            cfg = proc.config
+            cfg.nwp_mean_preserving_caps = caps_on
+            n_below = n_wet = 0
+            heavy = []
+            for fold in range(60):
+                df = _synthetic_city_data(cfg, pd.Timestamp("2018-07-01") + pd.Timedelta(hours=37 * fold),
+                                          720 + 168, seed=fold, rain_every=3)
+                df.loc[df.index < 720, "precipitation_mm"] = np.where(df.index[df.index < 720] % 3 == 0, 2.0, 0.0)
+                df.loc[df.index == 720 + 30, "precipitation_mm"] = 10.0     # above the training maximum
+                train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+                proc.prepare_weather_data(train, "degraded", horizon=168, fold_idx=fold, split="train")
+                assert proc.degradation_params["precip_max"] == {"precipitation_mm": 2.0}
+                X = proc.prepare_weather_data(test, "degraded", horizon=168, fold_idx=fold, split="test")
+                cap = np.maximum(2.0, factor * test["precipitation_mm"].to_numpy())
+                tot = X["precipitation_mm"].to_numpy()
+                assert (tot <= cap + 1e-9).all()
+                wet = (test["precipitation_mm"] > 0).to_numpy() & (tot > 0)
+                n_wet += int(wet.sum()); n_below += int((tot[wet] < cap[wet] - 1e-9).sum())
+                if tot[30] > 0:
+                    heavy.append(tot[30])
+            assert n_below > 0.3 * n_wet          # the cap does not flatten every hour
+            heavy = np.array(heavy)
+            assert len(heavy) > 20
+            if caps_on:
+                assert (heavy != 10.0).all() and (heavy <= 20.0).all() and (heavy > 10.0).any()
+            else:
+                assert (heavy <= 10.0).all()
+
+    def test_heavy_rain_hit_keeps_amount_error(self):
+        """nwp_mean_preserving_caps: a hit hour above the training maximum gets
+        an amount different from its observed x, at most RAIN_CAP_FACTOR x
+        (2x), and its Monte Carlo mean over z is within 1 % of x. Without the
+        switch the cap is x (only downward errors)."""
+        model = load_error_model(_city_config("seoul").nwp_calibration_file)
+        n, L, x, tmax = 100_000, 24, 10.0, 4.0
+        common = dict(precip=pd.DataFrame({"precipitation_mm": np.full(n, x)}), leads=np.full(n, L),
+                      wet_fraction=0.1, u_miss=np.ones(n), u_fa=np.ones(n),
+                      z_hit=np.random.default_rng(9).standard_normal(n), z_fa_amount=np.zeros(n),
+                      s=1.0, fa_col="precipitation_mm", remove_bias=True,
+                      params=model.rain_params(196), caps={"precipitation_mm": tmax})
+        on = model._precipitation(**common, mean_preserving_caps=True)["precipitation_mm"].to_numpy()
+        assert (on != x).all() and (on > 0).all() and on.max() <= RAIN_CAP_FACTOR * x
+        assert on.mean() == pytest.approx(x, rel=0.01)
+        assert (on > x).any() and (on < x).any()
+        off = model._precipitation(**common, mean_preserving_caps=False)["precipitation_mm"].to_numpy()
+        assert off.max() <= x and off.mean() < 0.9 * x
 
     def test_city_seed_term(self):
         """Measured model: the three cities get different random numbers for
@@ -1159,8 +1191,9 @@ class TestMeasuredNWPModel:
                 assert (on[pcol][~wet] == off[pcol][~wet]).all()              # false-alarm amounts
                 hit = wet & (off[pcol] > 0).to_numpy()
                 assert hit.sum() > 5 and ((on[pcol][hit] != off[pcol][hit]).any() or not remove_bias)
-                assert (on[pcol] <= np.maximum(proc.degradation_params["precip_max"][pcol],
-                                               test[pcol]) + 1e-9).all()
+                rain_cap = np.maximum(proc.degradation_params["precip_max"][pcol],
+                                      (RAIN_CAP_FACTOR if remove_bias else 1.0) * test[pcol])
+                assert (on[pcol] <= rain_cap + 1e-9).all()
 
     def test_clipped_mean_shift(self):
         """Humidity and wind (replayed errors): with the shift, the clipped

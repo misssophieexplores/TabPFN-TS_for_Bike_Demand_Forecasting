@@ -105,10 +105,11 @@ class ForecastConfig:
     #   nwp_mean_preserving_caps=True: with nwp_remove_bias, every degraded
     #       covariate keeps the clean value on average after its caps and
     #       bounds: visibility (hours below the cap; cap or training maximum),
-    #       rain-hit amounts (training maximum), humidity (0-100), wind
-    #       (>= 0) and solar radiation (0 to the training cap). Hours at a
-    #       bound are not changed. False: mean-preserving before the cut, so
-    #       the cuts shift the averages (ARCHITECTURE.md, Known Limitation 24).
+    #       rain-hit amounts (max(training maximum, 2 x observed)), humidity
+    #       (0-100), wind (>= 0) and solar radiation (0 to the training cap).
+    #       Hours at a bound are not changed. False: mean-preserving before
+    #       the cut, so the cuts shift the averages (ARCHITECTURE.md, Known
+    #       Limitation 24).
     nwp_mean_preserving_caps: bool = True
     nwp_run_hours_utc: List[int] = field(default_factory=lambda: [0, 12])
     nwp_availability_delay_h: int = 6

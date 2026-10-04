@@ -56,12 +56,16 @@ How one test window is degraded
    training fold. Degraded amounts are capped at the training fold's maximum
    of the column (or the hour's measured amount if larger), as solar
    radiation is capped. Hit amounts, remove_bias and mean_preserving_caps=True
-   (config default): the mean of the log error is set per hour so that the
-   amount after the cap c = max(training maximum, measured amount) keeps the
-   measured amount on average (capped_mean_log); an hour at or above the
-   training maximum keeps its amount. mean_preserving_caps=False: the
-   multiplier is mean-preserving before the cap (log mean -sigma^2/2), so the
-   cap lowers the average. seasonal_rain=True (default): miss rate, false-alarm ratio
+   (config default): the cap is c = max(training maximum, RAIN_CAP_FACTOR (2)
+   x measured amount), so an hour at or above the training maximum keeps an
+   amount error, at most twice its measured amount; the mean of the log error
+   is set per hour so that the amount after this cap keeps the measured
+   amount on average (capped_mean_log). False alarms (measured amount 0) are
+   capped at the training maximum. mean_preserving_caps=False: cap
+   max(training maximum, measured amount), and the multiplier is
+   mean-preserving before the cap (log mean -sigma^2/2), so the cap lowers
+   the average and an hour at or above the training maximum gets no upward
+   error. seasonal_rain=True (default): miss rate, false-alarm ratio
    and hit amount error are those of the time of year (12 monthly bins,
    interpolated linearly by the day of year of the forecast start); False:
    year-round values. Reference: Seoul = the station, London and Washington =
@@ -126,6 +130,10 @@ from scipy.special import ndtr, ndtri
 
 MAX_LEAD = 192
 TQW_TYPES = ("temperature", "humidity", "wind_speed")
+# mean_preserving_caps: rain-hit cap c = max(training maximum, RAIN_CAP_FACTOR
+# * observed amount), so an hour at or above the training maximum keeps an
+# amount error (at most twice its observed amount)
+RAIN_CAP_FACTOR = 2.0
 
 
 def to_utc(timestamps, tz):
@@ -641,8 +649,8 @@ class NWPErrorModel:
             col_cap = np.array([caps[c] if caps and caps.get(c) is not None else np.inf
                                 for c in precip.columns])
             x = vals[hits]                                          # [hit hours, columns]
-            out[hits] = capped_lognormal(x, np.maximum(col_cap, x), np.array(hit_sd)[:, None],
-                                         z_hit[hits][:, None])
+            out[hits] = capped_lognormal(x, np.maximum(col_cap, RAIN_CAP_FACTOR * x),
+                                         np.array(hit_sd)[:, None], z_hit[hits][:, None])
         if fa_hours:
             # false alarms add as much as misses remove, in expectation: the
             # measured false-alarm amount distribution (log SD) rescaled to
@@ -652,10 +660,12 @@ class NWPErrorModel:
                 np.array(fa_target), np.inf if fa_cap is None else fa_cap, self.fa_sd_log,
                 z_fa_amount[fa_hours])
         # cap: training-fold maximum of the column, never below the hour's
-        # measured amount (the lognormal amount error has no upper limit)
+        # measured amount (the lognormal amount error has no upper limit);
+        # cap_mean: never below RAIN_CAP_FACTOR x the measured amount
+        floor = RAIN_CAP_FACTOR * vals if cap_mean else vals
         for j, c in enumerate(precip.columns):
             if caps and caps.get(c) is not None:
-                out[:, j] = np.minimum(out[:, j], np.maximum(caps[c], vals[:, j]))
+                out[:, j] = np.minimum(out[:, j], np.maximum(caps[c], floor[:, j]))
         return pd.DataFrame(out, index=precip.index, columns=precip.columns)
 
     def _visibility(self, x, z, s, vis_max, remove_bias=False, mean_preserving_caps=False):
