@@ -7,9 +7,13 @@ covariate errors per test hour (sim_errors_<seed>.csv) for comparison with
 the calibration (ECMWF errors at the same lead times), and prints per city
 the mean change of each covariate (degraded - clean): temperature, humidity
 and wind in their units; visibility (hours below the cap) and precipitation
-(total amount) as degraded/clean ratios. The bounds and caps (humidity 0-100,
-visibility cap, precipitation cap at the training maximum) are applied after
-the errors, so these are not exactly 0 / 1 (ARCHITECTURE.md, Known Limitation 24).
+(total amount) as degraded/clean ratios. Precipitation is also split into
+hits (degraded/clean amount over the hours wet in both), missed amount (clean
+amount in hours wet in clean and dry in degraded) and false-alarm amount
+(degraded amount in hours dry in clean and wet in degraded), the last two as
+shares of the clean total. The bounds and caps (humidity 0-100, visibility
+cap, precipitation cap at the training maximum) are applied after the errors,
+so these are not exactly 0 / 1 (ARCHITECTURE.md, Known Limitation 24).
 
 Run from the folder that contains data/ (as the experiments). Seed: SEED=42 (default).
 """
@@ -78,3 +82,9 @@ for city, g in out.groupby("city", sort=False):
     print(f"  {city:10s} temperature {g['dT'].mean():+.3f} C, humidity {g['dRH'].mean():+.2f} %-pts, "
           f"wind {g['dWS'].mean():+.3f} m/s | visibility below cap x{b['vis_d'].mean() / b['vis_c'].mean():.2f}, "
           f"precipitation total x{g['precip_fc_mm'].sum() / g['precip_ob_mm'].sum():.2f}")
+    # precipitation total = hits + false alarms; clean total = hits + misses
+    hit, miss, fa = g["ow"] & g["fw"], g["ow"] & ~g["fw"], ~g["ow"] & g["fw"]
+    clean_total = g["precip_ob_mm"].sum()
+    print(f"  {'':10s} precipitation hit amount x{g.loc[hit, 'precip_fc_mm'].sum() / g.loc[hit, 'precip_ob_mm'].sum():.2f} "
+          f"(hours wet in both), missed amount {g.loc[miss, 'precip_ob_mm'].sum() / clean_total:.1%}, "
+          f"false-alarm amount {g.loc[fa, 'precip_fc_mm'].sum() / clean_total:.1%} of the clean total")
