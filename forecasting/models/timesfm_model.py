@@ -38,22 +38,44 @@ _SERVER      = _REPO_ROOT / "forecasting" / "run_timesfm_server.py"
 _proc = None
 _lock = threading.Lock()
 TIMESFM_VERSION: Optional[str] = None  # reported by the server at startup
+# Server stderr goes to a temporary file (deleted when closed), so that a
+# server that fails to start or dies mid-run is reported with its own error
+# message instead of an empty reply.
+_stderr_file = None
+
+
+def _server_stderr_tail(n_lines: int = 30) -> str:
+    """Last lines the server wrote to stderr ('' if none)."""
+    if _stderr_file is None:
+        return ""
+    try:
+        _stderr_file.seek(0)
+        text = _stderr_file.read().decode("utf-8", errors="replace")
+    except (OSError, ValueError):
+        return ""
+    lines = [l for l in text.splitlines() if l.strip()]
+    if not lines:
+        return ""
+    return "\nTimesFM server stderr (last lines):\n" + "\n".join(lines[-n_lines:])
 
 
 def _get_proc():
-    global _proc, TIMESFM_VERSION
+    global _proc, TIMESFM_VERSION, _stderr_file
     with _lock:
         if _proc is None or _proc.poll() is not None:
+            if _stderr_file is not None:
+                _stderr_file.close()
+            _stderr_file = tempfile.TemporaryFile()
             _proc = subprocess.Popen(
                 [str(_VENV_PYTHON), str(_SERVER)],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=_stderr_file,
                 text=True,
             )
             ready = _proc.stdout.readline().strip()
             if not ready.startswith("READY|"):
-                raise RuntimeError(f"TimesFM server failed to start: {ready!r}")
+                raise RuntimeError(f"TimesFM server failed to start: {ready!r}{_server_stderr_tail()}")
             TIMESFM_VERSION = ready.split("|", 1)[1]
     return _proc
 
@@ -108,7 +130,9 @@ def _run_timesfm(
         response = proc.stdout.readline().strip()
 
         if response != f"OK|{out_path}":
-            raise RuntimeError(f"TimesFM server error: {response!r}")
+            # an empty reply means the server died: add its own error output
+            tail = "" if response.startswith("ERROR|") else _server_stderr_tail()
+            raise RuntimeError(f"TimesFM server error: {response!r}{tail}")
 
         y_pred = pd.read_parquet(out_path)["y_pred"].values
     finally:

@@ -48,7 +48,7 @@ from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from features import TIME_FEATURES, prepare_xgboost_features
 from run_experiments import load_and_prepare_data
-from provenance import get_provenance
+from provenance import check_output_dir, save_params_json
 
 EARLY_STOPPING_ROUNDS = 50
 MAX_ESTIMATORS = 3000
@@ -356,10 +356,8 @@ def save_results(params: dict, output_dir: str) -> Path:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     city, scenario, n_train = params['city'], params['scenario'], params['n_train_samples']
     output_file = out_dir / f"xgboost_best_params_{city}_{scenario}_{n_train}_{timestamp}.json"
-    with open(output_file, "w") as f:
-        json.dump({**params, "provenance": get_provenance()}, f, indent=2)
-    print(f"\nResults saved to: {output_file}")
-    return output_file
+    # complete JSON printed to the log first (restorable if the write fails)
+    return save_params_json(params, output_file)
 
 
 def run_city(city: str, args) -> None:
@@ -404,6 +402,8 @@ def main() -> None:
     parser.add_argument("--output-dir", type=str, default="results/tuning", help="Directory to save results")
     parser.add_argument("--n-lags-options", type=str, default="12,24,48,168")
     args = parser.parse_args()
+    # A read-only output folder must stop the job now, not after hours of tuning
+    check_output_dir(args.output_dir)
 
     cities = [args.city] if args.city else ["seoul", "london", "washington"]
 

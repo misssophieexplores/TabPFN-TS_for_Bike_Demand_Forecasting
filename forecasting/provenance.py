@@ -19,6 +19,8 @@ commit of a result, run on the laptop after committing:
 and compare the printed code ID with the result's git_commit.
 """
 import hashlib
+import json
+import os
 import platform
 import subprocess
 from functools import lru_cache
@@ -119,6 +121,41 @@ def get_library_versions() -> dict:
 def get_provenance() -> dict:
     """Git commit/dirty flag plus library versions (for tuning JSONs, W&B)."""
     return {**get_code_version(), "library_versions": get_library_versions()}
+
+
+def check_output_dir(output_dir) -> Path:
+    """
+    Create output_dir and check that a file can be written there. The tuning
+    scripts call this before any tuning work: with a read-only folder the
+    params files were otherwise lost only after hours of tuning.
+    """
+    out = Path(output_dir)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        probe = out / f".write_test_{os.getpid()}"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as e:
+        raise PermissionError(
+            f"Cannot write to {out.resolve()} ({e}). The tuning results would be "
+            f"lost: pass --output-dir with a writable folder."
+        ) from e
+    return out
+
+
+def save_params_json(params: dict, output_file) -> Path:
+    """
+    Write a tuning result with its provenance. The complete JSON is printed
+    to the log first, between BEGIN/END marker lines, so the file can be
+    restored exactly from the log if writing it fails.
+    """
+    output_file = Path(output_file)
+    text = json.dumps({**params, "provenance": get_provenance()}, indent=2)
+    print(f"----- BEGIN PARAMS JSON {output_file.name} -----\n{text}\n"
+          f"----- END PARAMS JSON {output_file.name} -----", flush=True)
+    output_file.write_text(text)
+    print(f"\nResults saved to: {output_file}")
+    return output_file
 
 
 if __name__ == "__main__":

@@ -222,6 +222,36 @@ def test_xgboost_tuning_equals_experiment(config, scenario):
 
 
 # ----------------------------------------------------------------------
+# Tuning output: checked before tuning, restorable from the log
+# (3 Oct 2026: read-only folder on the cluster, params files lost)
+# ----------------------------------------------------------------------
+def test_tuning_output_dir_checked_before_tuning(tmp_path):
+    from provenance import check_output_dir
+    assert check_output_dir(tmp_path / "a" / "b").is_dir()
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    with pytest.raises(PermissionError):
+        check_output_dir(blocker / "tuning")      # no folder can be made inside a file
+
+
+def test_params_json_restorable_from_log(tmp_path, capsys):
+    import json
+    from provenance import save_params_json
+    out = save_params_json({"city": "seoul", "n_lags": 24}, tmp_path / "p.json")
+    log = capsys.readouterr().out
+    body = log.split("----- BEGIN PARAMS JSON p.json -----\n")[1].split("\n----- END PARAMS JSON p.json -----")[0]
+    assert json.loads(body) == json.loads(out.read_text())
+    assert "provenance" in json.loads(body)
+
+
+def test_empty_params_path_is_not_set(config):
+    import run_experiments as rx
+    config.xgb_noweather_params_file = ""
+    with pytest.raises(ValueError, match="not set"):
+        rx.build_models(config, keys=["xgboost_noweather"])
+
+
+# ----------------------------------------------------------------------
 # ARIMA / SARIMAX intercept (pmdarima with_intercept -> statsmodels trend)
 # ----------------------------------------------------------------------
 def test_intercept_with_one_difference_is_a_drift():

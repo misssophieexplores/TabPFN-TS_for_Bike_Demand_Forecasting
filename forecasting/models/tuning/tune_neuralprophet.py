@@ -49,7 +49,7 @@ from config import ForecastConfig
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from run_experiments import load_and_prepare_data
-from provenance import get_provenance
+from provenance import check_output_dir, save_params_json
 
 
 # Fixed seed applied immediately before every NeuralProphet model is created.
@@ -359,10 +359,8 @@ def save_results(params: dict, output_dir: str) -> Path:
     output_file = (
         out_dir / f"neuralprophet_best_params_{city}_{scenario}_{n_train}_{timestamp}.json"
     )
-    with open(output_file, "w") as f:
-        json.dump({**params, "provenance": get_provenance()}, f, indent=2)
-    print(f"\nResults saved to: {output_file}")
-    return output_file
+    # complete JSON printed to the log first (restorable if the write fails)
+    return save_params_json(params, output_file)
 
 
 def run_city(city: str, args) -> None:
@@ -419,6 +417,8 @@ def main() -> None:
     parser.add_argument("--search-folds", type=int, default=6,
                         help="Number of search folds, spread evenly over the tune folds (default: 6)")
     args = parser.parse_args()
+    # A read-only output folder must stop the job now, not after hours of tuning
+    check_output_dir(args.output_dir)
 
     cities = [args.city] if args.city else ["seoul", "london", "washington"]
     for city in cities:

@@ -31,7 +31,7 @@ import pandas as pd
 
 from config import ForecastConfig
 from run_experiments import load_and_prepare_data
-from provenance import get_provenance
+from provenance import check_output_dir, save_params_json
 from arima_search import search_orders
 
 AUTO_ARIMA_KWARGS = dict(
@@ -86,10 +86,8 @@ def save_results(params: dict, output_dir: str = '.') -> Path:
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     city, n_train = params['city'], params['n_train_samples']
     output_file = output_dir / f'arima_best_params_{city}_{n_train}_{timestamp}.json'
-    with open(output_file, 'w') as f:
-        json.dump({**params, "provenance": get_provenance()}, f, indent=2)
-    print(f"\nResults saved to: {output_file}")
-    return output_file
+    # complete JSON printed to the log first (restorable if the write fails)
+    return save_params_json(params, output_file)
 
 
 def run_city(city: str, args) -> None:
@@ -118,6 +116,8 @@ def main():
                              'folds (default: 6); candidates are scored on all tune folds')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
+    # A read-only output folder must stop the job now, not after hours of tuning
+    check_output_dir(args.output_dir)
 
     cities = [args.city] if args.city else ['seoul', 'london', 'washington']
 

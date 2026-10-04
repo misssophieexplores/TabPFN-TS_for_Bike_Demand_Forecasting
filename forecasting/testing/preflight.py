@@ -64,25 +64,55 @@ def ok(what, msg=""):
     print(f"  [OK]   {what}{': ' + msg if msg else ''}")
 
 
+# Keys build_models() reads from each params file (a file without them fails there)
+REQUIRED_KEYS = {
+    "arima": ["order", "with_intercept"],
+    "sarimax": ["order", "seasonal_order", "with_intercept"],
+    "xgboost": ["n_lags", "xgb_params"],
+    "xgboost_noweather": ["n_lags", "xgb_params"],
+    "prophet": ["prophet_params"],
+    "neuralprophet": ["n_lags", "neuralprophet_params"],
+    "neuralprophet_noweather": ["n_lags", "neuralprophet_params"],
+}
+
+
 def check_params(config, cutoff):
+    """Check every params file named in the city config. Never raises: each
+    problem is reported and the remaining files and checks still run."""
     import json
+    from provenance import code_id
     seen = {}
+    code_ids = {}   # params field -> code ID / commit the file was tuned with
+    lib_versions = {}
+    # Covariates the experiments give the clean_only models (after
+    # load_and_prepare_data, i.e. with holiday and season, in experiment order)
+    exp_covs = WeatherProcessor(config).get_weather_columns("clean_only")
     for field, (key, scenario) in PARAMS.items():
         path = getattr(config, field)
-        if path is None:
-            fail(config.dataset_name, field, "not set")
+        if not path:  # None or "" (an empty string would open the current folder)
+            fail(config.dataset_name, field, f"not set ({path!r})")
             continue
         if path in seen:
             fail(config.dataset_name, field, f"same file as {seen[path]} ({path})")
         seen[path] = field
-        if not Path(path).exists():
+        if not Path(path).is_file():
             fail(config.dataset_name, field, f"file not found: {path}")
             continue
-        with open(path) as f:
-            p = json.load(f)
+        try:
+            with open(path) as f:
+                p = json.load(f)
+            if not isinstance(p, dict):
+                raise ValueError("not a JSON object")
+        except Exception as e:
+            fail(config.dataset_name, field, f"{path} is not a params JSON file "
+                 f"({type(e).__name__}: {e})")
+            continue
         problems = []
         if "provenance" not in p:
             problems.append("no provenance")
+        else:
+            code_ids[field] = p["provenance"].get("git_commit")
+            lib_versions[field] = p["provenance"].get("library_versions")
         if p.get("city") != config.dataset_name:
             problems.append(f"city={p.get('city')!r}")
         if p.get("n_train_samples") != config.n_train_samples:
@@ -92,12 +122,40 @@ def check_params(config, cutoff):
         last = (p.get("tuning_period") or {}).get("last_timestamp")
         if last is None or pd.Timestamp(last) != cutoff:
             problems.append(f"tuning data end {last} != evaluation cutoff {cutoff}")
-        if key in ("arima", "sarimax") and "with_intercept" not in p:
-            problems.append("no with_intercept (old tuning code)")
+        missing = [k for k in REQUIRED_KEYS[key] if k not in p]
+        if missing:
+            problems.append(f"missing {missing}" + (" (old tuning code)" if "with_intercept" in missing else ""))
+        if key.startswith("xgboost") and "n_estimators" not in (p.get("xgb_params") or {}):
+            problems.append("xgb_params has no n_estimators")
+        # Tuned on the covariates (and, for XGBoost, the column order) the
+        # experiments use: clean_only columns, or none for no_weather
+        if scenario is not None:  # SARIMAX, XGBoost(_NoWeather), NeuralProphet(_NoWeather)
+            expected = [] if scenario == "no_weather" else exp_covs
+            if "covariates_used" not in p:
+                problems.append("no covariates_used")
+            elif list(p["covariates_used"]) != list(expected):
+                problems.append(f"covariates_used {p['covariates_used']} != experiment columns {expected}")
         if problems:
             fail(config.dataset_name, field, f"{path}: " + "; ".join(problems))
         else:
-            ok(field, Path(path).name)
+            ok(field, f"{Path(path).name} (tuned with {code_ids.get(field)})")
+
+    # Provenance overview (information, not a failure): the code ID covers all
+    # .py/.npz files in forecasting/ incl. the city configs, so files tuned
+    # before and after a params-path edit already differ. Whether a change
+    # between tuning and now affects a model is answered by `git diff`.
+    if code_ids:
+        distinct = sorted(set(map(str, code_ids.values())))
+        print(f"  [INFO] params files tuned with {len(distinct)} code version(s): {distinct}; "
+              f"current code ID {code_id()}")
+        if len(distinct) > 1:
+            for cid in distinct:
+                print(f"         {cid}: {[f for f, c in code_ids.items() if str(c) == cid]}")
+    libs = {f: json.dumps(v, sort_keys=True) for f, v in lib_versions.items() if v}
+    if len(set(libs.values())) > 1:
+        print("  [WARN] params files were tuned with different library versions:")
+        for f, v in libs.items():
+            print(f"         {f}: {v}")
 
 
 def run_one_fold(config, model, df, scenario, horizon=24):

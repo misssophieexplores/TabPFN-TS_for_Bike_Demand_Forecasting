@@ -4,7 +4,12 @@ the same CV folds as the experiments (TimeSeriesCV.split, partial_last_fold),
 every horizon, scenario 'degraded', with the settings of the city configs
 (default: fresh forecast, average lean removed). Writes the simulated
 covariate errors per test hour (sim_errors_<seed>.csv) for comparison with
-the calibration (ECMWF errors at the same lead times).
+the calibration (ECMWF errors at the same lead times), and prints per city
+the mean change of each covariate (degraded - clean): temperature, humidity
+and wind in their units; visibility (hours below the cap) and precipitation
+(total amount) as degraded/clean ratios. The bounds and caps (humidity 0-100,
+visibility cap, precipitation cap at the training maximum) are applied after
+the errors, so these are not exactly 0 / 1 (ARCHITECTURE.md, Known Limitation 24).
 
 Run from the folder that contains data/ (as the experiments). Seed: SEED=42 (default).
 """
@@ -55,11 +60,21 @@ for city, mod in [("seoul", "config_seoul"), ("london", "config_london"), ("wash
                                  sol_c=te[col["solar_radiation"]][i], sol_d=X[col["solar_radiation"]][i],
                                  vis_c=te[col["visibility"]][i], vis_d=X[col["visibility"]][i],
                                  precip_ob_mm=float(precip_ob[i]),
+                                 precip_fc_mm=float(X[pcols].clip(lower=0).sum(axis=1)[i]),
+                                 vis_below_cap=bool(model.vis_cap is None
+                                                    or te[col["visibility"]][i] < model.vis_cap - 1e-6),
                                  precip_class=("light_lt1" if 0 < precip_ob[i] < 1 else
                                                "strong_ge1" if precip_ob[i] >= 1 else "dry"),
                                  ow=bool(ow[i]), fw=bool(fw[i]), n_cand=info["n_candidate_runs"],
                                  start=info["forecast_start_utc"],
                                  season_days=info["season_window_days"]))
         print(f"{city} h={h}: {len(splits)} folds, {time.time() - t0:.1f} s", flush=True)
-pd.DataFrame(rows).to_csv(f"sim_errors_{os.environ.get('SEED','42')}.csv", index=False)  # written to the current folder
+out = pd.DataFrame(rows)
+out.to_csv(f"sim_errors_{os.environ.get('SEED','42')}.csv", index=False)  # written to the current folder
 print("rows", len(rows))
+print("\nMean change degraded vs clean (all horizons; per horizon in the CSV):")
+for city, g in out.groupby("city", sort=False):
+    b = g[g["vis_below_cap"]]
+    print(f"  {city:10s} temperature {g['dT'].mean():+.3f} C, humidity {g['dRH'].mean():+.2f} %-pts, "
+          f"wind {g['dWS'].mean():+.3f} m/s | visibility below cap x{b['vis_d'].mean() / b['vis_c'].mean():.2f}, "
+          f"precipitation total x{g['precip_fc_mm'].sum() / g['precip_ob_mm'].sum():.2f}")

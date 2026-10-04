@@ -59,8 +59,8 @@ def _append_rows(path: Path, rows: pd.DataFrame) -> None:
 
 
 def _load_params(path: Optional[str], field: str, how_to_create: str) -> dict:
-    if path is None:
-        raise ValueError(f"config.{field} is not set. {how_to_create}")
+    if not path:  # None or "" (open("") would only say "No such file: ''")
+        raise ValueError(f"config.{field} is not set ({path!r}). {how_to_create}")
     with open(path) as f:
         params = json.load(f)
     # Params files from older tuning code (no provenance) were tuned with a
@@ -269,7 +269,7 @@ class ForecastingExperiment:
         horizon: int,
         weather_scenario: str = "all_weather",
         verbose: bool = True
-    ) -> Optional[Dict]:
+    ) -> Optional[tuple]:
         """
         Run CV for one model-horizon-scenario combination with W&B logging.
         
@@ -331,12 +331,14 @@ class ForecastingExperiment:
         fold_forecasts = []  # hourly forecasts, one DataFrame per successful fold
 
         for fold_idx, (train_df, test_df) in enumerate(splits):
-            y_train, X_train, y_test, X_test = prepare_fold_inputs(
-                self.config, model, weather_proc, train_df, test_df,
-                weather_scenario, horizon, fold_idx,
-            )
-
             try:
+                # Inside the try: an error in the input preparation (e.g. the
+                # weather degradation) is written to the errors log with its
+                # traceback, like a model error. Not timed (see Runtime).
+                y_train, X_train, y_test, X_test = prepare_fold_inputs(
+                    self.config, model, weather_proc, train_df, test_df,
+                    weather_scenario, horizon, fold_idx,
+                )
                 model.reset()
                 # Warnings are ignored globally; record them here to count
                 # convergence warnings (e.g. SARIMAX/ARIMA optimizer) per fold.
