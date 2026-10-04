@@ -34,16 +34,24 @@ How one test window is degraded
    the systematic lean that a locally corrected forecast would not have
    (e.g. Seoul -1.5 C against the city-centre station) is removed:
    X' = X + e(run, lead) - mean_runs e(lead).
+   Humidity is clipped to 0-100, wind at 0. remove_bias and
+   mean_preserving_caps=True (config default): a shift d per hour is added
+   so that the clipped value keeps X on average over the candidate runs
+   (the run is drawn from them with equal probability; clipped_mean_shift).
+   Hours at a bound (humidity 0 or 100, calm wind) get no shift.
 3. Solar radiation: X' = X * (1 + b(lead) + s(lead) * z), z AR(1) with the
    measured lag-1 correlation; b = 0 if remove_bias; 0 at night; capped at
-   the training-fold cap.
+   the training-fold cap. remove_bias and mean_preserving_caps=True: b is set
+   per hour so that the value after the cut at 0 and at the cap keeps X on
+   average (clipped_normal_shift); hours at or above the cap get b = 0.
 4. Precipitation (total precipitation in mm, one decision per hour): miss rate
    per lead time and, by default, observed precipitation intensity (light
    <1 mm/h versus stronger >=1 mm/h); false-alarm ratio remains overall.
    Misses and false alarms persist from hour to hour (latent AR(1) with the
    measured correlation); hits get the measured lognormal amount error
    (mean-preserving if remove_bias, see below); false alarms the measured
-   amount distribution. The false-alarm ratio is
+   amount distribution (rain_amount_unbiased: rescaled, see below). The
+   false-alarm ratio is
    converted into a probability per dry hour with the wet-hour share of the
    training fold. Degraded amounts are capped at the training fold's maximum
    of the column (or the hour's measured amount if larger), as solar
@@ -86,11 +94,21 @@ observations in expectation. With intensity-dependent misses, the false-alarm
 probability uses the clean training fold's light/strong precipitation mix to
 balance the combined expected misses. Against the Seoul station the raw
 forecast is wet about 2.1 times as often as observed (24 h); against ERA5
-(London, Washington) about 0.8-0.9 times.
+(London, Washington) about 0.8-0.9 times. rain_amount_unbiased=True (config
+default since 4 Oct 2026, only with rain_frequency_unbiased): false alarms
+also add as much precipitation as misses remove, in expectation. A false
+alarm's amount keeps the measured log SD, rescaled so that its mean after
+the cap is the expected amount of a missed hour at that lead time, from the
+training fold: (q m_l a_l + (1-q) m_s a_s) / (q m_l + (1-q) m_s), q = light
+share, m = miss rates, a = mean amounts of light / stronger wet hours.
+Without it, Seoul's false alarms (measured: about 0.7 mm) are much smaller
+than its missed amounts.
 
-mean_preserving_caps changes only the visibility below the cap and the hit
-amounts; it uses the same random numbers, so every other output is the same
-with it on or off. It has no effect with remove_bias=False.
+mean_preserving_caps changes only the values inside caps and bounds
+(visibility below the cap, hit amounts, humidity, wind, solar radiation);
+rain_amount_unbiased only false-alarm amounts. Both use the same random
+numbers, so every other output is the same with them on or off.
+mean_preserving_caps has no effect with remove_bias=False.
 
 noise_scale multiplies every error magnitude (additive errors, including
 their bias if it is kept; the log errors of visibility and precipitation
@@ -231,6 +249,64 @@ def capped_lognormal(x, c, sigma, z):
     return np.where(active, y, x)
 
 
+def clipped_mean_shift(x, errors, lo=-np.inf, hi=np.inf, n_iter=60):
+    """
+    Shift d per hour with mean_k clip(x + d + errors[k], lo, hi) = x: the
+    clipped forecast keeps x on average over equally likely errors (the
+    replayed candidate runs, one of which is drawn). x: [n]; errors:
+    [n_runs, n]. The mean grows with d from lo to hi, so d is found by
+    bisection (vectorised, n_iter steps). Returns 0 for hours at or beyond a
+    bound (x <= lo or x >= hi: no shift keeps the mean there) and for hours
+    without errors.
+    """
+    x = np.asarray(x, dtype=float)
+    e = np.asarray(errors, dtype=float)
+    d = np.zeros(x.shape)
+    act = (x > lo) & (x < hi) & np.any(e != 0, axis=0)
+    if act.any():
+        xa, ea = x[act], e[:, act]
+        r = np.abs(ea).max(axis=0) + 1.0          # every forecast at lo / hi at the ends
+        d_lo = -r - (xa - lo if np.isfinite(lo) else 0.0)
+        d_hi = r + (hi - xa if np.isfinite(hi) else 0.0)
+        for _ in range(n_iter):
+            mid = 0.5 * (d_lo + d_hi)
+            low = np.clip(xa + mid + ea, lo, hi).mean(axis=0) < xa
+            d_lo = np.where(low, mid, d_lo)
+            d_hi = np.where(low, d_hi, mid)
+        d[act] = 0.5 * (d_lo + d_hi)
+    return d
+
+
+def clipped_normal_shift(x, sd, cap, n_iter=60):
+    """
+    Relative shift b per hour with E[clip(x * (1 + b + sd * Z), 0, cap)] = x,
+    Z ~ N(0, 1) (solar radiation: relative error, cut at 0 and at the
+    training cap). With V = x * (1 + b + sd * Z) ~ N(mu, tau^2), alpha =
+    -mu/tau, beta = (cap - mu)/tau:
+        E[clip(V, 0, cap)] = cap * (1 - Phi(beta)) + mu * (Phi(beta) - Phi(alpha))
+                             + tau * (phi(alpha) - phi(beta)),
+    which grows with mu; mu is found by bisection on [-10 tau, cap + 10 tau].
+    Returns 0 where x <= 0 (night), x >= cap or sd == 0.
+    """
+    x, sd, cap = np.broadcast_arrays(*(np.asarray(a, dtype=float) for a in (x, sd, cap)))
+    b = np.zeros(x.shape)
+    act = (x > 0) & (x < cap) & (sd > 0)
+    if act.any():
+        xa, c = x[act], cap[act]
+        tau = xa * sd[act]
+        pdf = lambda u: np.exp(-0.5 * u * u) / np.sqrt(2.0 * np.pi)
+        lo, hi = -10.0 * tau, c + 10.0 * tau
+        for _ in range(n_iter):
+            mu = 0.5 * (lo + hi)
+            a, bt = -mu / tau, (c - mu) / tau
+            m = c * ndtr(-bt) + mu * (ndtr(bt) - ndtr(a)) + tau * (pdf(a) - pdf(bt))
+            low = m < xa
+            lo = np.where(low, mu, lo)
+            hi = np.where(low, hi, mu)
+        b[act] = 0.5 * (lo + hi) / xa - 1.0
+    return b
+
+
 class NWPErrorModel:
     """Per-city measured NWP error model loaded from a calibration .npz file."""
 
@@ -309,15 +385,15 @@ class NWPErrorModel:
                 noise_scale=1.0, run_hours=(0, 12), delay_h=6,
                 season_days=30, fresh_forecast=True, remove_bias=True, seasonal_rain=True,
                 rain_intensity_dependent=False, rain_frequency_unbiased=False,
-                mean_preserving_caps=False):
+                rain_amount_unbiased=False, mean_preserving_caps=False):
         """
         Degrade one test window. Returns (degraded DataFrame, info dict).
         df rows must be the consecutive test hours, times_utc their UTC times.
         fresh_forecast / remove_bias / seasonal_rain /
         rain_intensity_dependent / rain_frequency_unbiased /
-        mean_preserving_caps: see the module docstring. The last three
-        default to False here; WeatherProcessor always passes the config
-        values (all True by default).
+        rain_amount_unbiased / mean_preserving_caps: see the module
+        docstring. The last four default to False here; WeatherProcessor
+        always passes the config values (all True by default).
         """
         if noise_scale < 0:
             raise ValueError(f"noise_scale must be >= 0, got {noise_scale}")
@@ -334,6 +410,11 @@ class NWPErrorModel:
         if remove_bias:
             # average error of the candidate runs (same start hour and season)
             e_tqw = e_tqw - self.tqw_errors[cand][:, leads, :].mean(axis=0)
+        cap_mean = remove_bias and mean_preserving_caps
+        if cap_mean:
+            # errors of all candidate runs (the run is drawn from them), bias removed
+            e_cand = self.tqw_errors[cand][:, leads, :]
+            e_cand = e_cand - e_cand.mean(axis=0)                 # [runs, n, 3]
 
         # Random numbers, always drawn in the same order (independent of the
         # columns present and of noise_scale)
@@ -353,15 +434,27 @@ class NWPErrorModel:
                 continue
             x = df[col].to_numpy(dtype=float)
             if vtype in TQW_TYPES:
-                y = x + s * e_tqw[:, TQW_TYPES.index(vtype)]
+                j = TQW_TYPES.index(vtype)
+                y = x + s * e_tqw[:, j]
+                # cap_mean: shifted so that the value after the clip keeps x
+                # on average over the candidate runs
                 if vtype == "humidity":
+                    if cap_mean:
+                        y = y + clipped_mean_shift(x, s * e_cand[:, :, j], 0.0, 100.0)
                     y = np.clip(y, 0.0, 100.0)
                 elif vtype == "wind_speed":
+                    if cap_mean:
+                        y = y + clipped_mean_shift(x, s * e_cand[:, :, j], 0.0)
                     y = np.maximum(y, 0.0)
             elif vtype == "solar_radiation":
                 bias = 0.0 if remove_bias else self.solar_bias[leads]
                 rel = bias + self.solar_sd[leads] * z_solar
-                y = np.where(x > 0, x * (1.0 + s * rel), 0.0)
+                if cap_mean:      # keeps x on average after the cut at 0 and the cap
+                    shift = clipped_normal_shift(x, s * self.solar_sd[leads],
+                                                 degradation_params["solar_cap"])
+                    y = np.where(x > 0, x * (1.0 + shift + s * rel), 0.0)
+                else:
+                    y = np.where(x > 0, x * (1.0 + s * rel), 0.0)
                 y = np.clip(y, 0.0, degradation_params["solar_cap"])
             elif vtype == "visibility":
                 y = self._visibility(x, z_vis, s, degradation_params.get("visibility_max"),
@@ -381,6 +474,9 @@ class NWPErrorModel:
             if "wet_fraction" not in degradation_params:
                 raise ValueError("degradation_params has no 'wet_fraction'")
             fa_col = precip_cols[0]   # one total-precipitation column per city
+            class_means = (None if "precip_light_mean" not in degradation_params
+                           else (degradation_params["precip_light_mean"],
+                                 degradation_params["precip_strong_mean"]))
             params = self.rain_params(start.dayofyear, seasonal_rain)
             intensity_miss = self.rain_miss_rates(
                 start.dayofyear, seasonal_rain, rain_intensity_dependent
@@ -390,7 +486,9 @@ class NWPErrorModel:
                                     rain_frequency_unbiased, degradation_params.get("precip_max"),
                                     intensity_miss=intensity_miss,
                                     light_fraction=degradation_params.get("precip_light_fraction"),
-                                    mean_preserving_caps=mean_preserving_caps)
+                                    mean_preserving_caps=mean_preserving_caps,
+                                    amount_unbiased=rain_amount_unbiased,
+                                    class_means=class_means)
             for c in precip_cols:
                 out[c] = p[c].to_numpy(dtype=float)
 
@@ -398,6 +496,7 @@ class NWPErrorModel:
                     seasonal_rain=bool(seasonal_rain and self.season_doy is not None),
                     rain_intensity_dependent=bool(rain_intensity_dependent),
                     rain_frequency_unbiased=bool(rain_frequency_unbiased),
+                    rain_amount_unbiased=bool(rain_amount_unbiased and rain_frequency_unbiased),
                     mean_preserving_caps=bool(mean_preserving_caps and remove_bias),
                     forecast_start_utc=str(start), start_hour_utc=int(start_hour),
                     lead_first=int(leads[0]), lead_last=int(leads[-1]),
@@ -470,10 +569,13 @@ class NWPErrorModel:
     def _precipitation(self, precip, leads, wet_fraction, u_miss, u_fa, z_hit,
                        z_fa_amount, s, fa_col, remove_bias=False, params=None,
                        frequency_unbiased=False, caps=None, intensity_miss=None,
-                       light_fraction=None, mean_preserving_caps=False):
+                       light_fraction=None, mean_preserving_caps=False,
+                       amount_unbiased=False, class_means=None):
         miss_rate, far, hit_mean_log, hit_sd_log = params or self.rain_params(seasonal=False)
         cap_mean = remove_bias and mean_preserving_caps
         hits, hit_sd = [], []
+        amount_unbiased = amount_unbiased and frequency_unbiased
+        fa_hours, fa_target = [], []
         vals = precip.to_numpy(dtype=float)
         out = np.zeros_like(vals)
         fa_idx = list(precip.columns).index(fa_col)
@@ -497,10 +599,24 @@ class NWPErrorModel:
                 fa_miss_rate = miss_rate
         else:
             fa_miss_rate = miss_rate
+        if amount_unbiased:
+            if light_fraction is None or class_means is None:
+                raise ValueError("degradation_params has no 'precip_light_fraction', "
+                                 "'precip_light_mean' or 'precip_strong_mean'")
+            q_light = float(light_fraction)
+            a_light, a_strong = (float(a) for a in class_means)
+            miss_cls = intensity_miss if intensity_dependent else np.vstack([miss_rate, miss_rate])
         for i, L in enumerate(leads):
             if np.all(vals[i] == 0):
                 if u_fa[i] < self.false_alarm_prob(L, wet_fraction, fa_miss_rate, far,
                                                    frequency_unbiased):
+                    if amount_unbiased:   # amount after the loop
+                        # expected amount of a missed hour at this lead (training fold)
+                        w_l, w_s = q_light * miss_cls[0, L], (1.0 - q_light) * miss_cls[1, L]
+                        fa_hours.append(i)
+                        fa_target.append((w_l * a_light + w_s * a_strong) / (w_l + w_s) if w_l + w_s > 0
+                                         else q_light * a_light + (1.0 - q_light) * a_strong)
+                        continue
                     out[i, fa_idx] = np.exp(self.fa_mean_log + self.fa_sd_log * z_fa_amount[i])
             else:
                 row_miss = miss_rate[L]
@@ -527,6 +643,14 @@ class NWPErrorModel:
             x = vals[hits]                                          # [hit hours, columns]
             out[hits] = capped_lognormal(x, np.maximum(col_cap, x), np.array(hit_sd)[:, None],
                                          z_hit[hits][:, None])
+        if fa_hours:
+            # false alarms add as much as misses remove, in expectation: the
+            # measured false-alarm amount distribution (log SD) rescaled to
+            # mean = expected missed amount, after the cap below
+            fa_cap = caps.get(fa_col) if caps else None
+            out[fa_hours, fa_idx] = capped_lognormal(
+                np.array(fa_target), np.inf if fa_cap is None else fa_cap, self.fa_sd_log,
+                z_fa_amount[fa_hours])
         # cap: training-fold maximum of the column, never below the hour's
         # measured amount (the lognormal amount error has no upper limit)
         for j, c in enumerate(precip.columns):

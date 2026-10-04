@@ -281,9 +281,11 @@ class WeatherProcessor:
           config.nwp_remove_bias=True (default) the average forecast error
           (lean) is removed; with config.nwp_seasonal_rain=True (default)
           the rain error rates are those of the time of year; with
-          config.nwp_mean_preserving_caps=True (default) visibility and
-          rain-hit amounts keep the clean value on average after the caps.
-          See weather/nwp_error_model.py.
+          config.nwp_mean_preserving_caps=True (default) the degraded
+          covariates keep the clean value on average after their caps and
+          bounds; with config.nwp_rain_amount_unbiased=True (default) false
+          alarms add as much rain as misses remove, in expectation. See
+          weather/nwp_error_model.py.
         - "nwp_measured", config.nwp_fresh_forecast=False: the newest ECMWF
           run available at the issue time is used (runs at
           config.nwp_run_hours_utc, available config.nwp_availability_delay_h
@@ -344,6 +346,7 @@ class WeatherProcessor:
                 seasonal_rain=self.config.nwp_seasonal_rain,
                 rain_intensity_dependent=self.config.nwp_rain_intensity_dependent,
                 rain_frequency_unbiased=self.config.nwp_rain_frequency_unbiased,
+                rain_amount_unbiased=self.config.nwp_rain_amount_unbiased,
                 mean_preserving_caps=self.config.nwp_mean_preserving_caps,
             )
             self.last_degradation_info = info

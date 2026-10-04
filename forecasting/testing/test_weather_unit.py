@@ -488,7 +488,7 @@ import importlib
 import json
 from weather.nwp_error_model import (
     load_error_model, run_init_and_leads, fresh_start_and_leads, to_utc, ar1, MAX_LEAD,
-    capped_mean_log, capped_lognormal,
+    capped_mean_log, capped_lognormal, clipped_mean_shift, clipped_normal_shift,
 )
 
 CITY_MODULES = {"seoul": "config_seoul", "london": "config_london", "washington": "config_washington"}
@@ -550,12 +550,14 @@ class TestMeasuredNWPModel:
         assert cfg.nwp_fresh_forecast and cfg.nwp_remove_bias and cfg.nwp_seasonal_rain
         assert cfg.nwp_rain_intensity_dependent
         assert cfg.nwp_rain_frequency_unbiased
-        assert cfg.nwp_mean_preserving_caps
-        assert cfg.degradation_label() == (
-            "nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased,cap_mean)")
+        assert cfg.nwp_mean_preserving_caps and cfg.nwp_rain_amount_unbiased
+        assert cfg.degradation_label() == ("nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,"
+                                           "rain_freq_unbiased,rain_amount_unbiased,cap_mean)")
         cfg.nwp_remove_bias = False                  # cap_mean needs the bias removed
-        assert cfg.degradation_label() == (
-            "nwp_measured(fresh,with_bias,seasonal_rain,intensity_miss,rain_freq_unbiased)")
+        assert cfg.degradation_label() == ("nwp_measured(fresh,with_bias,seasonal_rain,intensity_miss,"
+                                           "rain_freq_unbiased,rain_amount_unbiased)")
+        cfg.nwp_rain_frequency_unbiased = False      # amounts are balanced only with frequencies
+        assert cfg.degradation_label() == "nwp_measured(fresh,with_bias,seasonal_rain,intensity_miss)"
         for city in CITY_MODULES:
             config = _city_config(city)
             assert config.timezone
@@ -671,7 +673,8 @@ class TestMeasuredNWPModel:
         """Intensity-dependent misses with light (<1 mm/h) and stronger rain
         mixed (70 / 30 % in training and test): each class is missed at its
         calibrated rate, and false alarms balance the combined misses, so the
-        degraded data are wet about as often as the clean data."""
+        degraded data are wet about as often as the clean data; with
+        nwp_rain_amount_unbiased their amounts also balance the missed amounts."""
         h = 48
         for city in CITY_MODULES:
             proc = _processor(city)
@@ -701,11 +704,15 @@ class TestMeasuredNWPModel:
                 n["wl"] += lt.sum(); n["ml"] += (lt & (f == 0)).sum()
                 n["ws"] += st.sum(); n["ms"] += (st & (f == 0)).sum()
                 n["obs"] += (o > 0).sum(); n["fc"] += (f > 0).sum()
+                n["miss_mm"] = n.get("miss_mm", 0) + o[(o > 0) & (f == 0)].sum()
+                n["fa_mm"] = n.get("fa_mm", 0) + f[(o == 0) & (f > 0)].sum()
                 exp_l += list(rates[0, leads][lt]); exp_s += list(rates[1, leads][st])
             assert n["ml"] / n["wl"] == pytest.approx(np.mean(exp_l), abs=0.06), city
             assert n["ms"] / n["ws"] == pytest.approx(np.mean(exp_s), abs=0.06), city
             assert n["ml"] / n["wl"] > n["ms"] / n["ws"], city
             assert n["fc"] / n["obs"] == pytest.approx(1.0, abs=0.15), city
+            # nwp_rain_amount_unbiased: false alarms add about what misses remove
+            assert n["fa_mm"] / n["miss_mm"] == pytest.approx(1.0, abs=0.25), city
 
     def test_seoul_winter_split_station_and_forecast(self):
         """Seoul November-March: the station's 3-hour totals (at 00, 03, ...,
@@ -1094,11 +1101,14 @@ class TestMeasuredNWPModel:
                                    [capped_mean_log(a, b, s) for a, b, s in zip(xs, cs, sds)])
 
     def test_mean_preserving_caps_switch(self):
-        """nwp_mean_preserving_caps changes only visibility below the cap
-        and rain-hit amounts: hours at the visibility cap, rain misses, false
-        alarms and their amounts and all other columns stay bit-identical.
-        Degraded values stay within the caps (London: the training maximum
-        or the hour's value). No effect with nwp_remove_bias=False."""
+        """nwp_mean_preserving_caps changes only the capped or bounded
+        values: visibility below the cap, rain-hit amounts, humidity, wind and
+        solar radiation inside their bounds. Hours at the visibility cap, at
+        humidity 0 / 100 and calm wind, night hours, rain misses, false alarms
+        and their amounts, temperature and snow depth stay bit-identical.
+        Degraded values stay within the caps (London visibility: the training
+        maximum or the hour's value). No effect with nwp_remove_bias=False."""
+        changing = ("visibility", "precipitation", "humidity", "wind_speed", "solar_radiation")
         for city, cap in (("seoul", 20.0), ("washington", 16.0), ("london", None)):
             for remove_bias in (True, False):
                 out = {}
@@ -1106,14 +1116,20 @@ class TestMeasuredNWPModel:
                     proc = _processor(city, remove_bias=remove_bias)
                     cfg = proc.config
                     cfg.nwp_mean_preserving_caps = caps_on
-                    vcol = [c for c, t in cfg.weather_degradation_mapping.items() if t == "visibility"][0]
-                    pcol = _precip_col(cfg)
+                    m = cfg.weather_degradation_mapping
+                    col = {t: c for c, t in m.items()}
+                    vcol, pcol = col["visibility"], _precip_col(cfg)
                     df = _synthetic_city_data(cfg, "2018-04-01", 720 + 168, rain_every=4)
                     # 0.2..3.0 mm in train and test (training maximum 3.0)
                     df[pcol] = np.where(df.index % 4 == 0, 0.2 + 0.4 * ((df.index // 4) % 8), 0.0)
                     if cap is not None:
                         df[vcol] = np.minimum(df[vcol], cap)
                         df.loc[df.index % 3 == 0, vcol] = cap               # hours at the cap
+                    df.loc[df.index % 5 == 0, col["humidity"]] = 100.0      # saturated
+                    df.loc[df.index % 5 == 1, col["humidity"]] = 97.0       # near saturation
+                    df.loc[df.index % 7 == 0, col["wind_speed"]] = 0.0      # calm
+                    sol = col["solar_radiation"]                            # varied daylight values
+                    df[sol] = np.where(df[sol] > 0, 50.0 + 550.0 * ((df.index * 7) % 11) / 10, 0.0)
                     train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
                     proc.prepare_weather_data(train, "degraded", horizon=168, fold_idx=2, split="train")
                     out[caps_on] = proc.prepare_weather_data(test, "degraded", horizon=168,
@@ -1121,8 +1137,17 @@ class TestMeasuredNWPModel:
                     assert proc.last_degradation_info["mean_preserving_caps"] == (caps_on and remove_bias)
                 off, on = out[False], out[True]
                 for c in off.columns:
-                    if c not in (vcol, pcol) or not remove_bias:
+                    if m.get(c) not in changing or not remove_bias:
                         assert off[c].to_numpy().tobytes() == on[c].to_numpy().tobytes(), (city, c)
+                # unchanged at the bounds, changed inside them
+                for t, at in (("humidity", test[col["humidity"]] >= 100.0),
+                              ("wind_speed", test[col["wind_speed"]] <= 0.0),
+                              ("solar_radiation", test[sol] <= 0.0)):
+                    c = col[t]
+                    assert at.any() and (on[c][at] == off[c][at]).all(), (city, t)
+                    assert (on[c][~at] != off[c][~at]).any() or not remove_bias, (city, t)
+                assert on[col["humidity"]].between(0, 100).all() and (on[col["wind_speed"]] >= 0).all()
+                assert on[sol].max() <= proc.degradation_params["solar_cap"] + 1e-9
                 x = test[vcol].to_numpy()
                 below = np.ones(len(x), bool) if cap is None else x < cap - 1e-6
                 assert cap is None or (on[vcol][~below] == off[vcol][~below]).all()
@@ -1136,6 +1161,88 @@ class TestMeasuredNWPModel:
                 assert hit.sum() > 5 and ((on[pcol][hit] != off[pcol][hit]).any() or not remove_bias)
                 assert (on[pcol] <= np.maximum(proc.degradation_params["precip_max"][pcol],
                                                test[pcol]) + 1e-9).all()
+
+    def test_clipped_mean_shift(self):
+        """Humidity and wind (replayed errors): with the shift, the clipped
+        forecast keeps x exactly on average over the candidate runs' errors.
+        Hours at a bound and hours without errors get no shift."""
+        rng = np.random.default_rng(5)
+        e = rng.standard_normal((80, 9)) * 9.0
+        e -= e.mean(axis=0)                                       # bias removed
+        x = np.array([0.0, 2.0, 30.0, 60.0, 88.0, 95.0, 99.0, 99.9, 100.0])
+        d = clipped_mean_shift(x, e, 0.0, 100.0)
+        inside = (x > 0) & (x < 100)
+        np.testing.assert_allclose(np.clip(x + d + e, 0, 100).mean(axis=0)[inside], x[inside], atol=1e-9)
+        assert d[0] == d[-1] == 0.0 and d[3] == pytest.approx(0.0, abs=1e-9)   # bounds; far from them
+        assert d[1] < 0 < d[5] < d[6] < d[7]                     # pushed away from the near bound
+        w = np.array([0.0, 0.2, 1.0, 5.0])
+        ew = rng.standard_normal((80, 4)) * 1.5
+        ew -= ew.mean(axis=0)
+        dw = clipped_mean_shift(w, ew, 0.0)
+        np.testing.assert_allclose(np.maximum(w + dw + ew, 0).mean(axis=0)[1:], w[1:], atol=1e-9)
+        assert dw[0] == 0.0 and (clipped_mean_shift(w, np.zeros((5, 4)), 0.0) == 0).all()
+
+    def test_clipped_normal_shift(self):
+        """Solar radiation: E[clip(x (1 + b + sd Z), 0, cap)] = x with the
+        shift b (Monte Carlo within 0.5 %); no shift at night, at or above the
+        cap, or without error."""
+        z = np.random.default_rng(6).standard_normal(1_000_000)
+        cap = 900.0
+        for x in (50.0, 300.0, 700.0, 850.0, 890.0):
+            for sd in (0.1, 0.3, 0.8):
+                b = clipped_normal_shift(x, sd, cap)
+                assert np.clip(x * (1 + b + sd * z), 0, cap).mean() == pytest.approx(x, rel=0.005), (x, sd)
+        assert (clipped_normal_shift([0.0, 900.0, 950.0, 300.0], [0.3, 0.3, 0.3, 0.0], cap) == 0).all()
+
+    def test_rain_amount_unbiased(self):
+        """nwp_rain_amount_unbiased: a false alarm's mean amount (after the
+        cap) is the expected amount of a missed hour from the training fold,
+        q m_l a_l + (1-q) m_s a_s over q m_l + (1-q) m_s; the log SD stays the
+        measured one. Only false-alarm amounts change."""
+        model = load_error_model(_city_config("seoul").nwp_calibration_file)
+        miss = model.rain_miss_rates(196, seasonal=True, intensity_dependent=True)
+        L, n = 24, 100_000
+        q, a_l, a_s, cap = 0.6, 0.4, 3.0, 8.0
+        common = dict(precip=pd.DataFrame({"precipitation_mm": np.zeros(n)}), leads=np.full(n, L),
+                      wet_fraction=0.1, u_miss=np.ones(n), u_fa=np.zeros(n), z_hit=np.zeros(n),
+                      z_fa_amount=np.random.default_rng(8).standard_normal(n), s=1.0,
+                      fa_col="precipitation_mm", remove_bias=True, params=model.rain_params(196),
+                      frequency_unbiased=True, caps={"precipitation_mm": cap}, intensity_miss=miss,
+                      light_fraction=q, class_means=(a_l, a_s))
+        got = model._precipitation(**common, amount_unbiased=True)["precipitation_mm"]
+        w_l, w_s = q * miss[0, L], (1 - q) * miss[1, L]
+        assert (got > 0).all() and got.max() <= cap
+        assert got.mean() == pytest.approx((w_l * a_l + w_s * a_s) / (w_l + w_s), rel=0.01)
+        assert np.log(got[got < cap]).std() == pytest.approx(model.fa_sd_log, rel=0.1)
+        old = model._precipitation(**common, amount_unbiased=False)["precipitation_mm"]
+        assert old.mean() == pytest.approx(np.exp(model.fa_mean_log + model.fa_sd_log ** 2 / 2), rel=0.05)
+        # needs the frequency balance: off without it
+        common["frequency_unbiased"] = False
+        assert model._precipitation(**common, amount_unbiased=True).equals(
+            model._precipitation(**common, amount_unbiased=False))
+        # through the processor: only false-alarm amounts change
+        out = {}
+        for on in (False, True):
+            proc = _processor("seoul")
+            proc.config.nwp_rain_amount_unbiased = on
+            df = _synthetic_city_data(proc.config, "2018-07-01", 720 + 168)
+            amounts = np.array([0.3, 0.6, 2.0, 4.0])[(df.index // 6) % 4]
+            df["precipitation_mm"] = np.where(df.index % 6 == 0, amounts, 0.0)
+            train, test = df.iloc[:720], df.iloc[720:].reset_index(drop=True)
+            proc.prepare_weather_data(train, "degraded", horizon=168, fold_idx=3, split="train")
+            assert proc.degradation_params["precip_light_mean"] == pytest.approx(0.45)
+            assert proc.degradation_params["precip_strong_mean"] == pytest.approx(3.0)
+            out[on] = proc.prepare_weather_data(test, "degraded", horizon=168, fold_idx=3, split="test")
+            assert proc.last_degradation_info["rain_amount_unbiased"] == on
+        pcol = "precipitation_mm"
+        dry = (test[pcol] == 0).to_numpy()
+        for c in out[False].columns:
+            if c != pcol:
+                assert out[False][c].equals(out[True][c]), c
+        assert out[False][pcol][~dry].equals(out[True][pcol][~dry])
+        fa = dry & (out[False][pcol] > 0).to_numpy()
+        assert ((out[True][pcol] > 0).to_numpy() == (out[False][pcol] > 0).to_numpy()).all()
+        assert fa.sum() > 3 and (out[True][pcol][fa] != out[False][pcol][fa]).mean() > 0.8
 
     def test_ar1_persistence(self):
         z = ar1(200000, 0.8, np.random.default_rng(1))

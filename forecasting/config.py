@@ -96,12 +96,19 @@ class ForecastConfig:
     #       bias. Seoul's raw forecast is wet about 2.1 times as often as the
     #       station (24 h). False: measured false-alarm ratio.
     nwp_rain_frequency_unbiased: bool = True
-    #   nwp_mean_preserving_caps=True: with nwp_remove_bias, the visibility
-    #       error (hours below the cap) and the rain-hit amount error keep the
-    #       clean value on average after the cut at the cap (visibility cap
-    #       or training maximum; rain: training maximum). False: mean-
-    #       preserving before the cut, so the cut lowers visibility and rain
-    #       amounts on average (ARCHITECTURE.md, Known Limitation 24).
+    #   nwp_rain_amount_unbiased=True (with nwp_rain_frequency_unbiased):
+    #       false-alarm amounts are sized so that false alarms add as much
+    #       precipitation as misses remove, in expectation (training fold's
+    #       light/strong amounts). False: measured false-alarm amounts, much
+    #       smaller than the missed amounts in Seoul (total about x0.84).
+    nwp_rain_amount_unbiased: bool = True
+    #   nwp_mean_preserving_caps=True: with nwp_remove_bias, every degraded
+    #       covariate keeps the clean value on average after its caps and
+    #       bounds: visibility (hours below the cap; cap or training maximum),
+    #       rain-hit amounts (training maximum), humidity (0-100), wind
+    #       (>= 0) and solar radiation (0 to the training cap). Hours at a
+    #       bound are not changed. False: mean-preserving before the cut, so
+    #       the cuts shift the averages (ARCHITECTURE.md, Known Limitation 24).
     nwp_mean_preserving_caps: bool = True
     nwp_run_hours_utc: List[int] = field(default_factory=lambda: [0, 12])
     nwp_availability_delay_h: int = 6
@@ -146,8 +153,9 @@ class ForecastConfig:
     def degradation_label(self) -> str:
         """Error model and its settings, as written to the results
         ('degradation_model' column), e.g.
-        'nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased,cap_mean)'.
-        cap_mean only if nwp_mean_preserving_caps is in effect (needs nwp_remove_bias)."""
+        'nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased,
+        rain_amount_unbiased,cap_mean)'. rain_amount_unbiased only with
+        nwp_rain_frequency_unbiased, cap_mean only with nwp_remove_bias (where they act)."""
         if self.degradation_model != "nwp_measured":
             return self.degradation_model
         age = "fresh" if self.nwp_fresh_forecast else f"age_delay{self.nwp_availability_delay_h}h"
@@ -157,5 +165,7 @@ class ForecastConfig:
             rain += ",intensity_miss"
         if self.nwp_rain_frequency_unbiased:
             rain += ",rain_freq_unbiased"
+            if self.nwp_rain_amount_unbiased:
+                rain += ",rain_amount_unbiased"
         caps = ",cap_mean" if self.nwp_mean_preserving_caps and self.nwp_remove_bias else ""
         return f"nwp_measured({age},{bias},{rain}{caps})"

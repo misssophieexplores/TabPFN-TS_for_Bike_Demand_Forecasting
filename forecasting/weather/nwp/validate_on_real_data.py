@@ -6,17 +6,20 @@ every horizon, scenario 'degraded', with the settings of the city configs
 covariate errors per test hour (sim_errors_<seed>.csv) for comparison with
 the calibration (ECMWF errors at the same lead times), and prints per city
 the mean change of each covariate (degraded - clean): temperature, humidity
-and wind in their units; visibility (hours below the cap) and precipitation
-(total amount) as degraded/clean ratios. Precipitation is also split into
-hits (degraded/clean amount over the hours wet in both), missed amount (clean
-amount in hours wet in clean and dry in degraded) and false-alarm amount
-(degraded amount in hours dry in clean and wet in degraded), the last two as
-shares of the clean total. Visibility below the cap and hit amounts are
-mean-preserving after their caps (config.nwp_mean_preserving_caps, default),
-so these ratios are ~1 up to sampling variation (about +/-0.04 per seed for
-hits); humidity (clipped at 0-100) and the precipitation total (false-alarm
-amounts smaller than missed amounts in Seoul) are not exactly 0 / 1
-(ARCHITECTURE.md, Known Limitation 24).
+and wind in their units; solar radiation (daylight hours), visibility (hours
+below the cap) and precipitation (total amount) as degraded/clean ratios.
+Precipitation is also split into hits (degraded/clean amount over the hours
+wet in both), missed amount (clean amount in hours wet in clean and dry in
+degraded) and false-alarm amount (degraded amount in hours dry in clean and
+wet in degraded), the last two as shares of the clean total.
+
+Every number comes with (+/-): half-width of the 95 % range when the test
+windows are resampled (bootstrap within each horizon, 1000 draws), i.e. how
+much the number varies by chance with one seed. With the default settings
+(nwp_mean_preserving_caps, nwp_rain_amount_unbiased) the expected changes
+are 0 / x1, except humidity at exactly 100 % and calm wind (at their bounds)
+and visibility at its cap; a number within its (+/-) of 0 / x1 is
+consistent with no bias (ARCHITECTURE.md, Known Limitation 24).
 
 Run from the folder that contains data/ (as the experiments). Seed: SEED=42 (default).
 """
@@ -79,15 +82,54 @@ for city, mod in [("seoul", "config_seoul"), ("london", "config_london"), ("wash
 out = pd.DataFrame(rows)
 out.to_csv(f"sim_errors_{os.environ.get('SEED','42')}.csv", index=False)  # written to the current folder
 print("rows", len(rows))
-print("\nMean change degraded vs clean (all horizons; per horizon in the CSV):")
-for city, g in out.groupby("city", sort=False):
-    b = g[g["vis_below_cap"]]
-    print(f"  {city:10s} temperature {g['dT'].mean():+.3f} C, humidity {g['dRH'].mean():+.2f} %-pts, "
-          f"wind {g['dWS'].mean():+.3f} m/s | visibility below cap x{b['vis_d'].mean() / b['vis_c'].mean():.2f}, "
-          f"precipitation total x{g['precip_fc_mm'].sum() / g['precip_ob_mm'].sum():.2f}")
-    # precipitation total = hits + false alarms; clean total = hits + misses
+
+
+def window_sums(g):
+    """Per test window (horizon, fold): the sums each statistic is a ratio of."""
+    day, below = g["sol_c"] > 0, g["vis_below_cap"]
     hit, miss, fa = g["ow"] & g["fw"], g["ow"] & ~g["fw"], ~g["ow"] & g["fw"]
-    clean_total = g["precip_ob_mm"].sum()
-    print(f"  {'':10s} precipitation hit amount x{g.loc[hit, 'precip_fc_mm'].sum() / g.loc[hit, 'precip_ob_mm'].sum():.2f} "
-          f"(hours wet in both), missed amount {g.loc[miss, 'precip_ob_mm'].sum() / clean_total:.1%}, "
-          f"false-alarm amount {g.loc[fa, 'precip_fc_mm'].sum() / clean_total:.1%} of the clean total")
+    fc, ob = g["precip_fc_mm"], g["precip_ob_mm"]
+    cols = dict(n=np.ones(len(g)), dT=g["dT"], dRH=g["dRH"], dWS=g["dWS"],
+                sol_d=g["sol_d"].where(day, 0.0), sol_c=g["sol_c"].where(day, 0.0),
+                vis_d=g["vis_d"].where(below, 0.0), vis_c=g["vis_c"].where(below, 0.0),
+                fc=fc, ob=ob, hit_fc=fc.where(hit, 0.0), hit_ob=ob.where(hit, 0.0),
+                miss_ob=ob.where(miss, 0.0), fa_fc=fc.where(fa, 0.0))
+    return pd.DataFrame(cols, index=g.index).groupby([g["horizon"], g["fold"]]).sum()
+
+
+STATS = {
+    "dT": lambda S: S["dT"] / S["n"], "dRH": lambda S: S["dRH"] / S["n"],
+    "dWS": lambda S: S["dWS"] / S["n"], "solar": lambda S: S["sol_d"] / S["sol_c"],
+    "vis": lambda S: S["vis_d"] / S["vis_c"], "total": lambda S: S["fc"] / S["ob"],
+    "hit": lambda S: S["hit_fc"] / S["hit_ob"], "missed": lambda S: S["miss_ob"] / S["ob"],
+    "fa": lambda S: S["fa_fc"] / S["ob"],
+}
+
+
+def bootstrap_halfwidth(w, n_draws=1000, seed=0):
+    """95 % half-width (1.96 SD) of each statistic when the test windows are
+    resampled with replacement within each horizon."""
+    rng = np.random.default_rng(seed)
+    tot = 0.0
+    for _, wh in w.groupby(level="horizon"):
+        a = wh.to_numpy()
+        counts = rng.multinomial(len(a), np.full(len(a), 1.0 / len(a)), size=n_draws)
+        tot = tot + counts @ a
+    S = pd.DataFrame(tot, columns=w.columns)
+    return {k: 1.96 * float(np.nanstd(f(S))) for k, f in STATS.items()}
+
+
+print("\nMean change degraded vs clean (all horizons; per horizon in the CSV);")
+print("(+/-): 95 % range from resampling the test windows (chance variation of one seed):")
+for city, g in out.groupby("city", sort=False):
+    w = window_sums(g)
+    v = {k: float(f(w.sum())) for k, f in STATS.items()}
+    e = bootstrap_halfwidth(w)
+    print(f"  {city:10s} temperature {v['dT']:+.3f} (+/-{e['dT']:.3f}) C, humidity {v['dRH']:+.2f} (+/-{e['dRH']:.2f}) %-pts, "
+          f"wind {v['dWS']:+.3f} (+/-{e['dWS']:.3f}) m/s, solar (daylight) x{v['solar']:.3f} (+/-{e['solar']:.3f})")
+    print(f"  {'':10s} visibility below cap x{v['vis']:.2f} (+/-{e['vis']:.2f}), "
+          f"precipitation total x{v['total']:.2f} (+/-{e['total']:.2f})")
+    # precipitation total = hits + false alarms; clean total = hits + misses
+    print(f"  {'':10s} precipitation hit amount x{v['hit']:.2f} (+/-{e['hit']:.2f}) (hours wet in both), "
+          f"missed amount {v['missed']:.1%} (+/-{e['missed']:.1%}), "
+          f"false-alarm amount {v['fa']:.1%} (+/-{e['fa']:.1%}) of the clean total")

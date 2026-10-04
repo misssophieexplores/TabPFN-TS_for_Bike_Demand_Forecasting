@@ -363,6 +363,10 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
           precipitation < 1 mm/h. Used by the measured NWP model to combine
           the two intensity-dependent miss rates when rain-frequency bias is
           removed (false alarms = misses in expectation).
+        - 'precip_light_mean', 'precip_strong_mean': mean precipitation of
+          the wet hours < 1 mm/h and >= 1 mm/h (0 if there are none). Used
+          by the measured NWP model to size false-alarm amounts so that they
+          add as much as misses remove, in expectation (rain_amount_unbiased).
         - 'precip_max': {column: largest value in the training data} for the
           precipitation columns; upper limit of degraded precipitation in the
           measured NWP error model (an hour's measured value is never cut).
@@ -416,6 +420,10 @@ def prepare_degradation_parameters(training_data, column_mapping=None):
         params['precip_light_fraction'] = (
             float((precip_total[wet] < 1.0).mean()) if wet.any() else 0.0
         )
+        # mean amount of the light (<1 mm/h) and stronger wet hours (0 if none)
+        light, strong = precip_total[wet & (precip_total < 1.0)], precip_total[precip_total >= 1.0]
+        params['precip_light_mean'] = float(light.mean()) if len(light) else 0.0
+        params['precip_strong_mean'] = float(strong.mean()) if len(strong) else 0.0
         params['precip_max'] = {c: float(training_data[c].max()) for c in precip_cols}
 
     vis_cols = [
