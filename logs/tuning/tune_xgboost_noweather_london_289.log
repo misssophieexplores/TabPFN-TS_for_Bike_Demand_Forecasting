@@ -1,0 +1,321 @@
+Job 289 | xgboost_noweather | london | DAH2 | CPUs 8 | 2026-10-06 15:28:39
+Commit: unknown
+
+======================================================================
+TUNING XGBOOST FOR: LONDON
+======================================================================
+Loaded 17544 observations for london
+======================================================================
+XGBOOST TUNING (Optuna TPE + early stopping) | city=london | horizon=24h | scenario=no_weather
+======================================================================
+Trials: 100
+Tune folds: 90 (90)
+n_lags_options: [12, 24, 48, 168]
+Max train size: 8000
+Early stopping rounds: 50 | Max estimators: 3000
+Cutoff date (held-out test start): 2016-05-03 23:00:00
+Tuning on 11664 observations (pre-cutoff)
+n_train_samples: 720
+Covariates used (0): []
+======================================================================
+  Trial   0/100 | MAE=281.37 | n_lags=168 | depth=12 | lr=0.0199 | avg_n_estimators=1121
+  Trial   1/100 | MAE=443.72 | n_lags=12 | depth=4 | lr=0.1078 | avg_n_estimators=242
+  Trial   2/100 | MAE=323.18 | n_lags=48 | depth=10 | lr=0.0269 | avg_n_estimators=561
+  Trial   3/100 | MAE=436.08 | n_lags=24 | depth=3 | lr=0.0154 | avg_n_estimators=1908
+  Trial   4/100 | MAE=299.91 | n_lags=168 | depth=4 | lr=0.0376 | avg_n_estimators=845
+  Trial   5/100 | MAE=467.22 | n_lags=24 | depth=4 | lr=0.0210 | avg_n_estimators=1647
+  Trial   6/100 | MAE=456.38 | n_lags=12 | depth=10 | lr=0.0051 | avg_n_estimators=2783
+  Trial   7/100 | MAE=409.88 | n_lags=48 | depth=5 | lr=0.0157 | avg_n_estimators=1704
+  Trial   8/100 | MAE=322.02 | n_lags=12 | depth=6 | lr=0.0344 | avg_n_estimators=336
+  Trial   9/100 | MAE=402.68 | n_lags=48 | depth=2 | lr=0.0116 | avg_n_estimators=1652
+  Trial  10/100 | MAE=293.36 | n_lags=168 | depth=9 | lr=0.0184 | avg_n_estimators=1556
+  Trial  11/100 | MAE=297.14 | n_lags=168 | depth=12 | lr=0.0095 | avg_n_estimators=2207
+  Trial  12/100 | MAE=370.87 | n_lags=48 | depth=9 | lr=0.0153 | avg_n_estimators=1435
+  Trial  13/100 | MAE=284.45 | n_lags=168 | depth=7 | lr=0.0348 | avg_n_estimators=884
+  Trial  14/100 | MAE=270.99 | n_lags=168 | depth=12 | lr=0.0887 | avg_n_estimators=332
+  Trial  15/100 | MAE=274.23 | n_lags=168 | depth=11 | lr=0.1067 | avg_n_estimators=270
+  Trial  16/100 | MAE=258.10 | n_lags=168 | depth=9 | lr=0.1762 | avg_n_estimators=113
+  Trial  17/100 | MAE=268.16 | n_lags=168 | depth=6 | lr=0.1284 | avg_n_estimators=154
+  Trial  18/100 | MAE=244.07 | n_lags=168 | depth=6 | lr=0.0764 | avg_n_estimators=148
+  Trial  19/100 | MAE=234.21 | n_lags=168 | depth=4 | lr=0.1116 | avg_n_estimators=137
+  Trial  20/100 | MAE=249.34 | n_lags=168 | depth=3 | lr=0.1292 | avg_n_estimators=122
+  Trial  21/100 | MAE=248.02 | n_lags=168 | depth=4 | lr=0.1093 | avg_n_estimators=132
+  Trial  22/100 | MAE=245.50 | n_lags=168 | depth=4 | lr=0.1591 | avg_n_estimators=85
+  Trial  23/100 | MAE=251.05 | n_lags=168 | depth=4 | lr=0.1278 | avg_n_estimators=172
+  Trial  24/100 | MAE=425.84 | n_lags=12 | depth=9 | lr=0.0981 | avg_n_estimators=277
+  Trial  25/100 | MAE=321.58 | n_lags=24 | depth=5 | lr=0.1749 | avg_n_estimators=103
+  Trial  26/100 | MAE=230.90 | n_lags=168 | depth=5 | lr=0.0154 | avg_n_estimators=437
+  Trial  27/100 | MAE=247.22 | n_lags=168 | depth=3 | lr=0.0121 | avg_n_estimators=607
+  Trial  28/100 | MAE=341.41 | n_lags=12 | depth=6 | lr=0.0157 | avg_n_estimators=558
+  Trial  29/100 | MAE=242.01 | n_lags=168 | depth=4 | lr=0.0331 | avg_n_estimators=240
+  Trial  30/100 | MAE=254.93 | n_lags=168 | depth=4 | lr=0.0359 | avg_n_estimators=272
+  Trial  31/100 | MAE=303.77 | n_lags=48 | depth=7 | lr=0.0705 | avg_n_estimators=611
+  Trial  32/100 | MAE=329.37 | n_lags=48 | depth=3 | lr=0.0379 | avg_n_estimators=455
+  Trial  33/100 | MAE=258.01 | n_lags=168 | depth=6 | lr=0.0145 | avg_n_estimators=928
+  Trial  34/100 | MAE=361.58 | n_lags=24 | depth=4 | lr=0.0340 | avg_n_estimators=394
+  Trial  35/100 | MAE=267.13 | n_lags=168 | depth=2 | lr=0.0268 | avg_n_estimators=459
+  Trial  36/100 | MAE=256.16 | n_lags=168 | depth=3 | lr=0.0610 | avg_n_estimators=170
+  Trial  37/100 | MAE=232.45 | n_lags=168 | depth=6 | lr=0.0110 | avg_n_estimators=549
+  Trial  38/100 | MAE=244.91 | n_lags=168 | depth=9 | lr=0.0081 | avg_n_estimators=774
+  Trial  39/100 | MAE=277.04 | n_lags=48 | depth=6 | lr=0.0105 | avg_n_estimators=1056
+  Trial  40/100 | MAE=242.11 | n_lags=168 | depth=6 | lr=0.0284 | avg_n_estimators=295
+  Trial  41/100 | MAE=241.66 | n_lags=168 | depth=8 | lr=0.0197 | avg_n_estimators=391
+  Trial  42/100 | MAE=244.29 | n_lags=168 | depth=11 | lr=0.0257 | avg_n_estimators=316
+  Trial  43/100 | MAE=236.21 | n_lags=168 | depth=5 | lr=0.0065 | avg_n_estimators=899
+  Trial  44/100 | MAE=241.56 | n_lags=168 | depth=9 | lr=0.0106 | avg_n_estimators=613
+  Trial  45/100 | MAE=253.25 | n_lags=168 | depth=9 | lr=0.0091 | avg_n_estimators=770
+  Trial  46/100 | MAE=246.66 | n_lags=168 | depth=5 | lr=0.0056 | avg_n_estimators=1027
+  Trial  47/100 | MAE=245.29 | n_lags=168 | depth=8 | lr=0.0310 | avg_n_estimators=313
+  Trial  48/100 | MAE=360.71 | n_lags=24 | depth=6 | lr=0.0112 | avg_n_estimators=1450
+  Trial  49/100 | MAE=233.01 | n_lags=168 | depth=6 | lr=0.0051 | avg_n_estimators=1137
+  Trial  50/100 | MAE=322.33 | n_lags=48 | depth=4 | lr=0.0050 | avg_n_estimators=1818
+  Trial  51/100 | MAE=250.68 | n_lags=168 | depth=6 | lr=0.0092 | avg_n_estimators=696
+  Trial  52/100 | MAE=233.80 | n_lags=168 | depth=6 | lr=0.0056 | avg_n_estimators=989
+  Trial  53/100 | MAE=241.25 | n_lags=168 | depth=6 | lr=0.0054 | avg_n_estimators=1100
+  Trial  54/100 | MAE=236.23 | n_lags=168 | depth=4 | lr=0.0064 | avg_n_estimators=956
+  Trial  55/100 | MAE=247.04 | n_lags=168 | depth=6 | lr=0.0061 | avg_n_estimators=1093
+  Trial  56/100 | MAE=436.77 | n_lags=12 | depth=5 | lr=0.0065 | avg_n_estimators=2012
+  Trial  57/100 | MAE=381.49 | n_lags=24 | depth=4 | lr=0.0594 | avg_n_estimators=438
+  Trial  58/100 | MAE=315.20 | n_lags=12 | depth=7 | lr=0.0079 | avg_n_estimators=1079
+  Trial  59/100 | MAE=470.02 | n_lags=12 | depth=3 | lr=0.1785 | avg_n_estimators=388
+  Trial  60/100 | MAE=243.31 | n_lags=168 | depth=6 | lr=0.0417 | avg_n_estimators=301
+  Trial  61/100 | MAE=232.69 | n_lags=168 | depth=4 | lr=0.0058 | avg_n_estimators=1043
+  Trial  62/100 | MAE=253.33 | n_lags=168 | depth=3 | lr=0.0054 | avg_n_estimators=1264
+  Trial  63/100 | MAE=356.78 | n_lags=12 | depth=6 | lr=0.0076 | avg_n_estimators=1046
+  Trial  64/100 | MAE=229.19 | n_lags=168 | depth=5 | lr=0.0092 | avg_n_estimators=777
+  Trial  65/100 | MAE=231.92 | n_lags=168 | depth=4 | lr=0.0184 | avg_n_estimators=367
+  Trial  66/100 | MAE=243.58 | n_lags=168 | depth=3 | lr=0.0103 | avg_n_estimators=693
+  Trial  67/100 | MAE=259.16 | n_lags=168 | depth=3 | lr=0.0281 | avg_n_estimators=474
+  Trial  68/100 | MAE=319.54 | n_lags=12 | depth=8 | lr=0.0296 | avg_n_estimators=348
+  Trial  69/100 | MAE=239.06 | n_lags=168 | depth=5 | lr=0.0059 | avg_n_estimators=1072
+  Trial  70/100 | MAE=442.28 | n_lags=12 | depth=3 | lr=0.0173 | avg_n_estimators=1267
+  Trial  71/100 | MAE=234.05 | n_lags=168 | depth=7 | lr=0.0402 | avg_n_estimators=181
+  Trial  72/100 | MAE=240.79 | n_lags=168 | depth=7 | lr=0.0773 | avg_n_estimators=133
+  Trial  73/100 | MAE=232.27 | n_lags=168 | depth=8 | lr=0.0375 | avg_n_estimators=229
+  Trial  74/100 | MAE=313.53 | n_lags=24 | depth=10 | lr=0.0303 | avg_n_estimators=375
+  Trial  75/100 | MAE=241.24 | n_lags=168 | depth=11 | lr=0.0300 | avg_n_estimators=300
+  Trial  76/100 | MAE=339.09 | n_lags=48 | depth=3 | lr=0.0125 | avg_n_estimators=1158
+  Trial  77/100 | MAE=233.58 | n_lags=168 | depth=6 | lr=0.0116 | avg_n_estimators=602
+  Trial  78/100 | MAE=236.91 | n_lags=168 | depth=6 | lr=0.0379 | avg_n_estimators=205
+  Trial  79/100 | MAE=244.24 | n_lags=168 | depth=6 | lr=0.0293 | avg_n_estimators=241
+  Trial  80/100 | MAE=306.32 | n_lags=24 | depth=6 | lr=0.0091 | avg_n_estimators=1086
+  Trial  81/100 | MAE=235.85 | n_lags=168 | depth=6 | lr=0.0119 | avg_n_estimators=553
+  Trial  82/100 | MAE=242.31 | n_lags=168 | depth=6 | lr=0.0295 | avg_n_estimators=284
+  Trial  83/100 | MAE=227.71 | n_lags=168 | depth=9 | lr=0.0103 | avg_n_estimators=600
+  Trial  84/100 | MAE=232.36 | n_lags=168 | depth=6 | lr=0.0073 | avg_n_estimators=1731
+  Trial  85/100 | MAE=246.03 | n_lags=168 | depth=5 | lr=0.0055 | avg_n_estimators=2004
+  Trial  86/100 | MAE=299.15 | n_lags=48 | depth=9 | lr=0.1065 | avg_n_estimators=144
+  Trial  87/100 | MAE=227.91 | n_lags=168 | depth=10 | lr=0.0088 | avg_n_estimators=690
+  Trial  88/100 | MAE=249.72 | n_lags=168 | depth=10 | lr=0.0060 | avg_n_estimators=1158
+  Trial  89/100 | MAE=229.14 | n_lags=168 | depth=10 | lr=0.0091 | avg_n_estimators=652
+  Trial  90/100 | MAE=231.44 | n_lags=168 | depth=9 | lr=0.0083 | avg_n_estimators=755
+  Trial  91/100 | MAE=226.34 | n_lags=168 | depth=10 | lr=0.0073 | avg_n_estimators=818
+  Trial  92/100 | MAE=229.34 | n_lags=168 | depth=10 | lr=0.0061 | avg_n_estimators=971
+  Trial  93/100 | MAE=246.68 | n_lags=168 | depth=8 | lr=0.0134 | avg_n_estimators=566
+  Trial  94/100 | MAE=371.79 | n_lags=12 | depth=11 | lr=0.0092 | avg_n_estimators=1284
+  Trial  95/100 | MAE=237.52 | n_lags=168 | depth=12 | lr=0.0102 | avg_n_estimators=651
+  Trial  96/100 | MAE=238.45 | n_lags=168 | depth=12 | lr=0.0100 | avg_n_estimators=636
+  Trial  97/100 | MAE=232.50 | n_lags=168 | depth=8 | lr=0.0104 | avg_n_estimators=1062
+  Trial  98/100 | MAE=328.37 | n_lags=48 | depth=9 | lr=0.0098 | avg_n_estimators=1444
+  Trial  99/100 | MAE=224.15 | n_lags=168 | depth=10 | lr=0.0155 | avg_n_estimators=424
+
+======================================================================
+BEST PARAMETERS FOUND
+======================================================================
+Tuning MAE=224.15
+Best n_lags=168
+Best n_estimators (from early stopping)=424
+{
+  "objective": "reg:squarederror",
+  "random_state": 42,
+  "tree_method": "hist",
+  "n_jobs": -1,
+  "n_estimators": 424,
+  "learning_rate": 0.015485451391763591,
+  "max_depth": 10,
+  "min_child_weight": 2.180728855117629,
+  "subsample": 0.6761930519108142,
+  "colsample_bytree": 0.6054840733906564,
+  "gamma": 3.882754237232218,
+  "reg_lambda": 0.05858041464086874,
+  "reg_alpha": 1.951801234805162e-07
+}
+  Fold 155: MAE=63.7, RMSE=82.4
+  Fold 156: MAE=85.9, RMSE=108.6
+  Fold 157: MAE=186.0, RMSE=244.0
+  Fold 158: MAE=230.4, RMSE=336.9
+  Fold 159: MAE=295.7, RMSE=365.1
+  Fold 160: MAE=67.9, RMSE=111.2
+  Fold 161: MAE=65.6, RMSE=98.4
+  Fold 162: MAE=60.6, RMSE=97.5
+  Fold 163: MAE=43.5, RMSE=71.6
+  Fold 164: MAE=210.3, RMSE=313.7
+  Fold 165: MAE=63.7, RMSE=77.6
+  Fold 166: MAE=96.3, RMSE=131.4
+  Fold 167: MAE=64.7, RMSE=85.9
+  Fold 168: MAE=226.3, RMSE=390.8
+  Fold 169: MAE=56.9, RMSE=85.3
+  Fold 170: MAE=86.4, RMSE=122.6
+  Fold 171: MAE=151.5, RMSE=223.9
+  Fold 172: MAE=130.3, RMSE=178.7
+  Fold 173: MAE=148.1, RMSE=205.5
+  Fold 174: MAE=107.1, RMSE=170.3
+  Fold 175: MAE=213.5, RMSE=353.6
+  Fold 176: MAE=71.2, RMSE=138.3
+  Fold 177: MAE=83.0, RMSE=131.9
+  Fold 178: MAE=271.8, RMSE=570.6
+  Fold 179: MAE=59.1, RMSE=76.6
+  Fold 180: MAE=190.6, RMSE=269.5
+  Fold 181: MAE=150.8, RMSE=227.5
+  Fold 182: MAE=158.9, RMSE=223.4
+  Fold 183: MAE=70.2, RMSE=87.7
+  Fold 184: MAE=80.1, RMSE=112.4
+  Fold 185: MAE=153.4, RMSE=217.4
+  Fold 186: MAE=137.6, RMSE=193.7
+  Fold 187: MAE=91.6, RMSE=131.5
+  Fold 188: MAE=108.4, RMSE=156.3
+  Fold 189: MAE=195.4, RMSE=292.4
+  Fold 190: MAE=62.3, RMSE=88.5
+  Fold 191: MAE=165.2, RMSE=255.4
+  Fold 192: MAE=403.2, RMSE=601.7
+  Fold 193: MAE=338.8, RMSE=556.4
+  Fold 194: MAE=186.0, RMSE=283.0
+  Fold 195: MAE=77.2, RMSE=127.8
+  Fold 196: MAE=135.5, RMSE=195.8
+  Fold 197: MAE=97.6, RMSE=140.3
+  Fold 198: MAE=112.9, RMSE=151.8
+  Fold 199: MAE=160.0, RMSE=257.8
+  Fold 200: MAE=126.8, RMSE=220.1
+  Fold 201: MAE=57.2, RMSE=85.9
+  Fold 202: MAE=190.5, RMSE=251.8
+  Fold 203: MAE=65.1, RMSE=94.3
+  Fold 204: MAE=343.1, RMSE=534.5
+  Fold 205: MAE=667.5, RMSE=1062.5
+  Fold 206: MAE=475.3, RMSE=733.4
+  Fold 207: MAE=384.1, RMSE=427.5
+  Fold 208: MAE=672.5, RMSE=1099.3
+  Fold 209: MAE=349.3, RMSE=544.5
+  Fold 210: MAE=160.2, RMSE=266.9
+  Fold 211: MAE=303.9, RMSE=521.7
+  Fold 212: MAE=393.8, RMSE=676.6
+  Fold 213: MAE=485.0, RMSE=713.4
+  Fold 214: MAE=255.1, RMSE=420.4
+  Fold 215: MAE=627.0, RMSE=1005.9
+  Fold 216: MAE=228.2, RMSE=361.7
+  Fold 217: MAE=163.7, RMSE=231.6
+  Fold 218: MAE=155.4, RMSE=238.2
+  Fold 219: MAE=353.2, RMSE=570.0
+  Fold 220: MAE=246.6, RMSE=398.7
+  Fold 221: MAE=262.0, RMSE=431.2
+  Fold 222: MAE=365.1, RMSE=604.8
+  Fold 223: MAE=155.4, RMSE=258.8
+  Fold 224: MAE=258.7, RMSE=385.2
+  Fold 225: MAE=356.6, RMSE=572.7
+  Fold 226: MAE=594.6, RMSE=850.8
+  Fold 227: MAE=109.0, RMSE=153.6
+  Fold 228: MAE=311.2, RMSE=448.8
+  Fold 229: MAE=198.2, RMSE=361.4
+  Fold 230: MAE=213.8, RMSE=304.8
+  Fold 231: MAE=184.7, RMSE=268.8
+  Fold 232: MAE=95.4, RMSE=153.8
+  Fold 233: MAE=336.7, RMSE=530.7
+  Fold 234: MAE=208.9, RMSE=306.1
+  Fold 235: MAE=366.3, RMSE=480.5
+  Fold 236: MAE=196.3, RMSE=288.8
+  Fold 237: MAE=193.8, RMSE=283.2
+  Fold 238: MAE=166.2, RMSE=224.1
+  Fold 239: MAE=46.3, RMSE=62.9
+  Fold 240: MAE=265.2, RMSE=467.4
+  Fold 241: MAE=225.8, RMSE=345.6
+  Fold 242: MAE=343.6, RMSE=533.4
+  Fold 243: MAE=719.5, RMSE=1114.7
+  Fold 244: MAE=314.9, RMSE=589.1
+
+Validation results:
+  MAE: 215.63 ± 150.92
+  RMSE: 331.36 ± 240.76
+----- BEGIN PARAMS JSON xgboost_best_params_london_no_weather_720_20261006_191255.json -----
+{
+  "city": "london",
+  "scenario": "no_weather",
+  "n_train_samples": 720,
+  "tuning_period": {
+    "first_timestamp": "2015-01-04T00:00:00",
+    "last_timestamp": "2016-05-03T23:00:00"
+  },
+  "n_lags": 168,
+  "xgb_params": {
+    "objective": "reg:squarederror",
+    "random_state": 42,
+    "tree_method": "hist",
+    "n_jobs": -1,
+    "n_estimators": 424,
+    "learning_rate": 0.015485451391763591,
+    "max_depth": 10,
+    "min_child_weight": 2.180728855117629,
+    "subsample": 0.6761930519108142,
+    "colsample_bytree": 0.6054840733906564,
+    "gamma": 3.882754237232218,
+    "reg_lambda": 0.05858041464086874,
+    "reg_alpha": 1.951801234805162e-07
+  },
+  "tuning": {
+    "search_type": "optuna_tpe_multivariate_with_early_stopping",
+    "trials": 100,
+    "tune_folds": 90,
+    "seed": 42,
+    "metric_optimized": "MAE",
+    "best_tune_mae_mean": 224.14618449238284,
+    "n_lags_options": [
+      12,
+      24,
+      48,
+      168
+    ],
+    "early_stopping_rounds": 50,
+    "max_estimators_cap": 3000
+  },
+  "mae_mean": 215.63124268652973,
+  "mae_std": 150.92346921616476,
+  "rmse_mean": 331.3637633300819,
+  "rmse_std": 240.7554895045902,
+  "validation_folds": 90,
+  "max_train_size": 8000,
+  "covariates_used": [],
+  "time_features_used": [
+    "hour",
+    "dayofweek",
+    "month",
+    "is_weekend"
+  ],
+  "provenance": {
+    "git_commit": "code:5a82a4e6de97e469",
+    "git_dirty": null,
+    "library_versions": {
+      "python": "3.11.2",
+      "numpy": "1.26.4",
+      "pandas": "2.3.3",
+      "scikit-learn": "1.6.1",
+      "statsmodels": "0.14.6",
+      "pmdarima": "2.1.1",
+      "xgboost": "3.1.3",
+      "optuna": "4.7.0",
+      "prophet": "1.3.0",
+      "neuralprophet": "0.9.0",
+      "torch": "2.9.1",
+      "tabpfn": "6.4.1",
+      "tabpfn-time-series": "1.0.9",
+      "timesfm (.timesfm_venv)": "3.0.2"
+    }
+  }
+}
+----- END PARAMS JSON xgboost_best_params_london_no_weather_720_20261006_191255.json -----
+
+Results saved to: results/tuning/xgboost_best_params_london_no_weather_720_20261006_191255.json
+  --> config.xgb_noweather_params_file = 'results/tuning/xgboost_best_params_london_no_weather_720_20261006_191255.json'
+
+======================================================================
+ALL TUNING COMPLETE
+======================================================================
+[W1006 19:12:56.787888045 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+Finished: 2026-10-06 19:12:56
