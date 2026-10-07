@@ -1,0 +1,116 @@
+Job 294 | preflight  | DAH2 | CPUs 8 | 2026-10-07 08:37:20
+Commit: unknown
+===== environment
+  code: {'git_commit': 'code:447a4a6a8f5b22fc', 'git_dirty': None}
+  libraries: {'python': '3.11.2', 'numpy': '1.26.4', 'pandas': '2.3.3', 'scikit-learn': '1.6.1', 'statsmodels': '0.14.6', 'pmdarima': '2.1.1', 'xgboost': '3.1.3', 'optuna': '4.7.0', 'prophet': '1.3.0', 'neuralprophet': '0.9.0', 'torch': '2.9.1', 'tabpfn': '6.4.1', 'tabpfn-time-series': '1.0.9', 'timesfm (.timesfm_venv)': '3.0.2'}
+  WANDB_MODE=online (default), WANDB_ENTITY=NOT SET
+  [OK]   api.wandb.ai reachable
+
+===== seoul | degradation: nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased,rain_amount_unbiased,cap_mean) | scenarios run by main.py: ['clean_only', 'degraded']
+  [OK]   arima_params_file: arima_best_params_seoul_720_20261003_124627.json (tuned with code:ca1a8da855aa259f)
+  [OK]   sarimax_params_file: sarimax_best_params_seoul_clean_only_720_20261007_063501.json (tuned with code:cc7732c995c45968)
+  [OK]   xgb_params_file: xgboost_best_params_seoul_clean_only_720_20261006_152836.json (tuned with code:5a82a4e6de97e469)
+  [OK]   xgb_noweather_params_file: xgboost_best_params_seoul_no_weather_720_20261006_160059.json (tuned with code:5a82a4e6de97e469)
+  [OK]   prophet_params_file: prophet_best_params_seoul_720_20261003_125052.json (tuned with code:ca1a8da855aa259f)
+  [OK]   neuralprophet_params_file: neuralprophet_best_params_seoul_clean_only_720_20261003_131259.json (tuned with code:ca1a8da855aa259f)
+  [OK]   neuralprophet_noweather_params_file: neuralprophet_best_params_seoul_no_weather_720_20261003_141452.json (tuned with code:ca1a8da855aa259f)
+  [INFO] params files tuned with 3 code version(s): ['code:5a82a4e6de97e469', 'code:ca1a8da855aa259f', 'code:cc7732c995c45968']; current code ID code:447a4a6a8f5b22fc
+         code:5a82a4e6de97e469: ['xgb_params_file', 'xgb_noweather_params_file']
+         code:ca1a8da855aa259f: ['arima_params_file', 'prophet_params_file', 'neuralprophet_params_file', 'neuralprophet_noweather_params_file']
+         code:cc7732c995c45968: ['sarimax_params_file']
+  [OK]   holiday column: 432 holiday hours
+  [OK]   NWP calibration file: weather/nwp/calibration/seoul.npz
+  [OK]   CV: cutoff 2018-03-30 23:00:00, folds per horizon [980, 245, 123, 35], 5880 h each
+  [OK]   build_models: Seasonal_Naive, ARIMA, SARIMAX, XGBoost, XGBoost_NoWeather, Prophet, NeuralProphet, NeuralProphet_NoWeather, TabPFN, TabPFN_NoWeather, TimesFM, TimesFM_NoWeather
+  [OK]   Seasonal_Naive | clean_only | h=24, last fold: 0.0 s, MAE 55.0
+  [OK]   ARIMA | clean_only | h=24, last fold: 0.1 s, MAE 226.7
+  [OK]   SARIMAX | clean_only | h=24, last fold: 45.8 s, MAE 73.0
+  [OK]   SARIMAX | degraded | h=24, last fold: 45.8 s, MAE 85.3
+  [OK]   XGBoost | clean_only | h=24, last fold: 2.6 s, MAE 52.6
+  [OK]   XGBoost | degraded | h=24, last fold: 2.6 s, MAE 53.3
+  [OK]   XGBoost_NoWeather | clean_only | h=24, last fold: 7.5 s, MAE 48.3
+  [OK]   Prophet | clean_only | h=24, last fold: 0.9 s, MAE 145.5
+Importing plotly failed. Interactive plots will not work.
+Importing plotly failed. Interactive plots will not work.
+  [OK]   NeuralProphet | clean_only | h=24, last fold: 13.6 s, MAE 182.5, 3 negative forecasts
+  [OK]   NeuralProphet | degraded | h=24, last fold: 10.0 s, MAE 181.2, 3 negative forecasts
+  [OK]   NeuralProphet_NoWeather | clean_only | h=24, last fold: 9.7 s, MAE 80.5
+  [OK]   TabPFN | clean_only | h=24, last fold: 6.7 s, MAE 45.7
+  [OK]   TabPFN | degraded | h=24, last fold: 5.6 s, MAE 47.4
+  [OK]   TabPFN_NoWeather | clean_only | h=24, last fold: 4.5 s, MAE 64.5
+  [OK]   TimesFM | clean_only | h=24, last fold: 25.8 s, MAE 158.8, 3 negative forecasts
+  [OK]   TimesFM | degraded | h=24, last fold: 0.2 s, MAE 247.9, 4 negative forecasts
+  [OK]   TimesFM_NoWeather | clean_only | h=24, last fold: 0.2 s, MAE 36.2
+
+===== washington | degradation: nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased,rain_amount_unbiased,cap_mean) | scenarios run by main.py: ['clean_only', 'degraded']
+  [OK]   arima_params_file: arima_best_params_washington_720_20261003_124552.json (tuned with code:ca1a8da855aa259f)
+  [OK]   sarimax_params_file: sarimax_best_params_washington_clean_only_720_20261007_043638.json (tuned with code:cc7732c995c45968)
+  [OK]   xgb_params_file: xgboost_best_params_washington_clean_only_720_20261006_165002.json (tuned with code:5a82a4e6de97e469)
+  [OK]   xgb_noweather_params_file: xgboost_best_params_washington_no_weather_720_20261006_201431.json (tuned with code:5a82a4e6de97e469)
+  [OK]   prophet_params_file: prophet_best_params_washington_720_20261003_125158.json (tuned with code:ca1a8da855aa259f)
+  [OK]   neuralprophet_params_file: neuralprophet_best_params_washington_clean_only_720_20261003_135452.json (tuned with code:ca1a8da855aa259f)
+  [OK]   neuralprophet_noweather_params_file: neuralprophet_best_params_washington_no_weather_720_20261003_145457.json (tuned with code:ca1a8da855aa259f)
+  [INFO] params files tuned with 3 code version(s): ['code:5a82a4e6de97e469', 'code:ca1a8da855aa259f', 'code:cc7732c995c45968']; current code ID code:447a4a6a8f5b22fc
+         code:5a82a4e6de97e469: ['xgb_params_file', 'xgb_noweather_params_file']
+         code:ca1a8da855aa259f: ['arima_params_file', 'prophet_params_file', 'neuralprophet_params_file', 'neuralprophet_noweather_params_file']
+         code:cc7732c995c45968: ['sarimax_params_file']
+  [OK]   holiday column: 504 holiday hours
+  [OK]   NWP calibration file: weather/nwp/calibration/washington.npz
+  [OK]   CV: cutoff 2012-04-30 23:00:00, folds per horizon [980, 245, 123, 35], 5880 h each
+  [OK]   build_models: Seasonal_Naive, ARIMA, SARIMAX, XGBoost, XGBoost_NoWeather, Prophet, NeuralProphet, NeuralProphet_NoWeather, TabPFN, TabPFN_NoWeather, TimesFM, TimesFM_NoWeather
+  [OK]   Seasonal_Naive | clean_only | h=24, last fold: 0.0 s, MAE 42.8
+  [OK]   ARIMA | clean_only | h=24, last fold: 0.2 s, MAE 75.6
+  [OK]   SARIMAX | clean_only | h=24, last fold: 43.7 s, MAE 39.4
+  [OK]   SARIMAX | degraded | h=24, last fold: 43.9 s, MAE 39.7
+  [OK]   XGBoost | clean_only | h=24, last fold: 1.8 s, MAE 65.4
+  [OK]   XGBoost | degraded | h=24, last fold: 1.8 s, MAE 67.5
+  [OK]   XGBoost_NoWeather | clean_only | h=24, last fold: 2.5 s, MAE 76.8
+  [OK]   Prophet | clean_only | h=24, last fold: 0.1 s, MAE 59.9, 3 negative forecasts
+  [OK]   NeuralProphet | clean_only | h=24, last fold: 11.1 s, MAE 46.7, 5 negative forecasts
+  [OK]   NeuralProphet | degraded | h=24, last fold: 11.4 s, MAE 42.4, 5 negative forecasts
+  [OK]   NeuralProphet_NoWeather | clean_only | h=24, last fold: 11.1 s, MAE 80.8
+  [OK]   TabPFN | clean_only | h=24, last fold: 5.6 s, MAE 36.6
+  [OK]   TabPFN | degraded | h=24, last fold: 5.6 s, MAE 38.0
+  [OK]   TabPFN_NoWeather | clean_only | h=24, last fold: 4.2 s, MAE 39.7
+  [OK]   TimesFM | clean_only | h=24, last fold: 0.2 s, MAE 41.9
+  [OK]   TimesFM | degraded | h=24, last fold: 0.2 s, MAE 45.3
+  [OK]   TimesFM_NoWeather | clean_only | h=24, last fold: 0.2 s, MAE 55.4
+
+===== london | degradation: nwp_measured(fresh,no_bias,seasonal_rain,intensity_miss,rain_freq_unbiased,rain_amount_unbiased,cap_mean) | scenarios run by main.py: ['clean_only', 'degraded']
+  [OK]   arima_params_file: arima_best_params_london_720_20261003_124513.json (tuned with code:ca1a8da855aa259f)
+  [OK]   sarimax_params_file: sarimax_best_params_london_clean_only_720_20261007_045557.json (tuned with code:cc7732c995c45968)
+  [OK]   xgb_params_file: xgboost_best_params_london_clean_only_720_20261006_162021.json (tuned with code:5a82a4e6de97e469)
+  [OK]   xgb_noweather_params_file: xgboost_best_params_london_no_weather_720_20261006_191255.json (tuned with code:5a82a4e6de97e469)
+  [OK]   prophet_params_file: prophet_best_params_london_720_20261003_125104.json (tuned with code:ca1a8da855aa259f)
+  [OK]   neuralprophet_params_file: neuralprophet_best_params_london_clean_only_720_20261003_133349.json (tuned with code:ca1a8da855aa259f)
+  [OK]   neuralprophet_noweather_params_file: neuralprophet_best_params_london_no_weather_720_20261003_143457.json (tuned with code:ca1a8da855aa259f)
+  [INFO] params files tuned with 3 code version(s): ['code:5a82a4e6de97e469', 'code:ca1a8da855aa259f', 'code:cc7732c995c45968']; current code ID code:447a4a6a8f5b22fc
+         code:5a82a4e6de97e469: ['xgb_params_file', 'xgb_noweather_params_file']
+         code:ca1a8da855aa259f: ['arima_params_file', 'prophet_params_file', 'neuralprophet_params_file', 'neuralprophet_noweather_params_file']
+         code:cc7732c995c45968: ['sarimax_params_file']
+  [OK]   holiday column: 384 holiday hours
+  [OK]   NWP calibration file: weather/nwp/calibration/london.npz
+  [OK]   CV: cutoff 2016-05-03 23:00:00, folds per horizon [980, 245, 123, 35], 5880 h each
+  [OK]   build_models: Seasonal_Naive, ARIMA, SARIMAX, XGBoost, XGBoost_NoWeather, Prophet, NeuralProphet, NeuralProphet_NoWeather, TabPFN, TabPFN_NoWeather, TimesFM, TimesFM_NoWeather
+  [OK]   Seasonal_Naive | clean_only | h=24, last fold: 0.0 s, MAE 532.6
+  [OK]   ARIMA | clean_only | h=24, last fold: 0.1 s, MAE 568.4
+  [OK]   SARIMAX | clean_only | h=24, last fold: 9.3 s, MAE 532.7
+  [OK]   SARIMAX | degraded | h=24, last fold: 9.2 s, MAE 549.9, 4 negative forecasts
+  [OK]   XGBoost | clean_only | h=24, last fold: 2.2 s, MAE 468.1
+  [OK]   XGBoost | degraded | h=24, last fold: 2.2 s, MAE 442.1
+  [OK]   XGBoost_NoWeather | clean_only | h=24, last fold: 2.4 s, MAE 470.3
+  [OK]   Prophet | clean_only | h=24, last fold: 0.1 s, MAE 347.5, 4 negative forecasts
+  [OK]   NeuralProphet | clean_only | h=24, last fold: 11.2 s, MAE 583.9, 5 negative forecasts
+  [OK]   NeuralProphet | degraded | h=24, last fold: 11.0 s, MAE 645.0, 9 negative forecasts
+  [OK]   NeuralProphet_NoWeather | clean_only | h=24, last fold: 10.5 s, MAE 748.1, 13 negative forecasts
+  [OK]   TabPFN | clean_only | h=24, last fold: 5.6 s, MAE 524.7
+  [OK]   TabPFN | degraded | h=24, last fold: 5.5 s, MAE 490.0
+  [OK]   TabPFN_NoWeather | clean_only | h=24, last fold: 4.4 s, MAE 475.7
+  [OK]   TimesFM | clean_only | h=24, last fold: 0.2 s, MAE 445.3
+  [OK]   TimesFM | degraded | h=24, last fold: 0.2 s, MAE 502.0, 7 negative forecasts
+  [OK]   TimesFM_NoWeather | clean_only | h=24, last fold: 0.2 s, MAE 303.4
+
+===== summary
+  all checks passed
+[W1007 08:44:19.989851694 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())
+PREFLIGHT PASSED: 2026-10-07 08:44:19
