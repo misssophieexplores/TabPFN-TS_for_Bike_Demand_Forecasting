@@ -288,5 +288,86 @@ def test_trend_from_intercept_mapping():
         trend_from_intercept(True, (2, 2, 1), sarimax=False)
 
 
+# ----------------------------------------------------------------------
+# SARIMAX selection: converged candidates only (7 Oct 2026)
+# ----------------------------------------------------------------------
+def _candidates():
+    # Seoul, 7 Oct 2026 tuning file: lowest MAE did not converge on 48 of 90 folds
+    def c(order, sorder, mae, nc):
+        return {"order": order, "seasonal_order": sorder, "with_intercept": True, "trend": "c",
+                "status": "ok", "mae_mean": mae, "rmse_mean": mae * 1.3, "non_converged_folds": nc}
+    return [c([2, 0, 2], [1, 0, 1, 24], 92.15, 48), c([2, 0, 0], [1, 0, 0, 24], 94.05, 0),
+            c([3, 0, 0], [2, 0, 0, 24], 94.30, 4), c([2, 0, 0], [2, 0, 0, 24], 94.22, 0),
+            {"order": [5, 0, 0], "seasonal_order": [1, 0, 0, 24], "with_intercept": True,
+             "status": "not selectable: failed on fold 3"}]
+
+
+def test_sarimax_selection_requires_convergence():
+    pytest.importorskip("statsmodels")
+    from arima_search import select_candidate, RULE_CONVERGED, RULE_LOWEST_MAE
+    best, rule = select_candidate(_candidates(), require_converged=True)
+    assert (best["order"], best["seasonal_order"], rule) == ([2, 0, 0], [1, 0, 0, 24], RULE_CONVERGED)
+    best, rule = select_candidate(_candidates(), require_converged=False)
+    assert (best["order"], rule) == ([2, 0, 2], RULE_LOWEST_MAE)
+    # no candidate converged on every fold -> lowest MAE, and the rule says so
+    none = [dict(c, non_converged_folds=1) for c in _candidates() if c["status"] == "ok"]
+    best, rule = select_candidate(none, require_converged=True)
+    assert best["order"] == [2, 0, 2] and "no candidate converged" in rule
+
+
+def test_reselect_sarimax_keeps_tuning_fields():
+    pytest.importorskip("statsmodels")
+    from reselect_sarimax import reselect
+    source = {"city": "seoul", "scenario": "clean_only", "n_train_samples": 720,
+              "tuning_period": {"first_timestamp": "a", "last_timestamp": "b"},
+              "order": [2, 0, 2], "seasonal_order": [1, 0, 1, 24], "with_intercept": True,
+              "trend": "c", "covariates_used": ["Temperature", "Holiday"], "m": 24,
+              "tuning": {"best_tune_mae_mean": 92.15, "candidates": _candidates()},
+              "provenance": {"git_commit": "code:x", "git_dirty": None}}
+    p = reselect(source, "src.json")
+    assert (p["order"], p["seasonal_order"], p["trend"]) == ([2, 0, 0], [1, 0, 0, 24], "c")
+    assert p["tuning"]["best_tune_mae_mean"] == 94.05
+    for k in ("city", "scenario", "n_train_samples", "tuning_period", "covariates_used", "m"):
+        assert p[k] == source[k]
+    assert "provenance" not in p                      # save_params_json adds the current one
+    assert p["reselection"]["source_provenance"] == source["provenance"]
+    assert p["reselection"]["source_selection"]["order"] == [2, 0, 2]
+    with pytest.raises(ValueError, match="already a re-selected"):
+        reselect(p, "p.json")
+
+
+# ----------------------------------------------------------------------
+# Parallel folds (SARIMAX) give the same results as one after another
+# ----------------------------------------------------------------------
+_TIMING_KEYS = {"timestamp", "fit_time_s", "predict_time_s", "runtime_s"}
+
+
+@pytest.mark.parametrize("scenario", ["clean_only", "degraded"])
+def test_parallel_folds_equal_sequential(scenario):
+    pytest.importorskip("statsmodels")
+    pytest.importorskip("joblib")
+    pytest.importorskip("threadpoolctl")
+    from fold_runner import run_fold, run_folds_parallel
+    from models.statistical import SARIMAXForecaster
+    from weather.weather_processor import WeatherProcessor
+
+    cfg = get_config()
+    cfg.weather_covariates = COVS + ["Holiday", "Seasons"]  # as after load_and_prepare_data
+    splits = TimeSeriesCV(cfg).split(make_df(), 24, partial_last_fold=True)[:6]
+    model = SARIMAXForecaster(order=(1, 0, 0), seasonal_order=(0, 0, 0, 24), trend="c")
+    args = (cfg, model, WeatherProcessor(cfg))
+    code = {"git_commit": "code:test", "git_dirty": None}
+
+    from threadpoolctl import threadpool_limits
+    with threadpool_limits(1):   # one math thread, as in the workers
+        seq = [run_fold(*args, tr, te, scenario, 24, i, "run", code) for i, (tr, te) in enumerate(splits)]
+    par = run_folds_parallel(*args, splits, scenario, 24, "run", code, n_workers=3)
+    assert [o[0] for o in par] == ["ok"] * len(splits)
+    for (m_seq, f_seq), (_, m_par, f_par) in zip(seq, par):
+        assert {k: v for k, v in m_seq.items() if k not in _TIMING_KEYS} == \
+               {k: v for k, v in m_par.items() if k not in _TIMING_KEYS}
+        pd.testing.assert_frame_equal(f_seq, f_par)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

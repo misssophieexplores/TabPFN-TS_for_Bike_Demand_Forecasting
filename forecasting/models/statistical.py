@@ -148,7 +148,11 @@ class SARIMAXForecaster(BaseForecaster):
     
     FIXED: Proper datetime index handling to eliminate statsmodels warnings.
     """
-    
+
+    # One fit per fold, single-threaded statsmodels: the folds are fitted in
+    # parallel worker processes (fold_runner.py)
+    parallel_folds = True
+
     def __init__(
         self, 
         order: tuple = (4, 0, 0), 

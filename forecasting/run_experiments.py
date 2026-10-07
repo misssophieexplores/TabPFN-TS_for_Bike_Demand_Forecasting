@@ -30,6 +30,8 @@ from weather.weather_processor import WeatherProcessor
 from features import add_time_features
 from models.timesfm_model import TimesFMForecaster, TimesFMForecaster_NoWeather
 from provenance import get_code_version, get_library_versions
+# prepare_fold_inputs is imported from here by the tuning scripts and tests
+from fold_runner import prepare_fold_inputs, run_fold, run_folds_parallel, fold_workers  # noqa: F401
 
 
 # Load environment variables
@@ -140,50 +142,6 @@ def build_models(config: ForecastConfig, keys: Optional[List[str]] = None) -> Li
     return models
 
 
-def prepare_fold_inputs(
-    config: ForecastConfig,
-    model: BaseForecaster,
-    weather_proc: WeatherProcessor,
-    train_df: pd.DataFrame,
-    test_df: pd.DataFrame,
-    weather_scenario: str,
-    horizon: int,
-    fold_idx: int,
-):
-    """
-    Model inputs for one fold, exactly as in the experiments:
-    (y_train, X_train, y_test, X_test).
-    - covariates from WeatherProcessor (train: clean; test: degraded in the
-      degraded scenarios, see config.degradation_scales)
-    - calendar features appended for use_time_features models (XGBoost)
-    - real DatetimeIndex for needs_datetime models (Prophet, NeuralProphet, TabPFN);
-      an empty frame with that index if the model has no covariates
-    """
-    y_train = train_df[config.target_col].values
-    y_test = test_df[config.target_col].values
-
-    X_train = None
-    X_test = None
-    if model.use_covariates:
-        X_train = weather_proc.prepare_weather_data(
-            train_df, weather_scenario, horizon, fold_idx, split="train"
-        )
-        X_test = weather_proc.prepare_weather_data(
-            test_df, weather_scenario, horizon, fold_idx, split="test"
-        )
-
-    if model.use_time_features:
-        X_train = prepare_xgboost_features(train_df, config.date_col, X_train)
-        X_test = prepare_xgboost_features(test_df, config.date_col, X_test)
-
-    if getattr(model, "needs_datetime", False):
-        train_dates = pd.DatetimeIndex(train_df[config.date_col].values)
-        test_dates = pd.DatetimeIndex(test_df[config.date_col].values)
-        X_train = pd.DataFrame(index=train_dates) if X_train is None else X_train.set_index(train_dates)
-        X_test = pd.DataFrame(index=test_dates) if X_test is None else X_test.set_index(test_dates)
-
-    return y_train, X_train, y_test, X_test
-
 class ForecastingExperiment:
     """Manages and runs forecasting experiments with W&B logging"""
     
@@ -262,6 +220,17 @@ class ForecastingExperiment:
             }, f, indent=2)
     
 
+    def _log_fold_error(self, model, horizon, fold_idx, error, traceback_text):
+        error_msg = f"Error in {model.name} h={horizon} fold={fold_idx}: {error}"
+        print(f"\n[ERROR] {error_msg}")
+        error_log_path = Path(self.config.output_dir) / f"errors_{self.config.results_version}.log"
+        with open(error_log_path, "a") as f:
+            f.write(f"\n{'='*80}\n")
+            f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR: {error_msg}\n")
+            f.write(f"{'='*80}\n")
+            f.write(traceback_text)
+        wandb.log({"error": error_msg})
+
     def run_single_experiment(
         self,
         model: BaseForecaster,
@@ -330,113 +299,48 @@ class ForecastingExperiment:
         fold_results = []
         fold_forecasts = []  # hourly forecasts, one DataFrame per successful fold
 
-        for fold_idx, (train_df, test_df) in enumerate(splits):
-            try:
-                # Inside the try: an error in the input preparation (e.g. the
-                # weather degradation) is written to the errors log with its
-                # traceback, like a model error. Not timed (see Runtime).
-                y_train, X_train, y_test, X_test = prepare_fold_inputs(
-                    self.config, model, weather_proc, train_df, test_df,
-                    weather_scenario, horizon, fold_idx,
-                )
-                model.reset()
-                # Warnings are ignored globally; record them here to count
-                # convergence warnings (e.g. SARIMAX/ARIMA optimizer) per fold.
-                with warnings.catch_warnings(record=True) as caught:
-                    warnings.simplefilter("always")
-                    # Wall-clock runtime of fit() and predict() only (data and
-                    # feature preparation excluded).
-                    t0 = time.perf_counter()
-                    model.fit(y_train, X_train)
-                    fit_time = time.perf_counter() - t0
-                    # Forecast as many steps as the fold has test hours: horizon,
-                    # or fewer for a partial last fold (no data exist beyond it).
-                    n_steps = len(test_df)
-                    t0 = time.perf_counter()
-                    y_pred = model.predict(n_steps, X_test)
-                    predict_time = time.perf_counter() - t0
-                n_convergence_warnings = sum(
-                    "converge" in str(w.message).lower() for w in caught
-                )
+        # Models with parallel_folds (SARIMAX) fit their folds in parallel
+        # worker processes, one math thread each; the folds are independent,
+        # so the results are the same as one after another (fold_runner.py).
+        n_workers = fold_workers() if getattr(model, "parallel_folds", False) else 1
+        t_start = time.time()
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] START {self.config.dataset_name} | "
+              f"{model.name} | h={horizon} | {weather_scenario} | {len(splits)} folds"
+              + (f" | {n_workers} workers" if n_workers > 1 else ""), flush=True)
 
-                # Calculate metrics on observed hours only: imputed hours
-                # (Functioning Day == 'No') are excluded from scoring, in the
-                # test window and in the MASE scaling of the training window.
-                fday = self.config.functioning_day_col
-                test_observed = self.metrics_calc.observed_mask(test_df, fday)
-                train_observed = self.metrics_calc.observed_mask(train_df, fday)
-                metrics = self.metrics_calc.calculate_all(
-                    y_test, y_pred, y_train,
-                    test_mask=test_observed, train_mask=train_observed,
-                )
-                metrics['dataset'] = self.config.dataset_name
-                metrics['run_name'] = self.run_name
-                metrics['version'] = self.config.results_version
-                metrics.update(self.code_version)
-                metrics['timestamp'] = datetime.now().isoformat()
-                metrics['fold'] = fold_idx
-                metrics['model'] = model.name
-                metrics['horizon'] = horizon
-                metrics['weather_scenario'] = weather_scenario
-                metrics['model_uses_covariates'] = model.use_covariates
-                metrics['degradation_seed'] = self.config.degradation_seed
-                metrics['degradation_model'] = self.config.degradation_label()
-                metrics['num_weather_vars'] = len(X_train.columns) if X_train is not None else 0
-
-                # Track imputation info
-                fday = self.config.functioning_day_col
-                test_imputed = (test_df[fday] == 'No').sum() if fday and fday in test_df.columns else 0
-                train_imputed = (train_df[fday] == 'No').sum() if fday and fday in train_df.columns else 0
-                metrics['test_imputed'] = test_imputed
-                metrics['train_imputed'] = train_imputed
-                metrics['test_hours'] = n_steps
-                metrics['test_scored'] = int(test_observed.sum())
-
-                metrics['convergence_warnings'] = n_convergence_warnings
-
-                # Runtime (seconds)
-                metrics['fit_time_s'] = fit_time
-                metrics['predict_time_s'] = predict_time
-                metrics['runtime_s'] = fit_time + predict_time
-
-                # Hourly forecasts of this fold, for forecasts_{dataset}_{version}.csv.
-                # Only written, never used for scoring. Imputed hours are kept and
-                # flagged with the same mask the metrics use (observed=False).
-                # calculate_all() has already checked len(y_pred) == n_steps.
-                fold_forecasts.append(pd.DataFrame({
-                    'dataset': self.config.dataset_name,
-                    'model': model.name,
-                    'horizon': horizon,
-                    'weather_scenario': weather_scenario,
-                    'fold': fold_idx,
-                    'lead_time': np.arange(1, n_steps + 1),
-                    'datetime': test_df[self.config.date_col].values,
-                    'y_true': y_test,
-                    'y_pred': np.asarray(y_pred, dtype=float).ravel(),
-                    'observed': np.asarray(test_observed, dtype=bool),
-                    'version': self.config.results_version,
-                    'git_commit': self.code_version['git_commit'],
-                }))
-
+        if n_workers > 1:
+            outcomes = run_folds_parallel(
+                self.config, model, weather_proc, splits, weather_scenario,
+                horizon, self.run_name, self.code_version, n_workers,
+            )
+            for fold_idx, outcome in enumerate(outcomes):
+                if outcome[0] == "error":
+                    # First failing fold, as in a sequential run
+                    self._log_fold_error(model, horizon, fold_idx, outcome[1], outcome[2])
+                    raise RuntimeError(outcome[1])
+                fold_results.append(outcome[1])
+                fold_forecasts.append(outcome[2])
+        else:
+            for fold_idx, (train_df, test_df) in enumerate(splits):
+                try:
+                    # Inside the try: an error in the input preparation (e.g. the
+                    # weather degradation) is written to the errors log with its
+                    # traceback, like a model error.
+                    metrics, forecasts = run_fold(
+                        self.config, model, weather_proc, train_df, test_df,
+                        weather_scenario, horizon, fold_idx, self.run_name, self.code_version,
+                    )
+                except Exception as e:
+                    import traceback
+                    self._log_fold_error(model, horizon, fold_idx, str(e), traceback.format_exc())
+                    # Abort only this model/horizon/scenario. run_all_experiments()
+                    # catches the exception, leaves it uncheckpointed, and continues.
+                    raise
                 fold_results.append(metrics)
+                fold_forecasts.append(forecasts)
 
                 if verbose and (fold_idx + 1) % 5 == 0:
                     print(".", end="", flush=True)
-
-            except Exception as e:
-                error_msg = f"Error in {model.name} h={horizon} fold={fold_idx}: {str(e)}"
-                print(f"\n[ERROR] {error_msg}")
-                import traceback
-                error_log_path = Path(self.config.output_dir) / f"errors_{self.config.results_version}.log"
-                with open(error_log_path, "a") as f:
-                    f.write(f"\n{'='*80}\n")
-                    f.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR: {error_msg}\n")
-                    f.write(f"{'='*80}\n")
-                    traceback.print_exc(file=f)
-                wandb.log({"error": error_msg})
-                # Abort only this model/horizon/scenario. run_all_experiments()
-                # catches the exception, leaves it uncheckpointed, and continues.
-                raise
 
         # Not reachable at present: a fold error re-raises above, so every
         # completed run has all folds (n_failed_folds = 0; the column is kept
@@ -526,6 +430,11 @@ class ForecastingExperiment:
 
         if verbose:
             print(f" [DONE] ({len(fold_results)} folds) | MAE: {aggregated['MAE_mean']:.1f}")
+        n_conv = aggregated['folds_with_convergence_warnings']
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] DONE  {self.config.dataset_name} | "
+              f"{model.name} | h={horizon} | {weather_scenario} | MAE {aggregated['MAE_mean']:.1f} | "
+              f"{(time.time() - t_start) / 60:.1f} min"
+              + (f" | not converged in {n_conv} folds" if n_conv else ""), flush=True)
 
         return aggregated, fold_results
 

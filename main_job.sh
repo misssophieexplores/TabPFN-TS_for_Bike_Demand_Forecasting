@@ -1,7 +1,14 @@
 #!/bin/bash
 # One part of the v7 experiment run: python forecasting/main.py
-# Submitted by submit_main.sh (sets job name, CPUs, memory, time limit, MAIN_RUN, MAIN_PART, MAIN_PARTS).
+# Submitted by submit_main.sh (sets job name, CPUs, memory, time limit and
+# MAIN_RUN, MAIN_PART, MAIN_PARTS, MAIN_FRESH).
 #
+# Part 1 first:
+#   - FRESH_START=1 (MAIN_FRESH=1): moves the results files of this
+#     results_version into results/archive_<run>/, so everything is rerun with
+#     the current code (one code ID in all results);
+#   - writes the re-selected SARIMAX params files (converged candidates only)
+#     if they do not exist yet.
 # - If main.py fails, all later parts exit at once.
 # - 10 min before the time limit, main.py is stopped; the next part resumes from the checkpoints.
 # - Once main.py has finished, all later parts exit at once.
@@ -19,6 +26,13 @@ PART="${MAIN_PART:-1}"
 PARTS="${MAIN_PARTS:-1}"
 JOB="${SLURM_JOB_ID:-local}"
 LOG="logs/main/${SLURM_JOB_NAME:-main_v7}_${JOB}.log"
+
+# SARIMAX tuning files (7 Oct 2026) -> re-selected params files named in the city configs
+SARIMAX_RESELECT=(
+    "seoul|sarimax_best_params_seoul_clean_only_720_20261007_063501.json"
+    "london|sarimax_best_params_london_clean_only_720_20261007_045557.json"
+    "washington|sarimax_best_params_washington_clean_only_720_20261007_043638.json"
+)
 
 cd "${SLURM_SUBMIT_DIR:-$(pwd)}"
 STATE="logs/main/run_${RUN}"
@@ -42,22 +56,72 @@ fail() {
     exit 1
 }
 
+# Main process: XGBoost and torch use all CPUs of the job. SARIMAX folds run
+# in one worker process per CPU, each with one math thread (fold_runner.py).
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-1}"
 export OPENBLAS_NUM_THREADS="$OMP_NUM_THREADS"
 export MKL_NUM_THREADS="$OMP_NUM_THREADS"
 export PYTHONUNBUFFERED=1
 
-# W&B offline: wandb.init cannot fail on a node without internet (runs are kept in wandb/)
-export WANDB_MODE=offline
+reachable() {  # host: TCP connection to port 443 within 10 s
+    timeout 10 bash -c "exec 3<>/dev/tcp/$1/443" 2>/dev/null
+}
+PROXY="${HTTPS_PROXY:-}${https_proxy:-}"
+
+# W&B online if the node reaches W&B and an API key is set up; offline
+# otherwise (wandb.init would fail and main.py would skip the city).
+# Offline runs are kept in wandb/ and can be uploaded later with `wandb sync`.
+if [ -n "${WANDB_MODE:-}" ]; then
+    WANDB_WHY="WANDB_MODE was already set"
+elif ! { [ -n "$PROXY" ] || reachable api.wandb.ai; }; then
+    export WANDB_MODE=offline; WANDB_WHY="api.wandb.ai not reachable from $(hostname)"
+elif ! { [ -n "${WANDB_API_KEY:-}" ] || grep -qs "api.wandb.ai" ~/.netrc || grep -qs "^ *WANDB_API_KEY" .env forecasting/.env; }; then
+    export WANDB_MODE=offline; WANDB_WHY="no W&B API key (WANDB_API_KEY, ~/.netrc or .env)"
+else
+    WANDB_WHY="api.wandb.ai reachable, API key found"
+fi
 # TimesFM weights: use the local Hugging Face cache when huggingface.co is not reachable
-if [ -z "${HTTPS_PROXY:-}${https_proxy:-}" ] && ! timeout 10 bash -c 'exec 3<>/dev/tcp/huggingface.co/443' 2>/dev/null; then
+if [ -z "$PROXY" ] && ! reachable huggingface.co; then
     export HF_HUB_OFFLINE=1
 fi
-echo "WANDB_MODE=$WANDB_MODE | HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0}"
+echo "W&B: ${WANDB_MODE:-online} ($WANDB_WHY) | HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-0}"
 
 PROBE="results/.write_test_${JOB}"
-if ! { mkdir -p results && touch "$PROBE" && rm -f "$PROBE"; } 2>/dev/null; then
+if ! { mkdir -p results/tuning && touch "$PROBE" && rm -f "$PROBE"; } 2>/dev/null; then
     fail "results/ is not writable on $(hostname) (job $JOB). main.py was not started."
+fi
+
+if [ "$PART" = 1 ]; then
+    VERSION="$("$PYTHON" -c "import sys; sys.path.insert(0, 'forecasting'); from config import ForecastConfig; print(ForecastConfig().results_version)")" \
+        || fail "could not read results_version from forecasting/config.py"
+    OLD=()
+    for f in results/checkpoint_*_"$VERSION".json results/results_master_"$VERSION".csv \
+             results/detailed_results_master_"$VERSION".csv results/forecasts_*_"$VERSION".csv \
+             results/comparative_metrics_"$VERSION".csv results/errors_"$VERSION".log; do
+        [ -f "$f" ] && OLD+=("$f")
+    done
+    if [ "${MAIN_FRESH:-0}" = 1 ] && [ ${#OLD[@]} -gt 0 ]; then
+        mkdir -p "results/archive_${RUN}" && mv "${OLD[@]}" "results/archive_${RUN}/" \
+            || fail "could not move the old results files into results/archive_${RUN}/"
+        echo "Fresh start: moved ${#OLD[@]} results files of version $VERSION into results/archive_${RUN}/"
+    elif grep -qs '"SARIMAX"' results/checkpoint_*_"$VERSION".json; then
+        fail "results/checkpoint_*_$VERSION.json lists SARIMAX experiments from before the re-selection. Submit with FRESH_START=1 (moves the old results into results/archive_<run>/)."
+    fi
+
+    for entry in "${SARIMAX_RESELECT[@]}"; do
+        CITY="${entry%%|*}"; SRC="results/tuning/${entry#*|}"
+        DST="results/tuning/sarimax_best_params_${CITY}_clean_only_720_converged.json"
+        [ -f "$DST" ] && continue
+        [ -f "$SRC" ] || fail "SARIMAX tuning file not found: $SRC"
+        echo "===== SARIMAX re-selection: $CITY ====="
+        RLOG="$STATE/reselect_sarimax_${CITY}.log"   # complete output incl. the params JSON
+        if ! "$PYTHON" forecasting/models/tuning/reselect_sarimax.py --source "$SRC" --output "$DST" > "$RLOG" 2>&1; then
+            cat "$RLOG"
+            fail "SARIMAX re-selection failed for $CITY (output above, also in $RLOG)"
+        fi
+        grep -v "^ \|^[{}]\|PARAMS JSON\|^$" "$RLOG"
+        [ -f "$DST" ] || fail "SARIMAX re-selection wrote no file for $CITY (see $RLOG)"
+    done
 fi
 
 echo "===== main.py $(date '+%F %T') ====="

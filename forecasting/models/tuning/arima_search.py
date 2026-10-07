@@ -11,10 +11,12 @@ Procedure
    as XGBoost and Prophet) with the model used in the experiments
    (ARIMAForecaster / SARIMAXForecaster, statsmodels, trend from
    with_intercept via trend_from_intercept), with exactly the experiment
-   inputs (run_experiments.prepare_fold_inputs), and scored on the next
+   inputs (fold_runner.prepare_fold_inputs), and scored on the next
    tune_horizon hours: MAE, imputed hours excluded. The candidate with the
    lowest mean MAE is selected - the same criterion and folds as XGBoost and
-   Prophet.
+   Prophet. With require_converged=True (SARIMAX, since 7 Oct 2026) only
+   candidates whose optimizer converged on every tune fold are selectable,
+   as long as at least one candidate did (select_candidate()).
 
 A candidate that fails on a tune fold, or has no statsmodels trend
 equivalent, is not selectable (reason saved in the JSON).
@@ -30,7 +32,7 @@ from config import ForecastConfig
 from evaluation.cv import TimeSeriesCV
 from evaluation.metrics import MetricsCalculator
 from models.statistical import ARIMAForecaster, SARIMAXForecaster, trend_from_intercept
-from run_experiments import prepare_fold_inputs
+from fold_runner import prepare_fold_inputs
 from weather.weather_processor import WeatherProcessor
 
 
@@ -48,6 +50,31 @@ def _make_model(seasonal: bool, order, seasonal_order, trend):
     return ARIMAForecaster(order=order, trend=trend)
 
 
+RULE_LOWEST_MAE = "lowest mean MAE on all tune folds"
+RULE_CONVERGED = ("lowest mean MAE among the candidates whose optimizer converged on "
+                  "every tune fold")
+
+
+def select_candidate(candidates: List[Dict], require_converged: bool):
+    """
+    (selected candidate, rule applied) from the scored candidates (dicts of the
+    tuning JSON). Only status "ok" candidates are selectable. With
+    require_converged, candidates with non_converged_folds > 0 are left out
+    if at least one candidate converged on every fold; otherwise the rule
+    falls back to the lowest mean MAE (the rule string says so).
+    """
+    ok = [c for c in candidates if c.get("status") == "ok"]
+    if not ok:
+        raise RuntimeError(f"No selectable candidate: {candidates}")
+    if require_converged:
+        converged = [c for c in ok if c.get("non_converged_folds", 0) == 0]
+        if converged:
+            return min(converged, key=lambda c: c["mae_mean"]), RULE_CONVERGED
+        return (min(ok, key=lambda c: c["mae_mean"]),
+                RULE_LOWEST_MAE + " (no candidate converged on every tune fold)")
+    return min(ok, key=lambda c: c["mae_mean"]), RULE_LOWEST_MAE
+
+
 def search_orders(
     df: pd.DataFrame,
     config: ForecastConfig,
@@ -56,6 +83,7 @@ def search_orders(
     auto_arima_kwargs: Dict,
     search_folds: int = 6,
     verbose: bool = True,
+    require_converged: bool = False,
 ) -> Dict:
     from pmdarima import auto_arima
 
@@ -148,10 +176,7 @@ def search_orders(
             print(f"  candidate {key}: {cand.get('status')} "
                   f"{'MAE=%.2f' % cand['mae_mean'] if 'mae_mean' in cand else ''}")
 
-    ok = [c for c in candidates.values() if c.get("status") == "ok"]
-    if not ok:
-        raise RuntimeError(f"No selectable candidate: {list(candidates.values())}")
-    best = min(ok, key=lambda c: c["mae_mean"])
+    best, rule = select_candidate(list(candidates.values()), require_converged)
 
     return {
         "tuning_period": cv.get_tuning_period(tune_df),
@@ -168,6 +193,7 @@ def search_orders(
             "candidate_folds": len(search_idx),
             "candidate_fold_indices": [int(i) for i in search_idx],
             "metric_optimized": "MAE",
+            "selection_rule": rule,
             "best_tune_mae_mean": best["mae_mean"],
             "best_tune_rmse_mean": best["rmse_mean"],
             "auto_arima_kwargs": {k: v for k, v in auto_arima_kwargs.items() if k != "trace"},

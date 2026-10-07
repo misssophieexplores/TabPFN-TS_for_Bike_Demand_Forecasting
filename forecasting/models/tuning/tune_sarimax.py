@@ -8,7 +8,9 @@ Procedure (shared with tune_arima.py, see arima_search.py):
   2. every candidate is fitted with SARIMAXForecaster (statsmodels, as in the
      experiments, same covariates) on ALL tune folds (same folds as XGBoost
      and Prophet) and scored on the next tune_horizon hours; the lowest mean
-     MAE is selected
+     MAE among the candidates whose optimizer converged on every tune fold
+     is selected (since 7 Oct 2026; --allow-non-converged: lowest mean MAE
+     of all candidates, the rule before)
 
 Covariates are the experiment's columns for --scenario (WeatherProcessor):
     clean_only  (default): degradable covariates + holiday + season
@@ -65,7 +67,8 @@ def tune_sarimax(
     scenario: str = "clean_only",
     m: int = 24,
     search_folds: int = 6,
-    verbose: bool = True
+    verbose: bool = True,
+    require_converged: bool = True,
 ) -> dict:
     if verbose:
         print("=" * 70)
@@ -76,6 +79,7 @@ def tune_sarimax(
         df, config, seasonal=True, scenario=scenario,
         auto_arima_kwargs={**auto_arima_kwargs(m), "trace": False},
         search_folds=search_folds, verbose=verbose,
+        require_converged=require_converged,
     )
 
     if verbose:
@@ -123,7 +127,8 @@ def run_city(city: str, args) -> None:
     print(f"Loaded {len(df)} observations for {city}")
 
     params = tune_sarimax(df=df, config=config, city=city, scenario=args.scenario,
-                          m=args.seasonal_period, search_folds=args.search_folds, verbose=True)
+                          m=args.seasonal_period, search_folds=args.search_folds, verbose=True,
+                          require_converged=not args.allow_non_converged)
     output_file = save_results(params, args.output_dir)
     print(f"  --> config.sarimax_params_file = '{output_file}'")
 
@@ -138,6 +143,9 @@ def main():
     parser.add_argument('--search-folds', type=int, default=6,
                         help='Folds for auto_arima candidate orders, spread evenly over the tune '
                              'folds (default: 6); candidates are scored on all tune folds')
+    parser.add_argument('--allow-non-converged', action='store_true',
+                        help='Select the lowest mean MAE of all candidates, also ones whose '
+                             'optimizer did not converge on every tune fold (rule before 7 Oct 2026)')
     parser.add_argument('--output-dir', type=str, default='results/tuning', help='Directory to save results')
     args = parser.parse_args()
     # A read-only output folder must stop the job now, not after hours of tuning

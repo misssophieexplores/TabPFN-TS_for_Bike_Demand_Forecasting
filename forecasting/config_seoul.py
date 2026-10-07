@@ -49,7 +49,9 @@ def get_config() -> ForecastConfig:
 
     # --- Model parameters ---
     config.arima_params_file = "results/tuning/arima_best_params_seoul_720_20261003_124627.json"
-    config.sarimax_params_file = "results/tuning/sarimax_best_params_seoul_clean_only_720_20261007_063501.json"
+    # Re-selected 7 Oct 2026 from sarimax_best_params_seoul_clean_only_720_20261007_063501.json (converged candidates only,
+    # models/tuning/reselect_sarimax.py; written by the first part of the main.py job)
+    config.sarimax_params_file = "results/tuning/sarimax_best_params_seoul_clean_only_720_converged.json"
     config.xgb_params_file = "results/tuning/xgboost_best_params_seoul_clean_only_720_20261006_152836.json"
     config.xgb_noweather_params_file = "results/tuning/xgboost_best_params_seoul_no_weather_720_20261006_160059.json"
     config.prophet_params_file = "results/tuning/prophet_best_params_seoul_720_20261003_125052.json"

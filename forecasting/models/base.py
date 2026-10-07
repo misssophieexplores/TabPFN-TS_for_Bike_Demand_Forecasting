@@ -12,7 +12,13 @@ class BaseForecaster(ABC):
     Abstract base class for all forecasting models.
     Ensures consistent interface across different model types.
     """
-    
+
+    # True: the experiment fits this model's CV folds in parallel worker
+    # processes (fold_runner.py), one math thread each. Only for CPU-bound
+    # models that fit each fold from scratch (SARIMAX); False runs the folds
+    # one after another.
+    parallel_folds = False
+
     def __init__(self, name: str, use_covariates: bool = False, use_time_features: bool = False):
         """
         Initialize the forecaster.

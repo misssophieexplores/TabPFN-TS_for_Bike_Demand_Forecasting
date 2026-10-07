@@ -9,11 +9,12 @@ forecasting/
 ├── config_london.py         # London-specific overrides (get_config())
 ├── config_washington.py     # Washington-specific overrides (get_config())
 ├── features.py              # Calendar time feature engineering (used by XGBoost)
+├── fold_runner.py           # One CV fold: prepare_fold_inputs(), fit, predict, metrics, hourly forecasts; parallel folds for models with parallel_folds = True (SARIMAX)
 ├── provenance.py            # git commit + dirty flag (code ID without .git) + library versions for tuning JSONs and results; output-folder check and params-JSON writer of the tuning scripts
 ├── run_timesfm_server.py    # Persistent TimesFM server, run in .timesfm_venv (managed by timesfm_model.py)
 ├── run_timesfm.py           # One-off TimesFM run from the command line (uses the server's load_model()/run_inference(); same results as the pipeline)
 ├── models/
-│   ├── base.py              # BaseForecaster abstract class
+│   ├── base.py              # BaseForecaster abstract class (incl. parallel_folds flag)
 │   ├── statistical.py       # Seasonal Naive, ARIMA, SARIMAX, trend_from_intercept()
 │   ├── ml_models.py         # XGBoost and XGBoost_NoWeather with lag features
 │   ├── tabpfn_pipeline_model.py  # TabPFN pipeline models
@@ -22,7 +23,8 @@ forecasting/
 │   └── tuning/              # Hyperparameter tuning scripts
 │       ├── arima_search.py          # Order search shared by tune_arima.py / tune_sarimax.py
 │       ├── tune_arima.py            # ARIMA order tuning (auto_arima candidates, MAE selection)
-│       ├── tune_sarimax.py          # SARIMAX order tuning (auto_arima candidates, MAE selection)
+│       ├── tune_sarimax.py          # SARIMAX order tuning (auto_arima candidates, MAE selection among converged candidates)
+│       ├── reselect_sarimax.py      # SARIMAX order from an existing tuning file, converged candidates only (nothing refitted)
 │       ├── tune_xgboost.py          # XGBoost Optuna TPE search
 │       ├── tune_prophet.py          # Prophet random search
 │       └── tune_neuralprophet.py    # NeuralProphet random search
@@ -49,11 +51,14 @@ forecasting/
 │   ├── test_max_degradation.py
 │   ├── test_weather_single_model.py
 │   ├── test_weather_unit.py
-│   ├── test_pipeline_unit.py   # CV folds, metrics, comparative metrics, XGBoost tuning = experiment (with and without weather)
+│   ├── test_pipeline_unit.py   # CV folds, metrics, comparative metrics, XGBoost tuning = experiment (with and without weather), SARIMAX selection rule and re-selection, parallel folds = sequential folds
 │   ├── test_provenance.py      # Code ID and git provenance
 │   └── preflight.py            # Pre-flight check before the paper runs: params files (set, readable, keys, city, scenario, tuning period, covariates incl. order, code IDs), build_models, CV, one fold per model (incl. TabPFN/TimesFM weights), W&B; writes nothing; reports every problem and continues
 ├── run_experiments.py       # ForecastingExperiment class with W&B logging and checkpointing; load_and_prepare_data(); comparative metrics
 └── run_weather_baseline.py  # Per-city experiment runner (called by main.py, or directly with --city)
+
+submit_main.sh                 # SLURM (repo root): submits main.py as 8 chained parts of 48 h; FRESH_START=1 archives the old results first
+main_job.sh                    # SLURM (repo root): one part; part 1 writes the re-selected SARIMAX params files (see Cluster Run)
 
 data/
 ├── SeoulBikeData.csv
@@ -75,7 +80,8 @@ results/                                           # Output directory
 ├── detailed_results_master_{version}.csv          # Fold-level results (all datasets)
 ├── forecasts_{dataset_name}_{version}.csv         # Hourly forecasts, one row per forecast hour (one file per dataset)
 ├── checkpoint_{dataset_name}_{version}.json       # Per-run recovery checkpoints (file name = checkpoint_{experiment_name}.json)
-└── errors_{version}.log                           # Fold-, city- and run-level error tracebacks
+├── errors_{version}.log                           # Fold-, city- and run-level error tracebacks
+└── archive_{run}/                                 # Results files of an earlier run, moved away by FRESH_START=1 (main_job.sh)
 ```
 
 All scripts resolve `data/` and `results/` relative to the current working directory (`Path("data") / config.data_filename`), so run them from the repository root, e.g. `python forecasting/main.py`.
@@ -86,10 +92,11 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 2. **Scenario Setup**: `WeatherProcessor` selects variables based on scenario
 3. **Split**: `TimeSeriesCV.split(df, horizon, partial_last_fold=True)` creates rolling window train/test folds covering the full evaluation period
 4. **Weather Preparation**: Per-fold weather preparation via `WeatherProcessor.prepare_weather_data(split=...)`. Training data always uses clean observed weather. In the degraded scenarios ('degraded'; optional noise-magnitude sensitivity scenarios if added to `degradation_scales`) the training fold also provides the degradation parameters (solar cap, wet-hour share, rain maxima), and test data receives per-row lead-time noise, scaled by the scenario's factor: row *i* is degraded using lead time *(i + 1)* hours, so error grows from the 1-hour error at the first step (not zero: the measured model replays the ECMWF error at lead time 1 h; in the literature model every error formula has an intercept, e.g. temperature σ = 0.79 °C, humidity 13.0 %-points) up to full-horizon noise at the last step.
-5. **Model inputs** (`run_experiments.prepare_fold_inputs()`, also used by `testing/test_weather_single_model.py`): models with `use_time_features=True` get calendar features appended (`prepare_xgboost_features`); models with `needs_datetime=True` get a real `DatetimeIndex` on `X_train`/`X_test` (an empty DataFrame with that index if the model has no covariates)
+5. **Model inputs** (`fold_runner.prepare_fold_inputs()`, also importable from `run_experiments` and used by the tuning scripts and `testing/test_weather_single_model.py`): models with `use_time_features=True` get calendar features appended (`prepare_xgboost_features`); models with `needs_datetime=True` get a real `DatetimeIndex` on `X_train`/`X_test` (an empty DataFrame with that index if the model has no covariates)
 6. **Fit**: `model.reset()`, then `model.fit(y_train, X_train)` on each fold (NeuralProphet only stores the data here — see Models). Wall-clock time of `fit()` is recorded as `fit_time_s`
 7. **Predict**: `model.predict(n_steps, X_test)` generates forecasts, with `n_steps = len(test_df)`: the horizon, or fewer hours for a partial last fold. Wall-clock time of `predict()` is recorded as `predict_time_s`; `runtime_s = fit_time_s + predict_time_s` (see Runtime Measurement)
 8. **Evaluate**: `MetricsCalculator.calculate_all(y_test, y_pred, y_train, test_mask, train_mask)` computes metrics on observed hours only; imputed hours (`functioning_day_col == 'No'`) are excluded from scoring (masks from `MetricsCalculator.observed_mask()`). Imputed hours stay in the model inputs (training data)
+   - Steps 5–8 are one fold: `fold_runner.run_fold()`. The folds run one after another, or, for models with `parallel_folds = True` (SARIMAX), in parallel worker processes (see Parallel Folds)
 9. **Log**: W&B logs aggregated metrics and a per-fold table
 10. **Save**: after each successfully completed model-horizon-scenario run, the hourly forecasts are appended to `forecasts_{dataset_name}_{version}.csv`, the fold-level rows to `detailed_results_master_{version}.csv` and the aggregated row to `results_master_{version}.csv` (header must match, otherwise `RuntimeError`); only then is the checkpoint updated. If any fold fails, that whole model-horizon-scenario run is aborted and none of its partial rows are saved or checkpointed
 11. **Compare** (once, after all selected cities completed successfully): `compute_and_log_comparative_metrics()` computes win rate and skill score vs `Seasonal_Naive`, pooled across cities, one comparison per (model, scenario)
@@ -135,7 +142,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - `weather_degradation_mapping` variable types: `temperature`, `humidity`, `wind_speed`, `solar_radiation`, `visibility`, `precipitation` (total precipitation incl. melted snow, mm; exactly one column per city: `precipitation_mm` in all three) and `snow_depth` (snow on the ground, cm: `snow_depth_cm` in all three). `rain_col` / `snow_col` were removed on 2 Oct 2026 together with the rain/snow phase correction.
 - `season_col`: Optional column name for season (normalized to 0–3 int via `season_mapping`, appended to `weather_covariates` at load time)
 - `season_mapping`: Explicit per-dataset dict mapping raw season values to 0–3 integers (handles strings, 0-based, and 1-based encodings). The codes (0 spring, 1 summer, 2 autumn, 3 winter) are the same in every city, but the source datasets define the seasons differently and the data are used as published (Known Limitation 22): Seoul and London switch on the 1st of March, June, September and December (meteorological seasons); Washington switches on 21 March, 21 June, 23 September and 21 December (astronomical seasons)
-- `verbose`: If `True`, prints detailed progress (CV info, data loading, W&B URLs). Default `False` in `config.py` (cluster/server runs where stdout is captured in SLURM logs).
+- `verbose`: If `True`, prints detailed progress (CV info, data loading, W&B URLs). Default `False` in `config.py` (cluster/server runs where stdout is captured in SLURM logs). One timestamped `START` and one `DONE` line per model-horizon-scenario run are printed regardless (7 Oct 2026; see Experiment Runner).
 - Params files: each city config points to the tuned-parameter JSON files in `results/tuning/` (all tuned with `n_train_samples=720`). ARIMA and SARIMAX params files must contain `with_intercept`, i.e. they must come from the current tuning scripts; older files are rejected by `run_weather_baseline.py`. `neuralprophet_noweather_params_file` and `xgb_noweather_params_file` must be set (each tuned with `--scenario no_weather`); if one is not set (`None` or `""`), the runners raise `ValueError`. `build_models()` also raises if `xgb_noweather_params_file` was tuned with another scenario. All params files are re-tuned on 3 Oct 2026 (all models, all cities) after the covariate changes of 2 Oct 2026 (total precipitation, snow depth, London/Washington daylight-saving alignment, Seoul winter precipitation spread over 3 hours) and the SARIMAX change of 3 Oct 2026 (see ARIMA / SARIMAX specifics). `tune_xgboost.py` and `tune_neuralprophet.py` raise if a covariate column is missing from the data (before, it was silently left out).
 
 ### Weather Degradation (`weather/`)
@@ -199,11 +206,12 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 - `predict(horizon, X)`: Generate forecasts
 - `reset()`: Clear state between folds
 - `name`, `use_covariates`, `use_time_features`: Properties
+- `parallel_folds` (class attribute, default `False`): `True` fits the model's CV folds in parallel worker processes (`fold_runner.py`); set for SARIMAX only
 
 **Implemented models:**
 - SeasonalNaiveForecaster: Repeats last seasonal period
 - ARIMAForecaster: Tuned order via auto_arima (e.g., (2,1,2)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
-- SARIMAXForecaster: Tuned orders via auto_arima (e.g., (4,0,0)×(1,0,1,24)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics)
+- SARIMAXForecaster: Tuned orders via auto_arima, selected among the candidates that converged on all tune folds (e.g., (2,0,0)×(1,0,0,24)); intercept/trend as selected during tuning (see ARIMA / SARIMAX specifics); `parallel_folds = True`
 - XGBoostForecaster: Uses lagged features (`n_lags` from tuning, options 12, 24, 48, 168) + weather covariates (including holiday and season via `weather_covariates`) + calendar time features (hour, dayofweek, month, is_weekend). `use_time_features=True` — pipeline appends calendar features automatically at fold time. **Note: XGBoost must be re-tuned whenever `weather_covariates` changes (e.g. after adding holiday/season).**
 - XGBoostForecaster_NoWeather (model name `XGBoost_NoWeather`, key `xgboost_noweather`): same model, without weather, holiday and season covariates: lagged demand + calendar time features (hour, dayofweek, month, is_weekend) only. `use_covariates=False`, `use_time_features=True`: the pipeline passes the calendar features only, and the degraded scenarios are skipped. Counterpart of XGBoost in the with/without-weather comparison (as TabPFN / TabPFN_NoWeather and NeuralProphet / NeuralProphet_NoWeather). Tuned with `tune_xgboost.py --scenario no_weather`
 - TabPFNPipelineForecaster (model name `TabPFN`): `TabPFNTSPipeline` (tabpfn-time-series), zero-shot, TabPFN v2.5 pinned via `TABPFN_MODEL_CONFIG` (`tabpfn-v2.5-regressor-v2.5_default.ckpt`); all other settings at the pipeline defaults. Features: the pipeline's defaults (running index, calendar, auto-seasonal) + every covariate column (present in both context and future frame). Point forecast = median. Without the explicit pin the checkpoint would depend on the installed tabpfn-time-series version (1.0.10: v2; 1.1.0/1.2.0: v3; 1.3.0: v3.5)
@@ -224,7 +232,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
   - ARIMA, intercept, d + D = 1 → `"t"` (linear trend in levels = drift after differencing)
   - ARIMA, intercept, d + D ≥ 2 → `ValueError`
 - ARIMAForecaster: `ARIMA(y, order, trend)` on the raw array, default `fit()`; no covariates.
-- SARIMAXForecaster: `SARIMAX(y, exog, order, seasonal_order, trend, enforce_stationarity=False, enforce_invertibility=False)`, fitted with `method='lbfgs'`, `maxiter=1000`; a warning is raised if the optimizer does not converge. Each covariate is divided by its standard deviation in the fold's training window, and the forecast covariates by the same values: the same model with rescaled coefficients, but a better-conditioned optimisation (3 Oct 2026; before, with `maxiter=200` and unscaled covariates, the selected orders did not converge in 85–90 of the 90 tune folds). `y` and `X` get a synthetic hourly `DatetimeIndex` starting 2020-01-01 to silence statsmodels index warnings; the forecast index continues directly after the training index. The real timestamps are not used.
+- SARIMAXForecaster: `SARIMAX(y, exog, order, seasonal_order, trend, enforce_stationarity=False, enforce_invertibility=False)`, fitted with `method='lbfgs'`, `maxiter=1000`; a warning is raised if the optimizer does not converge. Each covariate is divided by its standard deviation in the fold's training window, and the forecast covariates by the same values: the same model with rescaled coefficients, but a better-conditioned optimisation (3 Oct 2026; before, with `maxiter=200` and unscaled covariates, the selected orders did not converge in 85–90 of the 90 tune folds). With `maxiter=1000` and scaled covariates the lowest-MAE candidates still did not converge on 48 (Seoul) and 6 (Washington) of the 90 tune folds (London 0), so since 7 Oct 2026 SARIMAX is selected among the candidates that converged on every tune fold (see ARIMA/SARIMAX approach). `y` and `X` get a synthetic hourly `DatetimeIndex` starting 2020-01-01 to silence statsmodels index warnings; the forecast index continues directly after the training index. The real timestamps are not used.
 - SARIMAXForecaster drops covariates that are constant in the fold's training window (e.g. season within 30 days, holiday when there is none) for both fit and forecast: their effect cannot be estimated and a constant column duplicates the intercept. Columns that vary in the training window are kept. Same rule as in `tune_sarimax.py` and as NeuralProphet's handling of constant regressors.
 
 **Prophet / NeuralProphet specifics (`prophet_models.py`):**
@@ -244,6 +252,7 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 **Tuning scripts:**
 - `tune_arima.py`: Non-seasonal ARIMA (p,d,q)
 - `tune_sarimax.py`: Seasonal ARIMA with exogenous variables (p,d,q)×(P,D,Q,s)
+- `reselect_sarimax.py --source <tuning file> --output <params file>`: applies the current SARIMAX selection rule to an existing `tune_sarimax.py` file without refitting (see ARIMA/SARIMAX approach)
 - `tune_xgboost.py`: XGBoost with lag features (n_lags + XGBoost hyperparameters); `--scenario no_weather` for XGBoost_NoWeather
 - `tune_prophet.py`: Prophet (changepoint and seasonality prior scales + seasonality mode)
 - `tune_neuralprophet.py`: NeuralProphet (learning_rate + n_lags)
@@ -268,10 +277,11 @@ All scripts resolve `data/` and `results/` relative to the current working direc
 
 **ARIMA/SARIMAX approach** (`arima_search.search_orders()`, shared by `tune_arima.py` and `tune_sarimax.py`):
 - 1. Candidates: pmdarima `auto_arima` (stepwise, AIC; `d`/`D` from its unit-root tests; `with_intercept` at pmdarima's default `'auto'`) on the training window of each of the `--search-folds` candidate folds (default 6, spread evenly over the tune folds). Every distinct `(order, seasonal_order, with_intercept)` is a candidate
-- 2. Selection: every candidate is fitted with the experiment model (`ARIMAForecaster` / `SARIMAXForecaster`, statsmodels, `trend` from `trend_from_intercept()`) on **all** tune folds (the same 90 folds as XGBoost and Prophet), with the experiment inputs (`run_experiments.prepare_fold_inputs()`), and scored on the next `tune_horizon` hours (MAE, imputed hours excluded). The candidate with the lowest mean MAE is selected — the same criterion and folds as XGBoost and Prophet. At most 6 candidates × 90 folds = 540 fits per city. A candidate without a statsmodels trend equivalent, or failing on a tune fold, is not selectable (reason saved)
+- 2. Selection: every candidate is fitted with the experiment model (`ARIMAForecaster` / `SARIMAXForecaster`, statsmodels, `trend` from `trend_from_intercept()`) on **all** tune folds (the same 90 folds as XGBoost and Prophet), with the experiment inputs (`fold_runner.prepare_fold_inputs()`), and scored on the next `tune_horizon` hours (MAE, imputed hours excluded). ARIMA: the candidate with the lowest mean MAE is selected — the same criterion and folds as XGBoost and Prophet. SARIMAX (since 7 Oct 2026): the lowest mean MAE among the candidates whose optimizer converged on every tune fold (`arima_search.select_candidate(require_converged=True)`; if no candidate converged on every fold, the lowest mean MAE; `tune_sarimax.py --allow-non-converged` restores the old rule); the rule used is saved as `tuning.selection_rule`. At most 6 candidates × 90 folds = 540 fits per city. A candidate without a statsmodels trend equivalent, or failing on a tune fold, is not selectable (reason saved)
 - ARIMA: non-seasonal, `max_p=7`, `max_q=3`, `max_order=8`, no covariates
 - SARIMAX: seasonal with `m = --seasonal-period` (default 24), `max_p=5`, `max_q=3`, `max_P=2`, `max_Q=2`, `max_order=8`; covariates = the experiment's columns for `--scenario` (`WeatherProcessor.get_weather_columns`; `clean_only` default, or `all_weather`); covariates constant in the training window are dropped for the `auto_arima` search (same rule as `SARIMAXForecaster`, which applies it itself when scoring)
-- Non-converged `SARIMAXForecaster` fits are counted per candidate (`non_converged_folds`)
+- Non-converged `SARIMAXForecaster` fits are counted per candidate (`non_converged_folds`); the SARIMAX selection rule uses this count
+- Re-selection (`reselect_sarimax.py`): the rule applied to an existing SARIMAX tuning file. Nothing is refitted: candidates, fold MAEs and `non_converged_folds` come from the source file. The new file keeps every field of the source, replaces `order`, `seasonal_order`, `with_intercept`, `trend`, `tuning.best_tune_mae_mean`, `tuning.best_tune_rmse_mean` and `tuning.selection_rule`, and adds `reselection` (`date`, `source_file`, `source_selection`, `source_provenance`, `rule`); its `provenance` is that of the re-selection run. Used on 7 Oct 2026 on the SARIMAX tuning files of 7 Oct (results/tuning/sarimax_best_params_{city}_clean_only_720_converged.json, written by part 1 of `main_job.sh`): Seoul (2,0,2)×(1,0,1,24) → (2,0,0)×(1,0,0,24), tuning MAE 92.15 → 94.05; Washington (4,0,1)×(1,0,0,24) → (5,0,0)×(1,0,0,24), 69.64 → 70.01; London unchanged, (2,0,0)×(1,0,0,24), 329.21; all with a constant
 - No re-evaluation after the search (the selection scores already come from the experiment model)
 - `tune_arima.py` has no `--scenario` argument: ARIMA uses no covariates, so one params file serves all scenarios (same as Prophet)
 
@@ -353,16 +363,18 @@ All scripts resolve `data/` and `results/` relative to the current working direc
     "candidate_folds": int,
     "candidate_fold_indices": [int],
     "metric_optimized": "MAE",
+    "selection_rule": str,
     "best_tune_mae_mean": float,
     "best_tune_rmse_mean": float,
     "auto_arima_kwargs": {...},
     "candidates": [{"order", "seasonal_order", "with_intercept", "found_on_folds", "aic_on_found_folds",
                     "status", "trend", "fold_mae", "mae_mean", "rmse_mean", "non_converged_folds"}]
   },
+  "reselection": {"date", "source_file", "source_selection", "source_provenance", "rule"},
   "provenance": {"git_commit": str, "git_dirty": bool, "library_versions": {...}}
 }
 ```
-`scenario`, `seasonal_order`, `covariates_used` and `m` are SARIMAX only. `order`, `seasonal_order` and `with_intercept` are read by `run_experiments.build_models()`; `trend` is saved for reference (the runner derives it again with `trend_from_intercept()`). ARIMA params files from before the `--scenario` argument was removed contain a `scenario` key and have it in the file name; they remain valid (the key is not read).
+`scenario`, `seasonal_order`, `covariates_used` and `m` are SARIMAX only. `selection_rule` is written since 7 Oct 2026 (older files: lowest mean MAE); `reselection` only in files written by `reselect_sarimax.py`. `order`, `seasonal_order` and `with_intercept` are read by `run_experiments.build_models()`; `trend` is saved for reference (the runner derives it again with `trend_from_intercept()`). ARIMA params files from before the `--scenario` argument was removed contain a `scenario` key and have it in the file name; they remain valid (the key is not read).
 
 **Output format (XGBoost)** — `xgboost_best_params_{city}_{scenario}_{n_train_samples}_{timestamp}.json`:
 ```json
@@ -510,6 +522,8 @@ Runs all datasets sequentially without manual intervention.
 - Coverage check: `run_single_experiment()` raises `RuntimeError` unless the splits number `expected_n_folds(horizon)` and their test windows add up to exactly `get_eval_hours()` hours (catches missing hourly timestamps), so no evaluation hours are dropped for any horizon
 - Fold-level errors are logged to `errors_{version}.log` with full traceback and to W&B (`error`); `[ERROR]` is always printed regardless of `verbose`. This includes errors in the fold's input preparation (`prepare_fold_inputs()`: weather degradation, calendar features), which runs inside the same `try` (4 Oct 2026; before, its traceback was lost and only the message was printed). A fold error aborts that entire model-horizon-scenario run immediately. `run_all_experiments()` catches the exception, records the failed experiment, leaves it unsaved and uncheckpointed, and continues with the remaining combinations. After all combinations have been attempted, it raises `RuntimeError` if any experiment failed, so `main.py` marks that city failed while preserving all successful completed work
 - Runtime: `fit()` and `predict()` are timed per fold with `time.perf_counter()` (`fit_time_s`, `predict_time_s`, `runtime_s`) and aggregated per model, horizon and scenario (see Results Schema)
+- Folds: `fold_runner.run_fold()` per fold, one after another; models with `parallel_folds = True` (SARIMAX) through `fold_runner.run_folds_parallel()` (see Parallel Folds). In the parallel path, an error in a fold is returned to the main process and handled exactly as above (the first failing fold in fold order is logged with its traceback; the run is aborted, not saved, not checkpointed)
+- Progress: one timestamped line when a run starts (`START {dataset} | {model} | h={horizon} | {scenario} | {n} folds[ | {k} workers]`) and one when it is saved and checkpointed (`DONE ... | MAE {mean} | {minutes} min[ | not converged in {n} folds]`), printed regardless of `verbose` (7 Oct 2026; with `verbose=False` the log showed nothing between W&B start and the end of a city)
 
 - `run_all_experiments(models, df, scenarios=None)`: `scenarios=None` uses `config.weather_scenarios`; failed model-horizon-scenario combinations are collected in `failed_experiments` and reported only after all remaining combinations have been attempted
 - The module sets `warnings.filterwarnings('ignore')` globally. Per fold, the warnings raised in `fit()`/`predict()` are recorded and those containing "converge" are counted (`convergence_warnings`); none is printed
@@ -533,6 +547,15 @@ Runs all datasets sequentially without manual intervention.
 - Displays degradation impact summary (gated behind `config.verbose`)
 - Uses ForecastingExperiment class for W&B logging, checkpointing, and result saving
 - Errors written to `errors_{version}.log` with full traceback before re-raising
+
+### Cluster Run (`submit_main.sh`, `main_job.sh`, repo root)
+- `bash submit_main.sh` (login node, repo root) submits `python forecasting/main.py` as 8 SLURM parts of 48 h, 16 CPUs and 32 GB each; every part waits until the previous one has ended (`--dependency=afterany`), so `main.py` never runs twice at the same time. It refuses to submit if tracked files have uncommitted changes (`FORCE=1` overrides) or if `main_v7` jobs are already queued or running
+- `FRESH_START=1 bash submit_main.sh`: part 1 first moves the results files of the current `results_version` (checkpoints, results_master, detailed results, forecasts, comparative metrics, errors log) into `results/archive_{run}/`, so all results carry one code ID. Without it, part 1 stops if a checkpoint of this version lists SARIMAX (results of the orders before the re-selection)
+- Part 1 writes the three re-selected SARIMAX params files (`reselect_sarimax.py`, source files listed in `main_job.sh`) if they do not exist; output in `logs/main/run_{run}/reselect_sarimax_{city}.log`
+- 10 min before the time limit (`--signal=B:USR1@600`) `main.py` is stopped and the next part resumes from the checkpoints. When `main.py` finishes, the remaining parts exit at once; when it fails, they exit at once and the reason is in `logs/main/run_{run}/FAILED`
+- Main process: `OMP_NUM_THREADS` etc. = the job's CPUs (XGBoost, torch); SARIMAX workers one math thread each
+- W&B online if the node reaches api.wandb.ai and an API key is set up (`WANDB_API_KEY`, `~/.netrc` or `.env`), otherwise offline (wandb.init would fail and `main.py` would skip the city; offline runs are kept in `wandb/` and can be uploaded with `wandb sync`); `HF_HUB_OFFLINE=1` if huggingface.co is not reachable. Both decisions are printed in the log
+- Logs: `logs/main/main_v7_{jobid}.log`; stop everything with `scancel -n main_v7`
 
 
 ## Key Design Decisions
@@ -699,6 +722,15 @@ Rationale:
 - Previously the order was chosen by AIC on `splits[0]` only. For London and Washington that split lies about 5 months before the 90 tune folds all other models use; for all cities it was a single 30-day window.
 - The previous validation re-fitted with pmdarima, which differs from the statsmodels models used in the experiments (e.g. stationarity/invertibility enforcement). Selection now uses the experiment models themselves.
 - Same folds and same criterion (24-h MAE on all 90 tune folds) as XGBoost and Prophet.
+- SARIMAX, since 7 Oct 2026: only candidates whose optimizer converged on all 90 tune folds are selectable. The lowest-MAE candidates did not converge on 48 (Seoul) and 6 (Washington) of the 90 tune folds even with 1,000 L-BFGS iterations and scaled covariates; a baseline whose estimates in about half of Seoul's folds are not at the optimum is hard to defend, and such fits run to the iteration cap. The converged candidates cost +2.1 % (Seoul) and +0.5 % (Washington) tuning MAE; London's selection is unchanged. ARIMA keeps the lowest-MAE rule.
+
+### Parallel Folds (SARIMAX)
+Models with `parallel_folds = True` (SARIMAX) fit their CV folds in parallel worker processes (`fold_runner.run_folds_parallel()`: joblib/loky, `inner_max_num_threads=1`, results returned in fold order); the number of workers is `FOLD_WORKERS` if set, otherwise `SLURM_CPUS_PER_TASK`, otherwise the CPUs the process may use. Workers import only light modules (no torch, TabPFN, TimesFM or W&B).
+
+Rationale:
+- SARIMAX fits one model per fold, single-threaded (34–54 s per fit on the cluster, re-tuning logs of 6/7 Oct 2026): 1,383 folds × 2 scenarios × 3 cities would take up to about 4.5 days one fold at a time.
+- The folds are independent (each refits from scratch on its own 720-h window; the degradation seed depends on horizon, fold and city only), so a parallel run gives the same results as one fold after another. Checked with a stand-in SARIMAX on synthetic Seoul data, all folds of 6/24/168 h, clean_only and degraded: identical results, detailed and forecasts files (timing columns excluded); `testing/test_pipeline_unit.py::test_parallel_folds_equal_sequential` checks it with the real SARIMAX.
+- Other models stay sequential: XGBoost and torch-based models already use all CPUs of the job, and TabPFN/TimesFM/NeuralProphet would load their model once per worker.
 
 ### No Post-Processing of Forecasts
 Forecasts are scored as each model produces them: no clipping of negative values or other post-processing, in tuning and in the experiments. TimesFM_NoWeather returns non-negative forecasts because of TimesFM's own inference setting (`infer_is_positive=True`: forecasts are floored at 0 when the whole context is non-negative), which is part of the model as published. TimesFM with covariates can return negative forecasts: TimesFM forecasts the residual of the in-context regression, which has negative values, so the floor does not apply. Checked against the timesfm 3.0.2 source (3 Oct 2026): `infer_is_positive` floors the forecast at 0 only when the whole input is non-negative, and `forecast_with_covariates` adds the regression part afterwards, without clipping.
@@ -719,6 +751,7 @@ Rationale:
 - Makes the accuracy/cost trade-off between models reportable per horizon and scenario.
 - Fit and predict are kept separate because the split differs by model: NeuralProphet trains inside `predict()` (its `fit_time_s` is ≈ 0 and `predict_time_s` includes training), and XGBoost's recursive forecasts make `predict()` cost grow with `n_steps`. `runtime_s` (fit + predict) is the comparable total across models.
 - Totals depend on the number of folds (980 for h=6 vs 35 for h=168); compare `runtime_mean_s` for per-forecast cost and `runtime_total_s` for the cost of the full evaluation period.
+- SARIMAX folds are timed in their worker process (one core, one math thread); the other models run in the main process with all job CPUs. `runtime_total_s` is the sum over folds, not the wall time of a parallel run.
 
 ### Rolling Window CV
 Training window is fixed-size and advances by `horizon` hours with each fold. Test set is `horizon` hours (the last fold can be shorter, see Partial Last Fold).
@@ -841,13 +874,13 @@ London and Washington use the same names for precipitation and snow depth (`prec
 4. NeuralProphet training cost grows with the horizon (one output per forecast step with `n_forecasts = horizon`), and the model is retrained on every `predict()` call
 5. NeuralProphet hyperparameters are tuned at `config.tune_horizon` only and reused for all evaluation horizons
 6. Season and holiday can only be used by SARIMAX (and NeuralProphet) in folds where they vary within the 30-day training window
-7. ARIMA/SARIMAX candidate orders come from `auto_arima`'s stepwise AIC search on 6 folds; orders it does not propose are not considered
+7. ARIMA/SARIMAX candidate orders come from `auto_arima`'s stepwise AIC search on 6 folds; orders it does not propose are not considered. SARIMAX is selected among the candidates that converged on all 90 tune folds (7 Oct 2026), at +2.1 % (Seoul) and +0.5 % (Washington) tuning MAE; convergence in the experiments is recorded per fold (`convergence_warnings`)
 8. NeuralProphet is searched on 6 of the 90 tune folds (run time); all other tuned models are selected on all 90
 9. Literature model: precipitation detection errors use POD and FAR that Sukovich et al. (2014) verified for the top 1% of 24-hour events; they are applied to all hourly precipitation. Both models: a training fold without precipitation (wet-hour share 0) gives no false alarms in that fold
 10. Snow depth has no measured forecast errors: the degraded scenarios hold it at its value at the issue time (persistence), so melting and new snow within the horizon are missed. London/Washington snow depth is ERA5-Land (1 cm steps; Open-Meteo notes it tends to be overestimated, e.g. 1–3 cm for days at 10–18 °C in Washington), Seoul's is measured at the station; both are snow on open ground, not on cleared streets. London has no snow in its evaluation period, Washington only 24–31 Dec 2012
 11. The partial last fold (h=48) covers lead times 1–24 only and is averaged with equal weight to the full folds; for NeuralProphet it is forecast by a model with `n_forecasts = 24`
 12. Fold metrics are averaged with equal weight per fold; a fold with few observed hours (partly imputed test window) counts as much as a fully observed one
-13. Runtimes are wall-clock times on the machine that ran the experiment: they depend on hardware, CPU/GPU availability, thread settings (e.g. XGBoost `n_jobs=-1`, TabPFN `CPUParallelWorker`) and concurrent load, so they are only comparable within one run environment. The first fold of a model can include one-off costs (library warm-up, model loading for TabPFN/TimesFM). Failed folds are not timed
+13. Runtimes are wall-clock times on the machine that ran the experiment: they depend on hardware, CPU/GPU availability, thread settings (e.g. XGBoost `n_jobs=-1`, TabPFN `CPUParallelWorker`; SARIMAX folds in parallel workers with one math thread each, the other models with all job CPUs) and concurrent load, so they are only comparable within one run environment. The first fold of a model can include one-off costs (library warm-up, model loading for TabPFN/TimesFM). Failed folds are not timed
 14. Sensitivity scenarios are not run by default (since 2 Oct 2026). If added, they scale error magnitudes only; precipitation event detection (miss rate, false-alarm probability, false-alarm amount) and, in the measured model, whether visibility falls below the cap stay at their calibrated values at every scale
 15. Literature model only: consequence of the hour-to-hour independence (Limitation 1): for models that use each step's covariates only for that step (SARIMAX, NeuralProphet, TabPFN, TimesFM), the expected error per step is unchanged and mainly the fold-to-fold spread is affected. XGBoost forecasts recursively, so correlated covariate errors could compound through the fed-back lags; the independent-noise setting may therefore understate XGBoost's degradation relative to TabPFN. The measured model has persistent errors
 16. Measured model: the fresh, locally corrected forecast (default) is approximated by the global 9 km model's errors at short lead times with its average bias removed; no free archive of past local forecasts exists. Local high-resolution forecasts are usually more accurate in the first hours, so these may be slightly pessimistic. The replayed run's start hour (00/12 UTC) can differ from the issue time of day by up to 6 h. With `nwp_fresh_forecast = False`: the issue time is the end of the training window and a run is assumed usable 6 h after its start; the 06/18 UTC runs (90 h only) are not used. Beyond 90 h ECMWF outputs 3-/6-hourly values; the replayed hourly errors there are those of Open-Meteo's interpolated hourly series
